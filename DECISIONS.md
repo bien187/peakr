@@ -26,7 +26,24 @@ Dieses Dokument hält bewusste Entscheidungen fest, die beim Bauen getroffen wur
 
 ## Phase 1 — DB & Shared
 
-_(folgt)_
+- **PostGIS-Geo-Spalten via Drizzle-`customType`:** `geography(Point,4326)`,
+  `geography(LineString,4326)`, `geography(MultiPolygon,4326)` und `bytea`. Die Typen dienen
+  primär der DDL-Erzeugung; gelesen/geschrieben werden Geometrien fast immer über rohe
+  `ST_*`-SQL-Ausdrücke (ST_MakePoint, ST_AsGeoJSON, ST_DWithin), da die WKB-Rückgaben des
+  Treibers nicht direkt nutzbar sind.
+- **Manueller Fix im generierten Migrations-SQL:** `drizzle-kit generate` setzt customType-
+  Typnamen in Anführungszeichen (`"geography(Point,4326)"`). PostgreSQL würde das als
+  wörtlichen Typnamen lesen und scheitern — der Typmodifier muss außerhalb der Quotes stehen.
+  Daher sind im File `drizzle/0000_*.sql` die Quotes um die `geography(...)`- und `bytea`-Typen
+  entfernt. Bei künftigem `generate` ggf. erneut anpassen.
+- **PostGIS-Extension:** wird vom Migrations-Runner (`src/db/migrate.ts`) per
+  `CREATE EXTENSION IF NOT EXISTS postgis;` **vor** den Migrationen sichergestellt.
+- **`geography` statt `geometry`:** geography rechnet sphärisch in Metern → `ST_DWithin(..., meter)`
+  und Distanzen sind ohne Reprojektion korrekt für die ganze Schweiz.
+- **Append-only `live_status`** mit Index `(destination_id, captured_at DESC)` für schnelle
+  `DISTINCT ON`-Abfragen des neuesten Snapshots.
+- **Shared-Schemas** spiegeln die DB, sind aber API-orientiert (camelCase, `LatLng` statt
+  Geo-Spalte). Eine Quelle der Wahrheit für Backend-Validierung und Frontend-Typen.
 
 ## Phase 2 — Externe Services
 
