@@ -1,0 +1,35 @@
+# CH-AlpineRoute — lokale Infrastruktur (kostenlos, läuft via Docker)
+# Start:  docker compose up -d
+# Stop:   docker compose down       (Daten bleiben im Volume erhalten)
+# Redis ist optional und startet nur mit:  docker compose --profile with-redis up -d
+
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    container_name: ch_alpineroute_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-alpine}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-alpine}
+      POSTGRES_DB: ${POSTGRES_DB:-ch_alpineroute}
+    ports:
+      - '${POSTGRES_PORT:-5432}:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-alpine} -d ${POSTGRES_DB:-ch_alpineroute}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: ch_alpineroute_redis
+    restart: unless-stopped
+    ports:
+      - '${REDIS_PORT:-6379}:6379'
+    profiles: ['with-redis']
+
+volumes:
+  pgdata:
