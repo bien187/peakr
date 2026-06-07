@@ -71,6 +71,19 @@ Alle Endpunkte wurden live gegen die echten APIs verifiziert (Formate geprüft).
   strukturiertes JSON-Schema. User-Key wird verschlüsselt gespeichert, nie geloggt/an Browser gesendet.
 - **crypto.service:** AES-256-GCM, IV pro Aufruf zufällig, Auth-Tag an Ciphertext angehängt.
 
+## Phase 3 — Auth & User
+
+- **JWT via jose** (HS256, `JWT_SECRET`), Token zusätzlich als httpOnly-Cookie gesetzt; das
+  Frontend nutzt primär den `Authorization: Bearer`-Header (Token kommt auch im Body zurück).
+- **Passwort-Hashing:** argon2id. `verifyPassword` fängt Fehler ab und gibt `false` statt zu werfen.
+- **Auth-Middleware:** `installAuth` dekoriert `app.authenticate` (PreHandler) + `request.user`.
+  Geschützte Routen nutzen `{ preHandler: app.authenticate }` und `requireUser()`.
+- **PostGIS-Home-Location:** Da der Treiber Geographie als WKB liefert, werden User über rohe
+  `ST_X/ST_Y`-SQL gelesen und mit `ST_MakePoint(...)::geography` geschrieben (user.repo.ts).
+- **OpenAI-Key:** verschlüsselt (AES-GCM) in `openai_key_enc`/`openai_key_iv`, wird nie an den
+  Client zurückgegeben — nur das Flag `hasOpenAiKey`.
+- **Einheitlicher Error-Handler:** AppError → Status+Code, ZodError → 400, Rest → 500.
+
 ## Datenlage (ehrlich)
 
 - **Live-Liftstatus** hat keine offizielle, schweizweite Gratis-Quelle. Die Skigebiet-Adapter

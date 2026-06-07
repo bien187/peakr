@@ -1,8 +1,13 @@
 import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 import Fastify, { type FastifyInstance } from 'fastify';
+import { ZodError } from 'zod';
 import { env, isProd } from './config/env';
+import { AppError } from './lib/errors';
+import { installAuth } from './plugins/auth';
+import { authRoutes } from './routes/auth';
 import { healthRoutes } from './routes/health';
+import { meRoutes } from './routes/me';
 
 export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -22,8 +27,35 @@ export async function buildApp(): Promise<FastifyInstance> {
   });
   await app.register(cookie);
 
-  // Routen (werden in späteren Phasen erweitert)
+  installAuth(app);
+
+  // Einheitliche Fehlerbehandlung
+  app.setErrorHandler((error, request, reply) => {
+    if (error instanceof AppError) {
+      return reply
+        .code(error.statusCode)
+        .send({ error: { code: error.code, message: error.message, details: error.details } });
+    }
+    if (error instanceof ZodError) {
+      return reply
+        .code(400)
+        .send({ error: { code: 'VALIDATION', message: 'Ungültige Eingabe', details: error.flatten() } });
+    }
+    const statusCode = (error as { statusCode?: number }).statusCode;
+    const message = error instanceof Error ? error.message : 'Interner Serverfehler.';
+    if (typeof statusCode === 'number' && statusCode >= 400 && statusCode < 500) {
+      return reply.code(statusCode).send({ error: { code: 'BAD_REQUEST', message } });
+    }
+    request.log.error(error);
+    return reply
+      .code(500)
+      .send({ error: { code: 'INTERNAL', message: 'Interner Serverfehler.' } });
+  });
+
+  // Routen
   await app.register(healthRoutes);
+  await app.register(authRoutes);
+  await app.register(meRoutes);
 
   return app;
 }
