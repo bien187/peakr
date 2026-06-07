@@ -47,7 +47,29 @@ Dieses Dokument hält bewusste Entscheidungen fest, die beim Bauen getroffen wur
 
 ## Phase 2 — Externe Services
 
-_(folgt)_
+Alle Endpunkte wurden live gegen die echten APIs verifiziert (Formate geprüft).
+
+- **HTTP-Helper (`lib/http.ts`):** zentraler `fetchJson` mit 8s-Timeout (`AbortSignal.timeout`),
+  1 Retry (5xx/429/Netzfehler; 4xx endgültig), plus `settle()` für „nie den ganzen Request
+  killen". Workers/Suche kapseln jede Quelle einzeln.
+- **SLF-Warnregionen:** Der dokumentierte Pfad `/api/warningregion/` ist die Swagger-UI. Der echte
+  GeoJSON-Endpunkt ist `/api/warningregion/warnregionDefinition/current/geojson` (149 Polygone,
+  Props `sector_id`/`sector_name`). Region-ID = `sector_id`.
+- **SLF-Bulletin im Sommer leer:** `{"bulletins":[]}` → Parser gibt leere Map zurück (kein Fehler).
+  Bulletin-Region-IDs (z.B. `CH-1111`) werden via `normalizeRegionId` auf `sector_id` (`1111`) gemappt.
+- **Open-Meteo:** `snow_depth` in m → ×100 = cm; `snowfall`/`snowfall_sum` bereits in cm;
+  `wind_speed_10m` in km/h; `visibility` in m. Aktuelle Stunde via `currentHourIndex`.
+- **swisstopo:** Geocode-Label enthält HTML (`<b>…</b>`) und Kanton in Klammern (`Zermatt (VS)`)
+  → `stripHtml` + `extractCanton`. Zusätzlich Höhen-API als Fallback für fehlende Höhenmeter.
+- **Overpass:** `out center;` liefert Way/Relation-Mittelpunkte (`center.lat/lon`); großzügiger
+  Timeout (60s) + Retry, da rate-limited/langsam → Ergebnisse beim Import cachen.
+- **ORS:** Matrix-Endpoint, Fahrzeit in Sekunden → Minuten; `Authorization`-Header = roher Key
+  (kein „Bearer"). Ein Request pro Suche. Isochrone optional, ≤60 Min.
+- **Wikipedia:** Pageviews-Summe letzte 30 Tage, log-Skalierung auf 1–100 (`pageviewsToScore`,
+  `is_estimate=true`). 404 → Score 1. Aussagekräftiger User-Agent (Wikimedia-Pflicht).
+- **OpenAI:** abschaltbares Modul (`ENABLE_OPENAI_TREND`, Default aus), Responses API + web_search,
+  strukturiertes JSON-Schema. User-Key wird verschlüsselt gespeichert, nie geloggt/an Browser gesendet.
+- **crypto.service:** AES-256-GCM, IV pro Aufruf zufällig, Auth-Tag an Ciphertext angehängt.
 
 ## Datenlage (ehrlich)
 
