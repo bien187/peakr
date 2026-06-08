@@ -1,45 +1,20 @@
 {
-  "name": "ch-alpineroute",
+  "name": "@ch-alpineroute/shared",
   "version": "0.0.0",
   "private": true,
-  "description": "CH-AlpineRoute — intelligenter Ski- und Wander-Navigator für die Schweiz (privates Tool, 100% kostenlose Datenquellen)",
   "type": "module",
-  "packageManager": "pnpm@9.15.9",
-  "engines": {
-    "node": ">=20"
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
   },
   "scripts": {
-    "dev": "pnpm --parallel --filter \"./apps/*\" run dev",
-    "build": "pnpm -r run build",
-    "typecheck": "pnpm -r run typecheck",
-    "lint": "eslint .",
-    "lint:fix": "eslint . --fix",
-    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,mjs,cjs,json,md,css,yaml,yml}\"",
-    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,mjs,cjs,json,md,css,yaml,yml}\"",
-    "test": "pnpm --filter @ch-alpineroute/backend run test",
-    "db:generate": "pnpm --filter @ch-alpineroute/backend run db:generate",
-    "db:migrate": "pnpm --filter @ch-alpineroute/backend run db:migrate",
-    "db:push": "pnpm --filter @ch-alpineroute/backend run db:push",
-    "import:destinations": "pnpm --filter @ch-alpineroute/backend run import:destinations",
-    "import:slf-regions": "pnpm --filter @ch-alpineroute/backend run import:slf-regions",
-    "worker:live": "pnpm --filter @ch-alpineroute/backend run worker:live",
-    "worker:trend": "pnpm --filter @ch-alpineroute/backend run worker:trend"
+    "typecheck": "tsc --noEmit"
   },
-  "devDependencies": {
-    "@eslint/js": "^9.17.0",
-    "eslint": "^9.17.0",
-    "eslint-config-prettier": "^9.1.0",
-    "globals": "^15.14.0",
-    "prettier": "^3.4.2",
-    "typescript": "^5.7.2",
-    "typescript-eslint": "^8.18.2"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "argon2",
-      "esbuild",
-      "sharp",
-      "@parcel/watcher"
-    ]
+  "dependencies": {
+    "zod": "^3.24.1"
   }
 }

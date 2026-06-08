@@ -1,0 +1,135 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================================
+   Peakr — Design-Tokens
+   Drei Richtungen (paper/glacier/pine) × hell/dunkel, gesteuert über
+   data-direction am <html> + Tailwind-Klasse `.dark`.
+   Jede Richtung definiert nur Farbton (--h) und Akzent-Chroma (--ac);
+   alle Token-Farben werden daraus per oklch() abgeleitet — identisch zum
+   Prototyp, aber in reinem CSS.
+   ============================================================================ */
+
+:root            { --h: 158; --ac: 0.085; }   /* Standard: Tannwald */
+[data-direction="paper"]   { --h: 42;  --ac: 0.115; }
+[data-direction="glacier"] { --h: 236; --ac: 0.095; }
+[data-direction="pine"]    { --h: 158; --ac: 0.085; }
+
+/* ---- helles Theme (Default) ---- */
+:root {
+  --bg:        oklch(0.962 0.008 var(--h));
+  --paper:     oklch(0.986 0.006 var(--h));
+  --surface:   oklch(0.997 0.004 var(--h));
+  --surface-2: oklch(0.945 0.010 var(--h));
+  --ink:       oklch(0.255 0.014 var(--h));
+  --ink-2:     oklch(0.455 0.013 var(--h));
+  --ink-3:     oklch(0.605 0.011 var(--h));
+  --line:      oklch(0.905 0.009 var(--h));
+  --line-2:    oklch(0.845 0.011 var(--h));
+  --accent:    oklch(0.575 var(--ac) var(--h));
+  --accent-2:  oklch(0.495 var(--ac) var(--h));
+  --accent-soft: oklch(0.945 0.038 var(--h));
+  --on-accent: oklch(0.992 0.008 var(--h));
+  --map-water: oklch(0.840 0.055 235);
+  --shadow:    0 1px 2px rgba(40,30,15,.06), 0 12px 34px -14px rgba(40,30,15,.22);
+  --shadow-sm: 0 1px 2px rgba(40,30,15,.07);
+
+  --font-sans: var(--font-hanken), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: var(--font-spectral), Georgia, serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, monospace;
+}
+
+/* ---- dunkles Theme ---- */
+.dark {
+  --bg:        oklch(0.205 0.012 var(--h));
+  --paper:     oklch(0.235 0.014 var(--h));
+  --surface:   oklch(0.262 0.016 var(--h));
+  --surface-2: oklch(0.305 0.018 var(--h));
+  --ink:       oklch(0.945 0.008 var(--h));
+  --ink-2:     oklch(0.760 0.012 var(--h));
+  --ink-3:     oklch(0.600 0.012 var(--h));
+  --line:      oklch(0.345 0.014 var(--h));
+  --line-2:    oklch(0.420 0.016 var(--h));
+  --accent:    oklch(0.700 var(--ac) var(--h));
+  --accent-2:  oklch(0.770 var(--ac) var(--h));
+  --accent-soft: oklch(0.320 0.045 var(--h));
+  --on-accent: oklch(0.180 0.010 var(--h));
+  --map-water: oklch(0.420 0.055 235);
+  --shadow:    0 1px 2px rgba(0,0,0,.5), 0 8px 30px -10px rgba(0,0,0,.6);
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.45);
+}
+
+html, body { height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  transition: background .35s ease, color .35s ease;
+}
+::selection { background: var(--accent-soft); color: var(--ink); }
+
+/* ============================================================================
+   Komponenten-Layer — nur das, was sich mit Tailwind-Utilities schlecht
+   ausdrücken lässt (dynamische Score-Farbe, Slider-Thumb, MapLibre-Marker,
+   Sparkline). Alles andere bleibt in Utility-Klassen an den Komponenten.
+   ============================================================================ */
+@layer components {
+  .pk-mono { font-family: var(--font-mono); font-feature-settings: 'tnum' 1; letter-spacing: -0.01em; }
+  .pk-serif { font-family: var(--font-serif); letter-spacing: -0.01em; }
+
+  /* Score-Ring — Farbe kommt per inline --sc (siehe scoreColor()) */
+  .pk-score {
+    display: grid; place-items: center; border-radius: 9999px; flex: none;
+    background: color-mix(in oklch, var(--sc) 14%, var(--surface));
+    box-shadow: inset 0 0 0 2px var(--sc);
+    color: color-mix(in oklch, var(--sc) 72%, var(--ink));
+    font-family: var(--font-mono); font-weight: 700; font-feature-settings: 'tnum' 1;
+  }
+
+  /* Lawinen-Pips */
+  .pk-pips { display: inline-flex; gap: 2px; align-items: flex-end; }
+  .pk-pips i { width: 4px; height: 10px; border-radius: 1px; background: var(--line-2); }
+  .pk-pips i[data-on="1"] { background: var(--av); }
+
+  /* Range-Slider im Token-Stil */
+  .pk-range { -webkit-appearance: none; appearance: none; width: 100%; height: 5px; border-radius: 9999px; background: var(--surface-2); outline: none; }
+  .pk-range::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%; background: var(--accent); border: 3px solid var(--surface); box-shadow: var(--shadow-sm); cursor: pointer; }
+  .pk-range::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; background: var(--accent); border: 3px solid var(--surface); cursor: pointer; }
+
+  /* MapLibre: Popup + Steuerelemente an Tokens angleichen */
+  .maplibregl-popup-content {
+    background: var(--surface) !important; color: var(--ink) !important;
+    border: 1px solid var(--line) !important; border-radius: 10px !important;
+    box-shadow: var(--shadow) !important; font-family: var(--font-sans) !important;
+    font-size: 12.5px !important; font-weight: 600 !important; padding: 7px 11px !important;
+  }
+  .maplibregl-popup-tip { border-top-color: var(--surface) !important; border-bottom-color: var(--surface) !important; }
+  .maplibregl-ctrl-group {
+    background: color-mix(in oklch, var(--surface) 85%, transparent) !important;
+    border: 1px solid var(--line) !important; border-radius: 11px !important;
+    box-shadow: var(--shadow-sm) !important; overflow: hidden;
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  }
+  .maplibregl-ctrl-group button { width: 38px !important; height: 38px !important; }
+  .maplibregl-ctrl-group button + button { border-top: 1px solid var(--line) !important; }
+
+  /* Peakr-Score-Marker (von MapView gesetzt) */
+  .pk-marker {
+    --pin: #888; display: grid; place-items: center; width: 30px; height: 30px;
+    border-radius: 50% 50% 50% 2px; transform: rotate(45deg);
+    background: var(--surface); color: var(--pin);
+    box-shadow: 0 0 0 2px var(--pin), var(--shadow-sm); cursor: pointer;
+    transition: transform .16s cubic-bezier(.3,.7,.4,1);
+  }
+  .pk-marker > * { transform: rotate(-45deg); font-family: var(--font-mono); font-weight: 700; font-size: 12px; }
+  .pk-marker:hover { transform: rotate(45deg) scale(1.12); }
+  .pk-marker.is-sel { width: 38px; height: 38px; background: var(--pin); color: #fff; box-shadow: 0 0 0 4px color-mix(in oklch, var(--pin) 28%, transparent), var(--shadow); }
+  .pk-marker-origin { width: 16px; height: 16px; border-radius: 50%; background: var(--ink); border: 3px solid var(--surface); box-shadow: var(--shadow-sm); cursor: pointer; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition-duration: .01ms !important; }
+}
