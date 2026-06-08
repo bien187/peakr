@@ -79,6 +79,61 @@ pnpm dev
 └── DECISIONS.md     getroffene Annahmen & Designentscheidungen
 ```
 
+## API-Endpunkte (Backend, `:4000`)
+
+| Methode + Pfad                       | Auth   | Zweck                                            |
+| ------------------------------------ | ------ | ------------------------------------------------ |
+| `GET /api/health`                    | –      | Health-Check                                     |
+| `POST /api/auth/register`            | –      | Registrieren → JWT                               |
+| `POST /api/auth/login`               | –      | Login → JWT                                       |
+| `POST /api/auth/logout`              | –      | Cookie löschen                                    |
+| `GET /api/me`                        | ✓      | eigenes Profil                                    |
+| `PATCH /api/me`                      | ✓      | Startort/Anzeigename ändern                       |
+| `PUT/DELETE /api/me/openai-key`      | ✓      | optionalen OpenAI-Key setzen/entfernen           |
+| `GET /api/geocode?q=`                | –      | Ortssuche (swisstopo-Proxy)                       |
+| `POST /api/search`                   | –      | Kern-Suche (Ziele nach Fahrzeit/Score)           |
+| `GET /api/destinations/:id`          | –      | Detail inkl. Live-Historie                        |
+| `GET/POST/DELETE /api/favorites[..]` | ✓      | Favoriten verwalten                               |
+| `POST /api/admin/refresh`            | admin  | Worker manuell anstoßen (Hintergrund)             |
+
+## Worker & Daten
+
+```bash
+pnpm import:destinations   # Ziele laden (kuratiert + Overpass) — einmalig / bei Bedarf
+pnpm import:slf-regions    # SLF-Warnregionen laden & Zielen zuordnen
+
+pnpm worker:live           # Live-Status-Worker (sofort + Cron alle 3 h)
+pnpm worker:trend          # Trend-Worker (sofort + Cron täglich 04:30)
+```
+
+Die Worker laufen als eigene, dauerhafte Prozesse. Alternativ als Admin `POST /api/admin/refresh`
+für einen einmaligen Lauf. Ohne gelaufenen Live-Worker zeigen Ziele noch keine Wetter-/Schneedaten.
+
+> **Live-Liftstatus:** Es gibt keine offizielle, schweizweite Gratis-Quelle. Die Adapter geben
+> dafür sauber „unbekannt" zurück (siehe `DECISIONS.md`).
+
+## Smoke-Test (nach `pnpm dev`)
+
+1. <http://localhost:3000> öffnen → Landing/Suche erscheint.
+2. **Registrieren** (oben rechts) mit E-Mail + Passwort (≥8 Zeichen).
+3. **Startort** eingeben (z.B. „Bern") und aus der Autocomplete wählen.
+4. Modus **Ski/Wandern**, Fahrzeit-Slider setzen → **Ziele finden**.
+5. Ergebnisse erscheinen als Karten + farbige Marker auf der Karte; Klick synchronisiert beide.
+6. Ein Ziel mit ★ als Favorit markieren → erscheint im **Dashboard**.
+7. **Details →** öffnet die Detailseite mit Verlaufs-Chart.
+
+> Ohne `ORS_API_KEY` funktioniert die Suche trotzdem — Fahrzeiten sind dann Luftlinien-Schätzungen
+> (im Ergebnis-Header vermerkt). Mit Key kommen echte Fahrzeiten aus der ORS-Matrix.
+
+## Fehlerbehebung
+
+- **`pnpm` fehlt:** `npm install -g pnpm@9` (Homebrew-Node bringt kein corepack mit).
+- **DB-Verbindungsfehler:** läuft `docker compose up -d`? Stimmt `DATABASE_URL` in `.env`?
+- **`relation \"destinations\" does not exist`:** `pnpm db:migrate` ausführen.
+- **Suche liefert nichts:** zuerst `pnpm import:destinations` ausführen.
+- **Karte bleibt grau:** der swisstopo-Vektor-Style war nicht erreichbar → automatischer
+  OSM-Raster-Fallback; Marker funktionieren unabhängig davon.
+
 ## Sicherheitshinweis Lawinen
 
 Die angezeigte Lawinen-Gefahrenstufe stammt aus dem offiziellen SLF-Bulletin, ersetzt aber
