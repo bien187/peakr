@@ -104,6 +104,27 @@ Alle Endpunkte wurden live gegen die echten APIs verifiziert (Formate geprüft).
   `any`→beide. SAC-Filter nutzt die natürliche Enum-Ordnung (`<= 'T3'::sac_difficulty`).
 - **`validate()`** typt auf `z.infer` (Output), damit Zod-`.default()`-Felder als required gelten.
 
+## Phase 5 — Worker & Seed
+
+- **Worker mit `runOnce`-Funktion + Cron-Guard:** `runLiveStatusOnce`/`runTrendOnce` sind reine
+  Funktionen; Cron wird nur per `isMainModule()` beim direkten Start geplant. So kann die
+  Admin-Route die Funktionen importieren/aufrufen, ohne dass der API-Server Crons startet.
+- **`/api/admin/refresh`** (admin-only) startet beide Worker im Hintergrund (HTTP 202), damit der
+  Request nicht blockiert.
+- **Liftstatus-Adapter:** Interface + 3 Beispiel-Adapter (Zermatt/Laax/Davos). Da es keine freie,
+  offizielle CH-weite Quelle gibt, liefern sie ehrlich `unknown` statt zu crashen oder zu faken.
+  Registry `getLiftStatus` kapselt Fehler via `settle`.
+- **Schneehöhe:** Open-Meteo liefert einen Punktwert am Ziel → gespeichert als `snow_depth_top_cm`
+  (kein separater Tal-/Berg-Wert ohne zweite Koordinate).
+- **OpenAI im trend-Worker:** nutzt — falls `ENABLE_OPENAI_TREND` und `OPENAI_API_KEY` gesetzt —
+  den globalen Env-Key (ein Worker hat keinen User-Kontext). Der per-User-Key bleibt für
+  künftige per-User-Features reserviert. Score bleibt immer `is_estimate=true`.
+- **Idempotente Imports:** kuratierte Ziele werden per (Name+Typ) entdoppelt, Overpass-Ziele per
+  `source_ref->>'osmId'`. Overpass-Abfragen sind auf die Schweiz begrenzt, gecappt (`out center N`)
+  und filtern Gipfel auf ≥2500 m, um Rauschen/Rate-Limits zu begrenzen.
+- **SLF-Import:** GeoJSON → `ST_Multi(ST_SetSRID(ST_GeomFromGeoJSON(...),4326))::geography`,
+  danach `ST_Contains` zum Verknüpfen der Ziele mit ihrer Warnregion.
+
 ## Datenlage (ehrlich)
 
 - **Live-Liftstatus** hat keine offizielle, schweizweite Gratis-Quelle. Die Skigebiet-Adapter

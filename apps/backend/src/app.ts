@@ -5,6 +5,7 @@ import { ZodError } from 'zod';
 import { env, isProd } from './config/env';
 import { AppError } from './lib/errors';
 import { installAuth } from './plugins/auth';
+import { adminRoutes } from './routes/admin';
 import { authRoutes } from './routes/auth';
 import { destinationRoutes } from './routes/destinations';
 import { favoriteRoutes } from './routes/favorites';
@@ -64,6 +65,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(searchRoutes);
   await app.register(destinationRoutes);
   await app.register(favoriteRoutes);
+  await app.register(adminRoutes);
 
   return app;
 }
