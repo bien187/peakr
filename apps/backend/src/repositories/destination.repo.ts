@@ -153,7 +153,7 @@ export async function findCandidates(input: SearchInput, radiusM: number): Promi
       AND ${typeCond}
       ${sacCond}
     ORDER BY air_m ASC
-    LIMIT 60
+    LIMIT 200
   `;
 
   return rows.map((r) => ({

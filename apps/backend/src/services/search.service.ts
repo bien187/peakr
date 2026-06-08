@@ -6,9 +6,17 @@ import { computeScore } from './score.service';
 
 const round1 = (n: number): number => Math.round(n * 10) / 10;
 
-/** Fallback-Fahrzeit, wenn ORS nicht verfügbar ist: Luftlinie × 1,4 bei ~50 km/h. */
+/**
+ * Fallback-Fahrzeit, wenn ORS keine Route findet (z.B. Gipfel ohne Straße in der Nähe)
+ * oder kein Key gesetzt ist: Luftlinie × 1,4 bei ~50 km/h.
+ */
 export function estimateDriveMinutes(airKm: number): number {
   return round1(((airKm * 1.4) / 50) * 60);
+}
+
+export interface DriveInfo {
+  minutes: number;
+  estimated: boolean;
 }
 
 /**
@@ -20,18 +28,18 @@ export function estimateDriveMinutes(airKm: number): number {
 export function assembleResponse(
   input: SearchInput,
   candidates: Candidate[],
-  driveMinutes: (number | null)[],
+  drives: DriveInfo[],
   matrixUsed: boolean,
 ): SearchResponse {
   const results: SearchResult[] = [];
   const suggestions: SearchResult[] = [];
 
   candidates.forEach((c, i) => {
-    const drive = driveMinutes[i];
-    if (drive == null) return; // unerreichbar
+    const drive = drives[i];
+    if (!drive) return;
 
-    const within = drive <= input.maxMinutes;
-    const withinTolerance = drive <= input.maxMinutes + input.toleranceMinutes;
+    const within = drive.minutes <= input.maxMinutes;
+    const withinTolerance = drive.minutes <= input.maxMinutes + input.toleranceMinutes;
     if (!within && !withinTolerance) return;
 
     const { score, breakdown } = computeScore({ mode: input.mode, live: c.live, trend: c.trend });
@@ -40,7 +48,8 @@ export function assembleResponse(
 
     const result: SearchResult = {
       ...c.destination,
-      driveMinutes: round1(drive),
+      driveMinutes: round1(drive.minutes),
+      driveEstimated: drive.estimated,
       distanceAirKm: c.airKm,
       score,
       scoreBreakdown: breakdown,
@@ -48,7 +57,7 @@ export function assembleResponse(
       trend: c.trend,
       blocked,
       blockedReason: blocked ? `Lawinengefahr Stufe ${level} – nicht empfohlen` : null,
-      overBudgetMinutes: within ? null : Math.round(drive - input.maxMinutes),
+      overBudgetMinutes: within ? null : Math.round(drive.minutes - input.maxMinutes),
     };
 
     (within ? results : suggestions).push(result);
@@ -89,27 +98,33 @@ export async function search(input: SearchInput): Promise<SearchResponse> {
     };
   }
 
-  let driveMinutes: (number | null)[];
-  let matrixUsed = false;
-
+  let orsMinutes: (number | null)[] | null = null;
   if (isOrsConfigured()) {
     try {
-      driveMinutes = await drivingMatrixMinutes(
+      orsMinutes = await drivingMatrixMinutes(
         input.origin,
         candidates.map((c) => c.destination.location),
       );
-      matrixUsed = true;
     } catch (err) {
       logger.error(
         { error: err instanceof Error ? err.message : String(err) },
         'ORS-Matrix fehlgeschlagen – nutze Luftlinien-Schätzung',
       );
-      driveMinutes = candidates.map((c) => estimateDriveMinutes(c.airKm));
     }
   } else {
     logger.warn('ORS_API_KEY fehlt – Fahrzeiten sind nur Schätzungen.');
-    driveMinutes = candidates.map((c) => estimateDriveMinutes(c.airKm));
   }
 
-  return assembleResponse(input, candidates, driveMinutes, matrixUsed);
+  const matrixUsed = orsMinutes !== null;
+
+  // Unroutbare Ziele (ORS liefert null, z.B. Gipfel ohne Straße) werden NICHT verworfen,
+  // sondern bekommen eine Luftlinien-Schätzung → deutlich mehr Treffer (v.a. beim Wandern).
+  const drives: DriveInfo[] = candidates.map((c, i) => {
+    const m = orsMinutes ? orsMinutes[i] : null;
+    return typeof m === 'number' && Number.isFinite(m)
+      ? { minutes: m, estimated: false }
+      : { minutes: estimateDriveMinutes(c.airKm), estimated: true };
+  });
+
+  return assembleResponse(input, candidates, drives, matrixUsed);
 }

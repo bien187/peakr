@@ -2,7 +2,7 @@
 
 import type { SearchResponse } from '@ch-alpineroute/shared';
 import dynamic from 'next/dynamic';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { FilterPanel } from '@/components/FilterPanel';
 import { Header } from '@/components/Header';
 import type { MapPoint } from '@/components/MapView';
@@ -11,6 +11,8 @@ import { ListSkeleton } from '@/components/Skeleton';
 import { api, ApiError } from '@/lib/api';
 import { defaultSearchParams, type SearchParams } from '@/lib/searchParams';
 import { useAuthStore } from '@/lib/store';
+
+const STORAGE_KEY = 'ch-alpineroute-search';
 
 const MapView = dynamic(() => import('@/components/MapView'), {
   ssr: false,
@@ -27,7 +29,9 @@ export default function HomePage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
   const token = useAuthStore((s) => s.token);
+  const restored = useRef(false);
 
+  // Favoriten des angemeldeten Users laden (kontogebunden)
   useEffect(() => {
     if (!token) {
       setFavoriteIds(new Set());
@@ -39,21 +43,18 @@ export default function HomePage() {
       .catch(() => undefined);
   }, [token]);
 
-  const onChange = (patch: Partial<SearchParams>) => setParams((p) => ({ ...p, ...patch }));
-
-  const runSearch = async () => {
-    if (!params.origin) return;
+  const runSearch = async (p: SearchParams) => {
+    if (!p.origin) return;
     setLoading(true);
     setError(null);
     try {
       const res = await api.search({
-        origin: params.origin,
-        mode: params.mode,
-        maxMinutes: params.maxMinutes,
-        toleranceMinutes: params.toleranceMinutes,
-        hikeKind: params.mode === 'hike' ? params.hikeKind : undefined,
-        maxSacDifficulty:
-          params.mode === 'hike' && params.maxSacDifficulty ? params.maxSacDifficulty : undefined,
+        origin: p.origin,
+        mode: p.mode,
+        maxMinutes: p.maxMinutes,
+        toleranceMinutes: p.toleranceMinutes,
+        hikeKind: p.mode === 'hike' ? p.hikeKind : undefined,
+        maxSacDifficulty: p.mode === 'hike' && p.maxSacDifficulty ? p.maxSacDifficulty : undefined,
       });
       setData(res);
       setSelectedId(null);
@@ -63,6 +64,32 @@ export default function HomePage() {
       setLoading(false);
     }
   };
+
+  // Letzte Suche wiederherstellen + automatisch erneut ausführen (Sterne kommen zurück)
+  useEffect(() => {
+    if (restored.current) return;
+    restored.current = true;
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw) as SearchParams;
+      setParams(saved);
+      if (saved.origin) void runSearch(saved);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  // Suchparameter persistieren
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(params));
+    } catch {
+      /* ignore */
+    }
+  }, [params]);
+
+  const onChange = (patch: Partial<SearchParams>) => setParams((p) => ({ ...p, ...patch }));
 
   const toggleFavorite = async (id: string) => {
     if (!token) return;
@@ -95,8 +122,22 @@ export default function HomePage() {
       <Header />
       <div className="flex flex-1 flex-col lg:grid lg:h-[calc(100vh-4rem)] lg:grid-cols-[20rem_1fr_26rem] lg:overflow-hidden">
         <aside className="border-b border-slate-800 p-4 lg:overflow-y-auto lg:border-b-0 lg:border-r">
-          <FilterPanel params={params} onChange={onChange} onSearch={runSearch} loading={loading} />
+          <FilterPanel
+            params={params}
+            onChange={onChange}
+            onSearch={() => void runSearch(params)}
+            loading={loading}
+          />
           {error && <p className="mt-3 rounded-lg bg-red-950 p-2 text-sm text-red-300">{error}</p>}
+          {!token && (
+            <p className="mt-3 text-[11px] text-slate-500">
+              Tipp:{' '}
+              <a href="/login" className="underline">
+                anmelden
+              </a>
+              , um Favoriten (★) zu speichern.
+            </p>
+          )}
           <p className="mt-4 text-[11px] leading-relaxed text-slate-500">
             ⚠️ Lawinenangaben sind orientierend und ersetzen nicht das offizielle{' '}
             <a className="underline" href="https://whiterisk.ch" target="_blank" rel="noreferrer">
@@ -130,7 +171,7 @@ export default function HomePage() {
           ) : (
             <div className="rounded-xl border border-dashed border-slate-700 p-8 text-center text-slate-400">
               <p className="mb-2 text-2xl">🎿🥾</p>
-              <p className="font-semibold text-slate-200">Wähle Modus & Startort</p>
+              <p className="font-semibold text-slate-200">Wähle Modus &amp; Startort</p>
               <p className="text-sm">
                 Dann findest du die besten Ziele nach Fahrzeit, Schnee, Lawinenlage und Bekanntheit.
               </p>

@@ -1,6 +1,7 @@
 'use client';
 
 import type { HikeKind, SacDifficulty } from '@ch-alpineroute/shared';
+import { useState } from 'react';
 import type { SearchParams } from '@/lib/searchParams';
 import { LocationSearch } from './LocationSearch';
 import { ModeSwitch } from './ModeSwitch';
@@ -27,6 +28,32 @@ export function FilterPanel({
   onSearch: () => void;
   loading: boolean;
 }) {
+  const [geoLoading, setGeoLoading] = useState(false);
+  const [geoError, setGeoError] = useState<string | null>(null);
+
+  const useMyLocation = () => {
+    setGeoError(null);
+    if (!('geolocation' in navigator)) {
+      setGeoError('Geolocation wird vom Browser nicht unterstützt.');
+      return;
+    }
+    setGeoLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        onChange({
+          origin: { lat: pos.coords.latitude, lng: pos.coords.longitude },
+          originLabel: '📍 Mein Standort',
+        });
+        setGeoLoading(false);
+      },
+      () => {
+        setGeoLoading(false);
+        setGeoError('Standort konnte nicht ermittelt werden (Berechtigung?).');
+      },
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
+  };
+
   return (
     <div className="flex flex-col gap-4">
       <ModeSwitch value={params.mode} onChange={(mode) => onChange({ mode })} />
@@ -39,6 +66,15 @@ export function FilterPanel({
           label={params.originLabel}
           onSelect={(origin, originLabel) => onChange({ origin, originLabel })}
         />
+        <button
+          type="button"
+          onClick={useMyLocation}
+          disabled={geoLoading}
+          className="mt-2 flex min-h-9 w-full items-center justify-center gap-1 rounded-lg border border-slate-700 px-3 text-xs text-slate-300 hover:bg-slate-800 disabled:opacity-50"
+        >
+          {geoLoading ? 'Standort wird ermittelt …' : '📍 Mein Standort verwenden'}
+        </button>
+        {geoError && <p className="mt-1 text-xs text-red-400">{geoError}</p>}
       </div>
 
       <div>

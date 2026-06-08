@@ -30,6 +30,8 @@ export type ScoreBreakdown = z.infer<typeof scoreBreakdownSchema>;
 /** Ein einzelnes Suchergebnis mit Fahrzeit, Score und Live-/Trend-Daten. */
 export const searchResultSchema = destinationSchema.extend({
   driveMinutes: z.number(),
+  /** true, wenn die Fahrzeit eine Luftlinien-Schätzung ist (ORS fand keine Route, z.B. Gipfel ohne Straße). */
+  driveEstimated: z.boolean(),
   distanceAirKm: z.number(),
   score: z.number().int().min(0).max(100),
   scoreBreakdown: scoreBreakdownSchema,

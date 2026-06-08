@@ -14,6 +14,35 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
+function MapsLinks({ lat, lng, name }: { lat: number; lng: number; name: string }) {
+  const g = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+  const a = `https://maps.apple.com/?daddr=${lat},${lng}&q=${encodeURIComponent(name)}`;
+  return (
+    <>
+      <a
+        href={g}
+        target="_blank"
+        rel="noreferrer"
+        onClick={(e) => e.stopPropagation()}
+        className="min-h-9 rounded-lg bg-slate-800 px-2 py-1 text-xs hover:bg-slate-700"
+        title="Route in Google Maps"
+      >
+        🗺️ Google
+      </a>
+      <a
+        href={a}
+        target="_blank"
+        rel="noreferrer"
+        onClick={(e) => e.stopPropagation()}
+        className="min-h-9 rounded-lg bg-slate-800 px-2 py-1 text-xs hover:bg-slate-700"
+        title="Route in Apple Maps"
+      >
+        Apple
+      </a>
+    </>
+  );
+}
+
 export function ResultCard({
   result,
   selected,
@@ -44,7 +73,17 @@ export function ResultCard({
           <h3 className="truncate text-base font-bold text-white">{result.name}</h3>
           <p className="text-xs text-slate-400">
             {result.canton ? `${result.canton} · ` : ''}
-            {formatDriveMinutes(result.driveMinutes)} Fahrt · {result.distanceAirKm} km Luftlinie
+            <span
+              title={
+                result.driveEstimated
+                  ? 'Luftlinien-Schätzung (keine Straßenroute gefunden)'
+                  : 'Echte Fahrzeit (ORS)'
+              }
+            >
+              {result.driveEstimated ? '≈ ' : ''}
+              {formatDriveMinutes(result.driveMinutes)} Fahrt
+            </span>{' '}
+            · {result.distanceAirKm} km Luftlinie
             {result.overBudgetMinutes ? (
               <span className="ml-1 rounded bg-amber-900/60 px-1 text-amber-300">
                 +{result.overBudgetMinutes} Min
@@ -103,8 +142,10 @@ export function ResultCard({
         </span>
         {isSki && <AvalancheBadge level={result.live?.avalancheLevel ?? null} />}
         <div className="ml-auto flex items-center gap-1">
+          <MapsLinks lat={result.location.lat} lng={result.location.lng} name={result.name} />
           {canFavorite && (
             <button
+              type="button"
               onClick={(e) => {
                 e.stopPropagation();
                 onToggleFavorite(result.id);

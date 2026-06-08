@@ -74,6 +74,24 @@ export default function DestinationDetailPage() {
             {isSki ? 'Skigebiet' : 'Wanderziel'}
             {d.canton ? ` · Kanton ${d.canton}` : ''}
           </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <a
+              href={`https://www.google.com/maps/dir/?api=1&destination=${d.location.lat},${d.location.lng}`}
+              target="_blank"
+              rel="noreferrer"
+              className="min-h-9 rounded-lg bg-slate-800 px-3 py-2 text-sm hover:bg-slate-700"
+            >
+              🗺️ Google Maps
+            </a>
+            <a
+              href={`https://maps.apple.com/?daddr=${d.location.lat},${d.location.lng}&q=${encodeURIComponent(d.name)}`}
+              target="_blank"
+              rel="noreferrer"
+              className="min-h-9 rounded-lg bg-slate-800 px-3 py-2 text-sm hover:bg-slate-700"
+            >
+              Apple Maps
+            </a>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

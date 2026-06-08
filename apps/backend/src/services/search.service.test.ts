@@ -11,7 +11,7 @@ vi.mock('./ors.service', () => ({
 
 import { findCandidates } from '../repositories/destination.repo';
 import { drivingMatrixMinutes, isOrsConfigured } from './ors.service';
-import { assembleResponse, estimateDriveMinutes, search } from './search.service';
+import { assembleResponse, estimateDriveMinutes, search, type DriveInfo } from './search.service';
 
 const destination = (id: string, name: string): Destination => ({
   id,
@@ -52,6 +52,8 @@ const candidate = (id: string, airKm: number, over: Partial<LiveStatus> = {}): C
   trend: { score: 60, rationale: null, source: 'wikipedia', isEstimate: true, updatedAt: null },
 });
 
+const real = (minutes: number): DriveInfo => ({ minutes, estimated: false });
+
 const input: SearchInput = {
   origin: { lat: 46.2, lng: 7.5 },
   mode: 'ski',
@@ -62,8 +64,8 @@ const input: SearchInput = {
 describe('search.service – assembleResponse', () => {
   it('teilt in results (≤ max) und suggestions (≤ max + Toleranz) auf; jenseits wird verworfen', () => {
     const cands = [candidate('a', 20), candidate('b', 40), candidate('c', 80)];
-    const drive = [30, 70, 200]; // a=within, b=suggestion(+10), c=verworfen
-    const res = assembleResponse(input, cands, drive, true);
+    const drives = [real(30), real(70), real(200)]; // a=within, b=suggestion(+10), c=verworfen
+    const res = assembleResponse(input, cands, drives, true);
 
     expect(res.results.map((r) => r.id)).toEqual(['a']);
     expect(res.suggestions.map((r) => r.id)).toEqual(['b']);
@@ -72,20 +74,23 @@ describe('search.service – assembleResponse', () => {
     expect(res.meta.matrixUsed).toBe(true);
   });
 
-  it('verwirft unerreichbare Kandidaten (Fahrzeit null)', () => {
-    const res = assembleResponse(input, [candidate('a', 20)], [null], true);
-    expect(res.results).toHaveLength(0);
-    expect(res.suggestions).toHaveLength(0);
+  it('übernimmt das estimated-Flag pro Ergebnis', () => {
+    const res = assembleResponse(
+      input,
+      [candidate('a', 20)],
+      [{ minutes: 30, estimated: true }],
+      true,
+    );
+    expect(res.results[0].driveEstimated).toBe(true);
   });
 
   it('Sicherheits-Gate: Ski-Ziel mit Lawinenstufe ≥4 wird blockiert und ans Ende sortiert', () => {
     const cands = [candidate('safe', 20), candidate('danger', 10, { avalancheLevel: 4 })];
-    const res = assembleResponse(input, cands, [30, 25], true);
+    const res = assembleResponse(input, cands, [real(30), real(25)], true);
 
     const danger = res.results.find((r) => r.id === 'danger');
     expect(danger?.blocked).toBe(true);
     expect(danger?.blockedReason).toContain('Lawinengefahr');
-    // blockiert steht nach nicht-blockiert
     expect(res.results[res.results.length - 1].id).toBe('danger');
   });
 
@@ -94,7 +99,7 @@ describe('search.service – assembleResponse', () => {
       candidate('low', 20, { snowDepthTopCm: 0, freshSnowCm: 0, liftsOpen: 0, liftsTotal: 10 }),
       candidate('high', 25, { snowDepthTopCm: 300, freshSnowCm: 30 }),
     ];
-    const res = assembleResponse(input, cands, [30, 35], true);
+    const res = assembleResponse(input, cands, [real(30), real(35)], true);
     expect(res.results[0].id).toBe('high');
     expect(res.results[0].score).toBeGreaterThanOrEqual(res.results[1].score);
   });
@@ -110,36 +115,48 @@ describe('search.service – estimateDriveMinutes', () => {
 describe('search.service – search (gemockte externe Calls)', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('nutzt die ORS-Matrix, wenn konfiguriert', () => {
+  const wide: SearchInput = { ...input, maxMinutes: 120 };
+
+  it('nutzt die ORS-Matrix, wenn konfiguriert', async () => {
     vi.mocked(findCandidates).mockResolvedValue([candidate('a', 20), candidate('b', 40)]);
     vi.mocked(isOrsConfigured).mockReturnValue(true);
     vi.mocked(drivingMatrixMinutes).mockResolvedValue([30, 50]);
 
-    return search(input).then((res) => {
-      expect(drivingMatrixMinutes).toHaveBeenCalledOnce();
-      expect(res.meta.matrixUsed).toBe(true);
-      expect(res.results).toHaveLength(2);
-    });
+    const res = await search(wide);
+    expect(drivingMatrixMinutes).toHaveBeenCalledOnce();
+    expect(res.meta.matrixUsed).toBe(true);
+    expect(res.results).toHaveLength(2);
+    expect(res.results.every((r) => r.driveEstimated === false)).toBe(true);
   });
 
-  it('fällt auf Luftlinien-Schätzung zurück, wenn ORS nicht konfiguriert ist', () => {
+  it('verwirft unroutbare Ziele (ORS null) NICHT, sondern schätzt die Fahrzeit', async () => {
+    vi.mocked(findCandidates).mockResolvedValue([candidate('a', 20), candidate('peak', 40)]);
+    vi.mocked(isOrsConfigured).mockReturnValue(true);
+    vi.mocked(drivingMatrixMinutes).mockResolvedValue([30, null]); // peak unerreichbar
+
+    const res = await search(wide);
+    expect(res.results).toHaveLength(2);
+    const peak = res.results.find((r) => r.id === 'peak');
+    expect(peak?.driveEstimated).toBe(true);
+  });
+
+  it('fällt auf Luftlinien-Schätzung zurück, wenn ORS nicht konfiguriert ist', async () => {
     vi.mocked(findCandidates).mockResolvedValue([candidate('a', 20)]);
     vi.mocked(isOrsConfigured).mockReturnValue(false);
 
-    return search(input).then((res) => {
-      expect(drivingMatrixMinutes).not.toHaveBeenCalled();
-      expect(res.meta.matrixUsed).toBe(false);
-    });
+    const res = await search(wide);
+    expect(drivingMatrixMinutes).not.toHaveBeenCalled();
+    expect(res.meta.matrixUsed).toBe(false);
+    expect(res.results[0].driveEstimated).toBe(true);
   });
 
-  it('gibt leere Antwort zurück, wenn keine Kandidaten gefunden werden', () => {
+  it('gibt leere Antwort zurück, wenn keine Kandidaten gefunden werden', async () => {
     vi.mocked(findCandidates).mockResolvedValue([]);
     vi.mocked(isOrsConfigured).mockReturnValue(true);
 
-    return search(input).then((res) => {
-      expect(res.results).toHaveLength(0);
-      expect(res.meta.candidatesEvaluated).toBe(0);
-      expect(drivingMatrixMinutes).not.toHaveBeenCalled();
-    });
+    const res = await search(wide);
+    expect(res.results).toHaveLength(0);
+    expect(res.meta.candidatesEvaluated).toBe(0);
+    expect(drivingMatrixMinutes).not.toHaveBeenCalled();
   });
 });
