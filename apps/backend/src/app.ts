@@ -6,8 +6,12 @@ import { env, isProd } from './config/env';
 import { AppError } from './lib/errors';
 import { installAuth } from './plugins/auth';
 import { authRoutes } from './routes/auth';
+import { destinationRoutes } from './routes/destinations';
+import { favoriteRoutes } from './routes/favorites';
+import { geocodeRoutes } from './routes/geocode';
 import { healthRoutes } from './routes/health';
 import { meRoutes } from './routes/me';
+import { searchRoutes } from './routes/search';
 
 export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -56,6 +60,10 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(healthRoutes);
   await app.register(authRoutes);
   await app.register(meRoutes);
+  await app.register(geocodeRoutes);
+  await app.register(searchRoutes);
+  await app.register(destinationRoutes);
+  await app.register(favoriteRoutes);
 
   return app;
 }

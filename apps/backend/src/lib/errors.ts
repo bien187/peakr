@@ -1,4 +1,4 @@
-import { type ZodSchema } from 'zod';
+import { type z, type ZodTypeAny } from 'zod';
 
 /** Anwendungsfehler mit HTTP-Status + maschinenlesbarem Code. */
 export class AppError extends Error {
@@ -13,8 +13,8 @@ export class AppError extends Error {
   }
 }
 
-/** Validiert mit Zod und wirft bei Fehlern einen AppError(400). */
-export function validate<T>(schema: ZodSchema<T>, data: unknown): T {
+/** Validiert mit Zod und wirft bei Fehlern einen AppError(400). Liefert den Output-Typ. */
+export function validate<T extends ZodTypeAny>(schema: T, data: unknown): z.infer<T> {
   const result = schema.safeParse(data);
   if (!result.success) {
     throw new AppError(400, 'VALIDATION', 'Ungültige Eingabe', result.error.flatten());

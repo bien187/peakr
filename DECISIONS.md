@@ -84,6 +84,26 @@ Alle Endpunkte wurden live gegen die echten APIs verifiziert (Formate geprüft).
   Client zurückgegeben — nur das Flag `hasOpenAiKey`.
 - **Einheitlicher Error-Handler:** AppError → Status+Code, ZodError → 400, Rest → 500.
 
+## Phase 4 — Suche
+
+- **Ein Query, kein N+1:** `findCandidates` holt Ziel + neuesten Live-Snapshot
+  (`LEFT JOIN LATERAL ... ORDER BY captured_at DESC LIMIT 1`) + Trend in einem Statement,
+  gefiltert per `ST_DWithin` (Radius ≈ (maxMinutes+Toleranz)×1500 m), sortiert nach Luftlinie,
+  LIMIT 60.
+- **Trennung IO / Logik:** `search()` macht IO (DB + ORS), die reine `assembleResponse()` macht
+  Aufteilung/Gate/Scoring/Sortierung → vollständig ohne Mocks testbar.
+- **ORS-Fallback:** Ohne `ORS_API_KEY` (oder bei ORS-Fehler) Luftlinien-Schätzung
+  (×1,4 bei ~50 km/h); `meta.matrixUsed=false` macht das transparent.
+- **Sicherheits-Gate:** Ski-Ziele mit Lawinenstufe ≥4 werden `blocked` markiert, ans Listenende
+  sortiert und mit Begründung versehen (statt still zu verschwinden → mehr Transparenz).
+- **Vorschläge ("+X Min"):** Ziele mit maxMinutes < Fahrzeit ≤ maxMinutes+Toleranz landen in
+  `suggestions` mit `overBudgetMinutes`.
+- **Score-Formel transparent** (`score.service`): jeder Beitrag (Basis/Schnee/Neuschnee/Lifte/
+  Bedingungen/Trend/Lawinen-Abzug) ist im `scoreBreakdown` nachvollziehbar.
+- **`hikeKind`-Mapping:** `route`→hike_route, peak/lake/hut/viewpoint→hike_destination,
+  `any`→beide. SAC-Filter nutzt die natürliche Enum-Ordnung (`<= 'T3'::sac_difficulty`).
+- **`validate()`** typt auf `z.infer` (Output), damit Zod-`.default()`-Felder als required gelten.
+
 ## Datenlage (ehrlich)
 
 - **Live-Liftstatus** hat keine offizielle, schweizweite Gratis-Quelle. Die Skigebiet-Adapter

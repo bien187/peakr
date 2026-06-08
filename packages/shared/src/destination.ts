@@ -47,6 +47,13 @@ export const destinationSchema = z.object({
 });
 export type Destination = z.infer<typeof destinationSchema>;
 
+/** Ziel inkl. aktuellem Status & Trend (ohne Verlauf) — z.B. für Favoriten. */
+export const destinationWithStatusSchema = destinationSchema.extend({
+  live: liveStatusSchema.nullable(),
+  trend: trendScoreSchema.nullable(),
+});
+export type DestinationWithStatus = z.infer<typeof destinationWithStatusSchema>;
+
 /** Detailansicht inkl. aktuellem Status, Trend und Verlauf für Charts. */
 export const destinationDetailSchema = destinationSchema.extend({
   live: liveStatusSchema.nullable(),
