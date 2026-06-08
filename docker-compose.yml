@@ -1,7 +1,26 @@
-# CH-AlpineRoute — lokale Infrastruktur (kostenlos, läuft via Docker)
-# Start:  docker compose up -d
-# Stop:   docker compose down       (Daten bleiben im Volume erhalten)
-# Redis ist optional und startet nur mit:  docker compose --profile with-redis up -d
+# CH-AlpineRoute — komplette App lokal via Docker.
+#   docker compose up -d --build     # DB + Migration + Backend + Frontend + Worker
+#   docker compose ps                # Status
+#   docker compose logs -f backend   # Logs
+#   docker compose down              # alles stoppen (Daten bleiben im Volume)
+#
+# Daten laden (einmalig, nachdem alles läuft):
+#   docker compose run --rm migrate pnpm import:slf-regions
+#   docker compose run --rm migrate pnpm import:destinations
+
+x-backend-env: &backend-env
+  NODE_ENV: production
+  DATABASE_URL: postgresql://${POSTGRES_USER:-alpine}:${POSTGRES_PASSWORD:-alpine}@db:5432/${POSTGRES_DB:-ch_alpineroute}
+  CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
+
+# Gemeinsame Build-/Image-/Env-Definition für API, Migration und Worker.
+x-backend: &backend
+  build:
+    context: .
+    dockerfile: apps/backend/Dockerfile
+  image: ch-alpineroute-backend
+  env_file: .env
+  environment: *backend-env
 
 services:
   db:
@@ -17,11 +36,59 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test:
-        ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-alpine} -d ${POSTGRES_DB:-ch_alpineroute}']
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-alpine} -d ${POSTGRES_DB:-ch_alpineroute}']
       interval: 5s
       timeout: 5s
       retries: 10
+
+  # Einmaliger Migrations-Lauf (stellt PostGIS + Schema sicher), dann Ende.
+  migrate:
+    <<: *backend
+    command: ['pnpm', 'db:migrate']
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: 'no'
+
+  backend:
+    <<: *backend
+    ports:
+      - '${BACKEND_PORT:-4000}:4000'
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  worker-live:
+    <<: *backend
+    command: ['pnpm', 'worker:live']
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  worker-trend:
+    <<: *backend
+    command: ['pnpm', 'worker:trend']
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: apps/frontend/Dockerfile
+    image: ch-alpineroute-frontend
+    environment:
+      NODE_ENV: production
+    ports:
+      - '3000:3000'
+    depends_on:
+      - backend
+    restart: unless-stopped
 
   redis:
     image: redis:7-alpine

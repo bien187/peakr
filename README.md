@@ -52,6 +52,30 @@ pnpm import:destinations
 pnpm dev
 ```
 
+## Produktivbetrieb (komplett in Docker)
+
+Die ganze App (DB + Backend + Frontend + beide Worker) läuft mit **einem Befehl**. Voraussetzung
+ist eine Docker-Laufzeit — entweder **Docker Desktop** oder das passwortfreie **Colima**:
+
+```bash
+brew install colima docker docker-compose && colima start   # einmalig (falls kein Docker Desktop)
+```
+
+```bash
+cp .env.example .env             # ausfüllen (Secrets generieren, optional ORS_API_KEY)
+docker compose up -d --build     # baut & startet alles; Migration läuft automatisch
+
+# Daten einmalig laden (danach halten die Worker sie aktuell):
+docker compose run --rm migrate pnpm import:destinations
+docker compose run --rm migrate pnpm import:slf-regions
+```
+
+- Frontend: <http://localhost:3000> · Backend: <http://localhost:4000/api/health>
+- Status/Logs: `docker compose ps` · `docker compose logs -f backend`
+- Stoppen: `docker compose down` (Daten bleiben im Volume `pgdata` erhalten)
+- `restart: unless-stopped` → Container starten nach einem Reboot automatisch wieder
+  (Colima vorher hochfahren: `brew services start colima`, oder in Docker Desktop „Start on login").
+
 ## Nützliche Befehle
 
 | Befehl                      | Wirkung                                          |
