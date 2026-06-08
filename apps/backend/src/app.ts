@@ -42,11 +42,9 @@ export async function buildApp(): Promise<FastifyInstance> {
         .send({ error: { code: error.code, message: error.message, details: error.details } });
     }
     if (error instanceof ZodError) {
-      return reply
-        .code(400)
-        .send({
-          error: { code: 'VALIDATION', message: 'Ungültige Eingabe', details: error.flatten() },
-        });
+      return reply.code(400).send({
+        error: { code: 'VALIDATION', message: 'Ungültige Eingabe', details: error.flatten() },
+      });
     }
     const statusCode = (error as { statusCode?: number }).statusCode;
     const message = error instanceof Error ? error.message : 'Interner Serverfehler.';

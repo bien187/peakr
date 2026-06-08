@@ -6,6 +6,7 @@ import type {
   TrendScore,
 } from '@ch-alpineroute/shared';
 import { queryClient as sql } from '../db';
+import { toIso, toIsoOrNull } from '../lib/dates';
 
 /** Roh-Zeile aus dem Kandidaten-Query (destination + neuester live + trend). */
 interface CandidateRow {
@@ -70,7 +71,7 @@ function rowToDestination(r: CandidateRow): Destination {
 function rowToLive(r: CandidateRow): LiveStatus | null {
   if (!r.captured_at) return null;
   return {
-    capturedAt: r.captured_at.toISOString(),
+    capturedAt: toIso(r.captured_at),
     temperatureC: r.temperature_c,
     weatherCode: r.weather_code,
     visibilityM: r.visibility_m,
@@ -93,7 +94,7 @@ function rowToTrend(r: CandidateRow): TrendScore | null {
     rationale: r.trend_rationale,
     source: r.trend_source,
     isEstimate: r.trend_is_estimate ?? true,
-    updatedAt: r.trend_updated_at ? r.trend_updated_at.toISOString() : null,
+    updatedAt: toIsoOrNull(r.trend_updated_at),
   };
 }
 
@@ -190,7 +191,7 @@ export async function getDestinationDetail(id: string): Promise<DestinationDetai
     live: rowToLive(r),
     trend: rowToTrend(r),
     history: history.map((h) => ({
-      capturedAt: (h.captured_at as Date).toISOString(),
+      capturedAt: toIso(h.captured_at as string),
       temperatureC: h.temperature_c as number | null,
       weatherCode: h.weather_code as number | null,
       visibilityM: h.visibility_m as number | null,

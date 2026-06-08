@@ -1,5 +1,6 @@
 import type { LatLng, PublicUser, UpdateMeInput } from '@ch-alpineroute/shared';
 import { queryClient as sql } from '../db';
+import { toIso } from '../lib/dates';
 
 interface PublicUserRow {
   id: string;
@@ -24,7 +25,7 @@ function toPublicUser(r: PublicUserRow): PublicUser {
     homeLabel: r.home_label,
     role: r.role,
     hasOpenAiKey: r.has_openai_key,
-    createdAt: r.created_at.toISOString(),
+    createdAt: toIso(r.created_at),
   };
 }
 

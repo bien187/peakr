@@ -140,6 +140,24 @@ Alle Endpunkte wurden live gegen die echten APIs verifiziert (Formate geprüft).
 - **Hydration:** Auth-abhängige Header-UI erst nach `mounted`, um SSR-Mismatch zu vermeiden.
 - **ESLint:** generierte `next-env.d.ts` ignoriert; Next-Build lintet separat (nicht im Build).
 
+## Phase 7 — Politur, Verifikation & ein echter Bugfix
+
+- **Reale DB-Verifikation:** Da Docker (noch) fehlt, wurde zur Prüfung ein temporärer
+  PostgreSQL-17-Cluster mit PostGIS (via Homebrew) gestartet, die Migrationen angewendet und der
+  komplette Daten-/Geo-Pfad end-to-end getestet (User+Home, Ziel-Insert, ST_DWithin/ST_Distance,
+  LATERAL-Join, Suche+Scoring, ST_GeomFromGeoJSON + ST_Contains, echter SLF-Import mit 149
+  Regionen). Danach Cluster gestoppt + Temp-Daten entfernt.
+- **Gefundener & behobener Bug:** Der über `drizzle(...)` initialisierte postgres.js-Client liefert
+  `timestamptz` bei **rohen** SQL-Queries als String (nicht als Date) — `value.toISOString()` wäre
+  zur Laufzeit in `/api/me`, `/api/search`, `/api/favorites`, `/api/destinations/:id` gecrasht.
+  Fix: zentraler `toIso()`/`toIsoOrNull()`-Helfer (`lib/dates.ts`), der Date **und** den
+  pg-String-Format zuverlässig nach ISO wandelt. (Zahlen/Booleans/Text sind nicht betroffen.)
+- **`pnpm dev`** verifiziert: startet Backend (:4000) + Frontend (:3000) parallel.
+
+> Hinweis: Für die Verifikation wurden `postgis` + `postgresql@17` via Homebrew installiert. Das
+> Projekt selbst nutzt Docker — diese Formeln sind **nicht** nötig und können entfernt werden:
+> `brew uninstall postgis postgresql@17 && brew autoremove`.
+
 ## Datenlage (ehrlich)
 
 - **Live-Liftstatus** hat keine offizielle, schweizweite Gratis-Quelle. Die Skigebiet-Adapter

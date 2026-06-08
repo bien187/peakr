@@ -81,20 +81,20 @@ pnpm dev
 
 ## API-Endpunkte (Backend, `:4000`)
 
-| Methode + Pfad                       | Auth   | Zweck                                            |
-| ------------------------------------ | ------ | ------------------------------------------------ |
-| `GET /api/health`                    | –      | Health-Check                                     |
-| `POST /api/auth/register`            | –      | Registrieren → JWT                               |
-| `POST /api/auth/login`               | –      | Login → JWT                                       |
-| `POST /api/auth/logout`              | –      | Cookie löschen                                    |
-| `GET /api/me`                        | ✓      | eigenes Profil                                    |
-| `PATCH /api/me`                      | ✓      | Startort/Anzeigename ändern                       |
-| `PUT/DELETE /api/me/openai-key`      | ✓      | optionalen OpenAI-Key setzen/entfernen           |
-| `GET /api/geocode?q=`                | –      | Ortssuche (swisstopo-Proxy)                       |
-| `POST /api/search`                   | –      | Kern-Suche (Ziele nach Fahrzeit/Score)           |
-| `GET /api/destinations/:id`          | –      | Detail inkl. Live-Historie                        |
-| `GET/POST/DELETE /api/favorites[..]` | ✓      | Favoriten verwalten                               |
-| `POST /api/admin/refresh`            | admin  | Worker manuell anstoßen (Hintergrund)             |
+| Methode + Pfad                       | Auth  | Zweck                                  |
+| ------------------------------------ | ----- | -------------------------------------- |
+| `GET /api/health`                    | –     | Health-Check                           |
+| `POST /api/auth/register`            | –     | Registrieren → JWT                     |
+| `POST /api/auth/login`               | –     | Login → JWT                            |
+| `POST /api/auth/logout`              | –     | Cookie löschen                         |
+| `GET /api/me`                        | ✓     | eigenes Profil                         |
+| `PATCH /api/me`                      | ✓     | Startort/Anzeigename ändern            |
+| `PUT/DELETE /api/me/openai-key`      | ✓     | optionalen OpenAI-Key setzen/entfernen |
+| `GET /api/geocode?q=`                | –     | Ortssuche (swisstopo-Proxy)            |
+| `POST /api/search`                   | –     | Kern-Suche (Ziele nach Fahrzeit/Score) |
+| `GET /api/destinations/:id`          | –     | Detail inkl. Live-Historie             |
+| `GET/POST/DELETE /api/favorites[..]` | ✓     | Favoriten verwalten                    |
+| `POST /api/admin/refresh`            | admin | Worker manuell anstoßen (Hintergrund)  |
 
 ## Worker & Daten
 

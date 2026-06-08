@@ -1,5 +1,6 @@
 import type { DestinationWithStatus } from '@ch-alpineroute/shared';
 import { queryClient as sql } from '../db';
+import { toIso, toIsoOrNull } from '../lib/dates';
 
 export async function addFavorite(userId: string, destinationId: string): Promise<void> {
   await sql`
@@ -85,7 +86,7 @@ export async function listFavorites(userId: string): Promise<DestinationWithStat
     slfRegionId: r.slf_region_id,
     live: r.captured_at
       ? {
-          capturedAt: r.captured_at.toISOString(),
+          capturedAt: toIso(r.captured_at),
           temperatureC: r.temperature_c,
           weatherCode: r.weather_code,
           visibilityM: r.visibility_m,
@@ -108,7 +109,7 @@ export async function listFavorites(userId: string): Promise<DestinationWithStat
             rationale: r.trend_rationale,
             source: r.trend_source,
             isEstimate: r.trend_is_estimate ?? true,
-            updatedAt: r.trend_updated_at ? r.trend_updated_at.toISOString() : null,
+            updatedAt: toIsoOrNull(r.trend_updated_at),
           },
   }));
 }
