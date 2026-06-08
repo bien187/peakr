@@ -127,7 +127,7 @@ async function main(): Promise<void> {
   // 3) Benannte Bergseen
   total += await importOverpassGroup(
     'lakes',
-    `[out:json][timeout:120];${CH_AREA}((way|relation)["natural"="water"]["water"="lake"]["name"](area.ch););out center 250;`,
+    `[out:json][timeout:120];${CH_AREA}(nwr["natural"="water"]["water"="lake"]["name"](area.ch););out center 250;`,
     (el) => {
       const loc = elementLatLng(el);
       if (!loc) return null;

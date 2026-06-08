@@ -1,6 +1,7 @@
 import { fetchJson } from '../lib/http';
 
-const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
+// Endpoint konfigurierbar (Mirror bei Überlastung): OVERPASS_URL in .env setzen.
+const OVERPASS_URL = process.env.OVERPASS_URL ?? 'https://overpass-api.de/api/interpreter';
 
 export interface OverpassElement {
   type: 'node' | 'way' | 'relation';
