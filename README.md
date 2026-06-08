@@ -30,8 +30,7 @@ Wikipedia Pageviews (Bekanntheits-Score). Optional & kostenpflichtig: OpenAI (de
 
 ## Schnellstart (lokal)
 
-> Vollständige, schrittweise Anleitung inkl. Key-Beschaffung: siehe **`SETUP_EXTERNAL.md`**
-> (wird in Phase 8 erzeugt).
+> Vollständige, schrittweise Anleitung inkl. Key-Beschaffung: siehe **`SETUP_EXTERNAL.md`**.
 
 ```bash
 # 1. Voraussetzungen: Node ≥ 20, pnpm 9, Docker Desktop
