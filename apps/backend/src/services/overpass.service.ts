@@ -18,7 +18,12 @@ export interface OverpassElement {
 export async function overpassQuery(ql: string): Promise<OverpassElement[]> {
   const data = await fetchJson<{ elements?: OverpassElement[] }>(OVERPASS_URL, {
     method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    // Overpass lehnt den Default-UA "node" mit 406 ab → aussagekräftigen User-Agent senden.
+    headers: {
+      'content-type': 'application/x-www-form-urlencoded',
+      accept: '*/*',
+      'User-Agent': 'CH-AlpineRoute/0.1 (privates Tool)',
+    },
     body: `data=${encodeURIComponent(ql)}`,
     timeoutMs: 60000,
     retries: 1,
