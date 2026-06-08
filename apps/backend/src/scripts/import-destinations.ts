@@ -53,7 +53,10 @@ async function importOverpassGroup(
   try {
     elements = await overpassQuery(ql);
   } catch (err) {
-    logger.error({ label, error: err instanceof Error ? err.message : String(err) }, 'Overpass-Abfrage fehlgeschlagen – überspringe Gruppe');
+    logger.error(
+      { label, error: err instanceof Error ? err.message : String(err) },
+      'Overpass-Abfrage fehlgeschlagen – überspringe Gruppe',
+    );
     return 0;
   }
 
@@ -67,7 +70,10 @@ async function importOverpassGroup(
       await insertDestination(dest);
       inserted++;
     } catch (err) {
-      logger.warn({ osmId, error: err instanceof Error ? err.message : String(err) }, 'Insert übersprungen');
+      logger.warn(
+        { osmId, error: err instanceof Error ? err.message : String(err) },
+        'Insert übersprungen',
+      );
     }
   }
   logger.info({ label, found: elements.length, inserted }, 'Overpass-Gruppe importiert');
@@ -140,7 +146,9 @@ async function main(): Promise<void> {
 
   const grand = await countDestinations();
   logger.info({ insertedThisRun: total, totalInDb: grand }, '✅ Ziel-Import fertig.');
-  logger.info('Tipp: danach `pnpm import:slf-regions` ausführen, um Lawinenregionen zu verknüpfen.');
+  logger.info(
+    'Tipp: danach `pnpm import:slf-regions` ausführen, um Lawinenregionen zu verknüpfen.',
+  );
   await queryClient.end();
 }
 

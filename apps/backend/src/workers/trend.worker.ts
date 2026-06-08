@@ -38,7 +38,10 @@ export async function runTrendOnce(): Promise<TrendWorkerResult> {
         rationale = ai.value.rationale;
         source = 'openai+wikipedia';
       } else {
-        logger.warn({ dest: d.name, error: ai.error.message }, 'OpenAI-Anreicherung fehlgeschlagen');
+        logger.warn(
+          { dest: d.name, error: ai.error.message },
+          'OpenAI-Anreicherung fehlgeschlagen',
+        );
       }
     }
 

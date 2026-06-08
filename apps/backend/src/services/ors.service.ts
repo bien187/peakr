@@ -28,10 +28,7 @@ export async function drivingMatrixMinutes(
   if (!isOrsConfigured()) throw new OrsUnavailableError();
   if (destinations.length === 0) return [];
 
-  const locations = [
-    [origin.lng, origin.lat],
-    ...destinations.map((d) => [d.lng, d.lat]),
-  ];
+  const locations = [[origin.lng, origin.lat], ...destinations.map((d) => [d.lng, d.lat])];
   const body = {
     locations,
     sources: [0],
@@ -63,10 +60,7 @@ export async function drivingMatrixMinutes(
  * Optionales Isochrone-Polygon (Deko-Overlay). Gratis bis max. 60 Min.
  * Gibt null zurück, wenn ORS nicht konfiguriert ist.
  */
-export async function isochrone(
-  origin: LatLng,
-  minutes: number,
-): Promise<Feature<Polygon> | null> {
+export async function isochrone(origin: LatLng, minutes: number): Promise<Feature<Polygon> | null> {
   if (!isOrsConfigured()) return null;
   const range = Math.min(Math.max(minutes, 1), 60) * 60;
   const data = await fetchJson<FeatureCollection<Polygon>>(

@@ -99,9 +99,7 @@ export async function clearOpenAiKey(id: string): Promise<void> {
   `;
 }
 
-export async function getOpenAiKey(
-  id: string,
-): Promise<{ ciphertext: Buffer; iv: Buffer } | null> {
+export async function getOpenAiKey(id: string): Promise<{ ciphertext: Buffer; iv: Buffer } | null> {
   const rows = await sql<{ openai_key_enc: Buffer | null; openai_key_iv: Buffer | null }[]>`
     SELECT openai_key_enc, openai_key_iv FROM users WHERE id = ${id} LIMIT 1
   `;

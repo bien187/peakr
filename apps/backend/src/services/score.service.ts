@@ -46,10 +46,14 @@ export function conditionsScore(live: LiveStatus | null, mode: Mode, maxPoints: 
   let weatherGood = 0.6;
   const wc = live.weatherCode;
   if (wc != null) {
-    if (wc <= 1) weatherGood = 1; // klar/überw. klar
-    else if (wc <= 3) weatherGood = 0.8; // bewölkt
-    else if (wc <= 48) weatherGood = 0.45; // Nebel
-    else if (mode === 'ski' && wc >= 71 && wc <= 77) weatherGood = 0.85; // Schneefall = gut für Ski
+    if (wc <= 1)
+      weatherGood = 1; // klar/überw. klar
+    else if (wc <= 3)
+      weatherGood = 0.8; // bewölkt
+    else if (wc <= 48)
+      weatherGood = 0.45; // Nebel
+    else if (mode === 'ski' && wc >= 71 && wc <= 77)
+      weatherGood = 0.85; // Schneefall = gut für Ski
     else weatherGood = 0.3; // Regen/Schauer/Gewitter
   }
 
@@ -76,10 +80,23 @@ export function computeScore(ctx: ScoreContext): { score: number; breakdown: Sco
     const conditions = conditionsScore(live, mode, 10);
     const trendBonus = Math.round(((trend?.score ?? 0) / 100) * 10);
     const penalty = avalanchePenalty(live?.avalancheLevel ?? null);
-    const total = clamp(base + snow + freshSnow + liftsOpen + conditions + trendBonus - penalty, 0, 100);
+    const total = clamp(
+      base + snow + freshSnow + liftsOpen + conditions + trendBonus - penalty,
+      0,
+      100,
+    );
     return {
       score: total,
-      breakdown: { base, snow, freshSnow, liftsOpen, conditions, avalanchePenalty: penalty, trendBonus, total },
+      breakdown: {
+        base,
+        snow,
+        freshSnow,
+        liftsOpen,
+        conditions,
+        avalanchePenalty: penalty,
+        trendBonus,
+        total,
+      },
     };
   }
 

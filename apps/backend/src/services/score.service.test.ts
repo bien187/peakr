@@ -54,8 +54,16 @@ describe('score.service', () => {
   });
 
   it('Ski: höhere Lawinenstufe senkt den Score', () => {
-    const safe = computeScore({ mode: 'ski', live: live({ avalancheLevel: 1 }), trend: trend(50) }).score;
-    const risky = computeScore({ mode: 'ski', live: live({ avalancheLevel: 3 }), trend: trend(50) }).score;
+    const safe = computeScore({
+      mode: 'ski',
+      live: live({ avalancheLevel: 1 }),
+      trend: trend(50),
+    }).score;
+    const risky = computeScore({
+      mode: 'ski',
+      live: live({ avalancheLevel: 3 }),
+      trend: trend(50),
+    }).score;
     expect(risky).toBeLessThan(safe);
   });
 

@@ -50,7 +50,10 @@ export async function enrichTrendWithOpenAi(
           'auf einer Skala 1–100 (100 = sehr bekannt/im Trend). Nutze Websuche für aktuelle Signale. ' +
           'Antworte ausschließlich im geforderten JSON-Format.',
       },
-      { role: 'user', content: `Ziel: ${destinationName} (Schweiz). Schätze Score und kurze Begründung.` },
+      {
+        role: 'user',
+        content: `Ziel: ${destinationName} (Schweiz). Schätze Score und kurze Begründung.`,
+      },
     ],
     tools: [{ type: 'web_search' }],
     text: {

@@ -23,14 +23,10 @@ export async function favoriteRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
-  app.delete(
-    '/api/favorites/:destinationId',
-    { preHandler: app.authenticate },
-    async (request) => {
-      const { id } = requireUser(request);
-      const { destinationId } = validate(paramsSchema, request.params);
-      await removeFavorite(id, destinationId);
-      return { message: 'Favorit entfernt.' };
-    },
-  );
+  app.delete('/api/favorites/:destinationId', { preHandler: app.authenticate }, async (request) => {
+    const { id } = requireUser(request);
+    const { destinationId } = validate(paramsSchema, request.params);
+    await removeFavorite(id, destinationId);
+    return { message: 'Favorit entfernt.' };
+  });
 }

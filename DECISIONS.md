@@ -125,6 +125,21 @@ Alle Endpunkte wurden live gegen die echten APIs verifiziert (Formate geprüft).
 - **SLF-Import:** GeoJSON → `ST_Multi(ST_SetSRID(ST_GeomFromGeoJSON(...),4326))::geography`,
   danach `ST_Contains` zum Verknüpfen der Ziele mit ihrer Warnregion.
 
+## Phase 6 — Frontend
+
+- **Typed API-Client** (`lib/api.ts`) validiert jede Antwort mit den Shared-Zod-Schemas
+  (`searchResponseSchema` etc.) → Laufzeit-Sicherheit + exakte Typen ohne Doppelpflege.
+- **Auth-State** via zustand + `persist` (localStorage); der API-Client liest das Token über
+  `useAuthStore.getState()` (auch außerhalb von React).
+- **MapLibre** in einer `ssr:false`-dynamisch geladenen Komponente; versucht den swisstopo-
+  Vektor-Style und fällt bei Ladefehler automatisch auf OSM-Raster (mit Attribution) zurück.
+  Marker sind score-farbcodiert; Klick ↔ Karten-/Listen-Sync via `selectedId`.
+- **Responsives Layout:** Desktop 3-Spalten-Grid (Filter | Karte | Liste), mobil gestapelt
+  (Modus-Switch + Filter, Karte, Karten-Liste). Touch-Targets ≥44px, Dark-Mode, Skeletons.
+- **„+X Min"-Vorschläge** als abgesetzter Block am Listenende; Trend als „🔥 78"-Badge mit Tooltip.
+- **Hydration:** Auth-abhängige Header-UI erst nach `mounted`, um SSR-Mismatch zu vermeiden.
+- **ESLint:** generierte `next-env.d.ts` ignoriert; Next-Build lintet separat (nicht im Build).
+
 ## Datenlage (ehrlich)
 
 - **Live-Liftstatus** hat keine offizielle, schweizweite Gratis-Quelle. Die Skigebiet-Adapter

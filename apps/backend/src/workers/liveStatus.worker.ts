@@ -25,7 +25,10 @@ export async function runLiveStatusOnce(): Promise<WorkerResult> {
   const levelsResult = await settle(fetchAvalancheLevels());
   const levels = levelsResult.ok ? levelsResult.value : new Map<string, number>();
   if (!levelsResult.ok) {
-    logger.warn({ error: levelsResult.error.message }, 'SLF-Bulletin nicht abrufbar (evtl. Sommer)');
+    logger.warn(
+      { error: levelsResult.error.message },
+      'SLF-Bulletin nicht abrufbar (evtl. Sommer)',
+    );
   }
 
   let updated = 0;

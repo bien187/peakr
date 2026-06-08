@@ -44,7 +44,9 @@ export async function buildApp(): Promise<FastifyInstance> {
     if (error instanceof ZodError) {
       return reply
         .code(400)
-        .send({ error: { code: 'VALIDATION', message: 'Ungültige Eingabe', details: error.flatten() } });
+        .send({
+          error: { code: 'VALIDATION', message: 'Ungültige Eingabe', details: error.flatten() },
+        });
     }
     const statusCode = (error as { statusCode?: number }).statusCode;
     const message = error instanceof Error ? error.message : 'Interner Serverfehler.';
@@ -52,9 +54,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       return reply.code(statusCode).send({ error: { code: 'BAD_REQUEST', message } });
     }
     request.log.error(error);
-    return reply
-      .code(500)
-      .send({ error: { code: 'INTERNAL', message: 'Interner Serverfehler.' } });
+    return reply.code(500).send({ error: { code: 'INTERNAL', message: 'Interner Serverfehler.' } });
   });
 
   // Routen

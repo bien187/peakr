@@ -8,7 +8,7 @@ const round1 = (n: number): number => Math.round(n * 10) / 10;
 
 /** Fallback-Fahrzeit, wenn ORS nicht verfügbar ist: Luftlinie × 1,4 bei ~50 km/h. */
 export function estimateDriveMinutes(airKm: number): number {
-  return round1((airKm * 1.4) / 50 * 60);
+  return round1(((airKm * 1.4) / 50) * 60);
 }
 
 /**
@@ -56,9 +56,7 @@ export function assembleResponse(
 
   results.sort(
     (a, b) =>
-      Number(a.blocked) - Number(b.blocked) ||
-      b.score - a.score ||
-      a.driveMinutes - b.driveMinutes,
+      Number(a.blocked) - Number(b.blocked) || b.score - a.score || a.driveMinutes - b.driveMinutes,
   );
   suggestions.sort(
     (a, b) =>

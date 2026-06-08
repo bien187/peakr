@@ -4,8 +4,7 @@ import { fetchJson } from '../lib/http';
 // SLF AWS API (kostenlos, kein Key). Sicherheitskritisch — im Frontend immer auf
 // das offizielle Bulletin (whiterisk.ch) verlinken.
 const SLF_BULLETIN_URL = 'https://aws.slf.ch/api/bulletin/caaml/de/json';
-const SLF_REGIONS_URL =
-  'https://aws.slf.ch/api/warningregion/warnregionDefinition/current/geojson';
+const SLF_REGIONS_URL = 'https://aws.slf.ch/api/warningregion/warnregionDefinition/current/geojson';
 
 export interface WarningRegion {
   /** sector_id, z.B. "1111". */

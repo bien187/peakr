@@ -13,6 +13,7 @@ export default tseslint.config(
       '**/build/**',
       '**/coverage/**',
       '**/drizzle/**',
+      '**/next-env.d.ts',
       '**/*.config.{js,mjs,cjs}',
     ],
   },

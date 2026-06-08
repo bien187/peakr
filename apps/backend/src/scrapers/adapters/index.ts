@@ -17,7 +17,10 @@ export async function getLiftStatus(dest: AdapterDestination): Promise<LiftStatu
 
   const result = await settle(adapter.fetchStatus(dest));
   if (!result.ok) {
-    logger.warn({ adapter: adapter.name, dest: dest.name, error: result.error.message }, 'Liftstatus-Adapter fehlgeschlagen');
+    logger.warn(
+      { adapter: adapter.name, dest: dest.name, error: result.error.message },
+      'Liftstatus-Adapter fehlgeschlagen',
+    );
     return UNKNOWN_LIFT_STATUS(`${adapter.name} (Fehler)`);
   }
   return result.value;
