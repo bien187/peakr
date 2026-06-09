@@ -36,33 +36,45 @@ function Fact({ label, value, unit }) {
 
 function DetailView({ id, onBack, onOpen, isFav, onFav }) {
   const d = DESTINATIONS.find((x) => x.id === id);
+  const [media, setMedia] = React.useState('3d'); // 3d | photo
+  const [wxOpen, setWxOpen] = React.useState(false);
+  React.useEffect(() => { setMedia('3d'); setWxOpen(false); }, [id]);
   if (!d) return <div className="page-pad">Nicht gefunden.</div>;
   const isSki = d.type === 'ski';
-  const w = weatherInfo(d.weather);
   const hist = historyFor(d);
-  const mapsG = `https://www.google.com/maps/dir/?api=1&destination=${d.lat},${d.lng}`;
+  const r = ROUTE_PTS[d.id];
+  const destPt = r ? r.peak : { lat: d.lat, lng: d.lng };
+  const startPt = r ? r.park : { lat: d.lat, lng: d.lng };
+  const mapsG = `https://www.google.com/maps/dir/?api=1&origin=${startPt.lat},${startPt.lng}&destination=${destPt.lat},${destPt.lng}`;
 
   return (
     <div className="detail">
-      <div className="detail-hero">
-        <div className="map-terrain detail-hero-bg" />
-        <div className="map-hillshade detail-hero-bg" />
-        <div className="detail-hero-scrim" />
-        <div className="detail-hero-inner">
-          <button type="button" className="btn-ghost" onClick={onBack}>
-            <Icon name="ArrowLeft" size={16} stroke={2} /> Zurück zur Karte
+      <div className="detail-media">
+        {media === '3d' ? <Terrain3D d={d} /> : <RoutePhoto d={d} />}
+
+        <button type="button" className="media-back" onClick={onBack}>
+          <Icon name="ArrowLeft" size={16} stroke={2} /> Karte
+        </button>
+
+        <div className="media-toggle">
+          <button type="button" className={'media-tab' + (media === '3d' ? ' is-on' : '')} onClick={() => setMedia('3d')}>
+            <Icon name="Mountain" size={14} stroke={2} /> 3D
           </button>
-          <div className="detail-hero-foot">
-            <div>
-              <p className="detail-kicker">{isSki ? 'Skigebiet' : 'Wanderziel'} · Kanton {d.canton}</p>
-              <h1 className="detail-name">{d.name}</h1>
-            </div>
-            <ScoreDot score={Math.round(d.fame * 0.6 + (isSki ? (d.snowTop || 0) / 6 : 22))} size="lg" />
-          </div>
+          <button type="button" className={'media-tab' + (media === 'photo' ? ' is-on' : '')} onClick={() => setMedia('photo')}>
+            <Icon name="Image" size={14} stroke={2} /> Foto
+          </button>
         </div>
       </div>
 
       <div className="detail-body">
+        <div className="detail-head">
+          <div>
+            <p className="detail-kicker">{isSki ? 'Skigebiet' : 'Wanderziel'} · Kanton {d.canton}</p>
+            <h1 className="detail-name">{d.name}</h1>
+          </div>
+          <ScoreDot score={Math.round(d.fame * 0.6 + (isSki ? (d.snowTop || 0) / 6 : 22))} size="lg" />
+        </div>
+
         <p className="detail-blurb">{d.blurb}</p>
 
         <div className="detail-actions">
@@ -71,11 +83,7 @@ function DetailView({ id, onBack, onOpen, isFav, onFav }) {
             {isFav ? 'Gemerkt' : 'Merken'}
           </button>
           <a className="btn btn-soft" href={mapsG} target="_blank" rel="noreferrer">
-            <Icon name="Navigation" size={16} stroke={2} /> Route
-          </a>
-          <a className="btn btn-soft" href={`https://de.wikipedia.org/wiki/${encodeURIComponent(d.wiki)}`}
-             target="_blank" rel="noreferrer">
-            <Icon name="BookOpen" size={16} stroke={2} /> Wikipedia
+            <Icon name="Navigation" size={16} stroke={2} /> Route ab Parkplatz
           </a>
         </div>
 
@@ -101,14 +109,28 @@ function DetailView({ id, onBack, onOpen, isFav, onFav }) {
           )}
         </div>
 
-        <section className="detail-card">
+        <section className="detail-card live-card">
           <h2 className="detail-h2">Aktuelle Lage</h2>
           <div className="live-row">
-            <WeatherChip code={d.weather} temp={d.temp} />
-            <span className="live-item"><Icon name="Wind" size={15} stroke={1.75} /> {Math.round(d.wind)} km/h</span>
+            <button type="button" className="wx-trigger" onClick={() => setWxOpen((v) => !v)}
+                    aria-expanded={wxOpen} title="7-Tage-Prognose anzeigen">
+              <WeatherChip code={d.weather} temp={d.temp} />
+              <Icon name="ChevronDown" size={14} stroke={2} className={'wx-caret' + (wxOpen ? ' is-open' : '')} />
+            </button>
+            <button type="button" className="wx-trigger live-item" onClick={() => setWxOpen((v) => !v)}
+                    title="7-Tage-Prognose anzeigen">
+              <Icon name="Wind" size={15} stroke={1.75} /> {Math.round(d.wind)} km/h
+            </button>
             {isSki && <AvalancheTag level={d.avalanche} />}
+            <span className="wx-hint mono">7-Tage ansehen</span>
             <span className="live-stamp mono">Stand heute · 06:00</span>
           </div>
+          {wxOpen && (
+            <>
+              <div className="wx-backdrop" onClick={() => setWxOpen(false)} />
+              <WeatherWindow d={d} onClose={() => setWxOpen(false)} />
+            </>
+          )}
           {isSki && (
             <p className="detail-note">
               <Icon name="TriangleAlert" size={13} stroke={2} />

@@ -118,6 +118,80 @@ const DESTINATIONS = [
   },
 ];
 
+/* Real-ish parking / valley-station (start) and top / destination points per
+ * place, so the 3D overview shows a route that begins at the actual car park or
+ * lift base and ends at the marked summit / lake. */
+const ROUTE_PTS = {
+  /* ski: park = Parkhaus / Talstation, peak = Bergstation / Gipfel */
+  'zermatt':     { park: { lat: 46.0235, lng: 7.7480, label: 'Parkhaus Zermatt' },   peak: { lat: 45.9760, lng: 7.7460, label: 'Trockener Steg' } },
+  'saas-fee':    { park: { lat: 46.1090, lng: 7.9280, label: 'Parkhaus Saas-Fee' },  peak: { lat: 46.0830, lng: 7.9240, label: 'Mittelallalin' } },
+  'verbier':     { park: { lat: 46.0961, lng: 7.2286, label: 'Talstation Médran' },  peak: { lat: 46.0930, lng: 7.2960, label: 'Mont-Fort' } },
+  'davos':       { park: { lat: 46.7990, lng: 9.8200, label: 'Parsennbahn' },        peak: { lat: 46.8290, lng: 9.7960, label: 'Weissfluhgipfel' } },
+  'laax':        { park: { lat: 46.8080, lng: 9.2580, label: 'Talstation Laax' },    peak: { lat: 46.8440, lng: 9.2470, label: 'Vorab' } },
+  'st-moritz':   { park: { lat: 46.4983, lng: 9.8389, label: 'Signalbahn' },         peak: { lat: 46.4900, lng: 9.8050, label: 'Piz Nair' } },
+  'engelberg':   { park: { lat: 46.8210, lng: 8.4010, label: 'Titlisbahn' },         peak: { lat: 46.7720, lng: 8.4360, label: 'Titlis' } },
+  'grindelwald': { park: { lat: 46.6242, lng: 8.0414, label: 'Firstbahn' },          peak: { lat: 46.6580, lng: 8.0560, label: 'First' } },
+  'andermatt':   { park: { lat: 46.6360, lng: 8.5940, label: 'Gütsch-Express' },     peak: { lat: 46.6010, lng: 8.6010, label: 'Gemsstock' } },
+  'arosa':       { park: { lat: 46.7833, lng: 9.6800, label: 'Arosa Bahnhof' },      peak: { lat: 46.7960, lng: 9.6610, label: 'Weisshorn' } },
+  /* hike: park = Wanderparkplatz / Trailhead, peak = Ziel */
+  'oeschinensee':{ park: { lat: 46.4928, lng: 7.7000, label: 'P Kandersteg' },       peak: { lat: 46.4992, lng: 7.7286, label: 'Oeschinensee' } },
+  'bachalpsee':  { park: { lat: 46.6580, lng: 8.0560, label: 'Bergstation First' },  peak: { lat: 46.6667, lng: 8.0270, label: 'Bachalpsee' } },
+  'creux-du-van':{ park: { lat: 46.9230, lng: 6.7160, label: 'Ferme Robert' },       peak: { lat: 46.9333, lng: 6.7333, label: 'Creux du Van' } },
+  'aletsch':     { park: { lat: 46.3920, lng: 8.0360, label: 'Bettmeralp' },         peak: { lat: 46.4000, lng: 8.0500, label: 'Bettmerhorn' } },
+  'saxer-luecke':{ park: { lat: 47.2820, lng: 9.4180, label: 'P Brülisau' },         peak: { lat: 47.2667, lng: 9.4333, label: 'Saxer Lücke' } },
+  'lac-de-moiry':{ park: { lat: 46.1380, lng: 7.5700, label: 'Barrage de Moiry' },   peak: { lat: 46.1450, lng: 7.5750, label: 'Lac de Moiry' } },
+};
+
+/* Build a plausible, deterministic trail/piste polyline between two points,
+ * gently wobbling around the direct line so it reads like a real route. */
+function routeGeo(d) {
+  const r = ROUTE_PTS[d.id] || {
+    park: { lat: d.lat - 0.009, lng: d.lng - 0.012, label: 'Parkplatz' },
+    peak: { lat: d.lat, lng: d.lng, label: d.name.split(' – ')[0].split(' (')[0] },
+  };
+  const park = [r.park.lng, r.park.lat];
+  const peak = [r.peak.lng, r.peak.lat];
+  const seed = d.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+  const N = 16;
+  const dx = peak[0] - park[0], dy = peak[1] - park[1];
+  const len = Math.hypot(dx, dy) || 1;
+  const px = -dy / len, py = dx / len; /* unit perpendicular */
+  const line = [];
+  for (let i = 0; i <= N; i++) {
+    const t = i / N;
+    const env = Math.sin(t * Math.PI);            /* zero at both ends */
+    const wob = (Math.sin(seed + t * 6.3) * 0.6 + Math.sin(seed * 0.7 + t * 13) * 0.25);
+    const off = env * wob * len * 0.16;
+    line.push([park[0] + dx * t + px * off, park[1] + dy * t + py * off]);
+  }
+  return { park, peak, line, parkLabel: r.park.label, peakLabel: r.peak.label };
+}
+
+/* Deterministic 7-day forecast for the detail weather window (mock, plausible). */
+const WX_CODES = [0, 1, 2, 3, 45, 51, 61, 71, 80, 95];
+function forecastFor(d) {
+  const seed = d.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+  const names = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+  const today = new Date();
+  const base = d.temp;
+  const out = [];
+  for (let i = 0; i < 7; i++) {
+    const dt = new Date(today.getTime() + i * 86400000);
+    const r1 = Math.abs(Math.sin(seed * 1.7 + i * 2.3));
+    const r2 = Math.abs(Math.sin(seed * 0.9 + i * 1.1 + 1));
+    const code = i === 0 ? d.weather : WX_CODES[Math.floor(r1 * WX_CODES.length) % WX_CODES.length];
+    const tmax = Math.round(base + (r2 - 0.45) * 7 + (d.type === 'ski' ? 1 : 3));
+    const tmin = Math.round(tmax - (3 + r1 * 6));
+    const wind = Math.max(2, Math.round((d.wind || 10) * (0.55 + r2 * 0.95)));
+    const pop = Math.round(code >= 45 ? 25 + r1 * 65 : r1 * 25);
+    out.push({
+      label: i === 0 ? 'Heute' : i === 1 ? 'Morgen' : names[dt.getDay()],
+      date: `${dt.getDate()}.${dt.getMonth() + 1}.`, code, tmax, tmin, wind, pop,
+    });
+  }
+  return out;
+}
+
 const HIKE_KINDS = [
   { value: 'any', label: 'Alle' },
   { value: 'peak', label: 'Gipfel' },
@@ -197,6 +271,6 @@ function historyFor(d) {
 }
 
 Object.assign(window, {
-  DESTINATIONS, HIKE_KINDS, SAC, SORTS,
-  buildResults, sortResults, historyFor,
+  DESTINATIONS, HIKE_KINDS, SAC, SORTS, ROUTE_PTS,
+  buildResults, sortResults, historyFor, routeGeo, forecastFor,
 });
