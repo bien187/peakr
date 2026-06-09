@@ -176,7 +176,7 @@ export function adaptResult(r: SearchResult, suggestion: boolean): PCard {
     canton: r.canton ?? '',
     lat: r.location.lat,
     lng: r.location.lng,
-    score: displayScore(r.type, live?.liftsTotal, live?.snowDepthTopCm, r.ascentM, r.distanceKm),
+    score: displayScore(r.type, live?.liftsTotal, live?.snowDepthTopCm, r.ascentM, r.distanceKm, r.elevationTopM, r.qualityScore),
     driveMin: Math.round(r.driveMinutes),
     km: r.distanceAirKm,
     snowTop: live?.snowDepthTopCm ?? null,
@@ -213,6 +213,8 @@ export function displayScore(
   snowTop: number | null | undefined,
   ascentM: number | null | undefined,
   distanceKm: number | null | undefined,
+  elevationTopM?: number | null,
+  qualityScore?: number | null,
 ): number {
   if (isSkiType(type)) {
     // Ski: Pisteninfrastruktur (Lifte als Proxy) + Schneebonus
@@ -220,11 +222,15 @@ export function displayScore(
     const snow = Math.min(30, (snowTop ?? 0) / 5);
     return Math.max(5, Math.round(lifts + snow));
   } else {
-    // Wandern: Gondel-/Liftinfra für Wanderer + Geländequalität (Höhenmeter, Distanz)
-    const lifts = Math.min(45, (liftsTotal ?? 0) * 5);
+    // Wandern: Routen haben Höhenmeter/Distanz; Gipfel/Seen/Hütten nur Höhe + Qualität.
+    // Wir nehmen das stärkere der beiden Signale, damit Gipfel nach Höhe differenziert werden.
     const ascent = Math.min(35, (ascentM ?? 0) / 28);
     const dist = Math.min(20, (distanceKm ?? 0) * 2);
-    return Math.max(5, Math.round(lifts + ascent + dist));
+    const routeScore = ascent + dist; // > 0 nur bei echten Routen mit Metriken
+    const elev = Math.min(75, Math.max(0, ((elevationTopM ?? 0) - 600) / 50)); // 600m→0, 4350m→75
+    const qual = Math.min(25, (qualityScore ?? 0) / 4); // 100→25
+    const peakScore = elev + qual;
+    return Math.max(5, Math.round(Math.max(routeScore, peakScore)));
   }
 }
 
@@ -233,7 +239,7 @@ export function adaptDetail(d: DestinationDetail): PDetail {
   const live = d.live;
   const fame = d.trend?.score ?? null;
   const snowTop = live?.snowDepthTopCm ?? null;
-  const score = displayScore(d.type, live?.liftsTotal, snowTop, d.ascentM, d.distanceKm);
+  const score = displayScore(d.type, live?.liftsTotal, snowTop, d.ascentM, d.distanceKm, d.elevationTopM, d.qualityScore);
   return {
     id: d.id,
     name: d.name,
@@ -283,7 +289,7 @@ export function adaptFavorite(d: DestinationWithStatus): PCard {
     canton: d.canton ?? '',
     lat: d.location.lat,
     lng: d.location.lng,
-    score: displayScore(d.type, live?.liftsTotal, snowTop, d.ascentM, d.distanceKm),
+    score: displayScore(d.type, live?.liftsTotal, snowTop, d.ascentM, d.distanceKm, d.elevationTopM, d.qualityScore),
     driveMin: 0,
     km: 0,
     snowTop,
