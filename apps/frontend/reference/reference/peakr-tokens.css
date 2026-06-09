@@ -1,0 +1,64 @@
+/* ============================================================
+   Peakr Design-Tokens — Theme "Alpine Paper" (hell), Standard
+   Diese Werte setzt der Prototyp sonst dynamisch in app.jsx.
+   Für die 1:1-Übernahme hier fest aufgelöst (hue=42, chroma=0.115).
+   In der Next.js-App: zusammen mit styles.css global einbinden.
+   ============================================================ */
+
+:root {
+  /* Fonts (Google Fonts: Spectral, Hanken Grotesk, JetBrains Mono) */
+  --font-sans:  'Hanken Grotesk', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-serif: 'Spectral', Georgia, 'Times New Roman', serif;
+  --font-mono:  'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* Radii / Maße */
+  --r-xs: 7px; --r-sm: 10px; --r: 13px; --r-lg: 18px; --r-xl: 24px;
+  --topbar-h: 64px;
+
+  /* Farb-Tokens (warmes Papier + Terrakotta-Akzent) */
+  --bg:          oklch(0.962 0.008 42);
+  --paper:       oklch(0.986 0.006 42);
+  --surface:     oklch(0.997 0.004 42);
+  --surface-2:   oklch(0.945 0.010 42);
+  --ink:         oklch(0.255 0.014 42);
+  --ink-2:       oklch(0.455 0.013 42);
+  --ink-3:       oklch(0.605 0.011 42);
+  --line:        oklch(0.905 0.009 42);
+  --line-2:      oklch(0.845 0.011 42);
+  --accent:      oklch(0.575 0.115 42);
+  --accent-2:    oklch(0.495 0.115 42);
+  --accent-soft: oklch(0.945 0.038 42);
+  --on-accent:   oklch(0.992 0.008 42);
+  --map-1:       oklch(0.945 0.018 42);
+  --map-2:       oklch(0.915 0.028 42);
+  --map-3:       oklch(0.965 0.012 42);
+  --map-water:   oklch(0.840 0.055 235);
+  --map-line:    oklch(0.870 0.014 42 / 0.6);
+  --shadow:      0 1px 2px rgba(40,30,15,.06), 0 12px 34px -14px rgba(40,30,15,.22);
+  --shadow-sm:   0 1px 2px rgba(40,30,15,.07);
+}
+
+/* Optional: dieselbe Familie als Dark-Variante (Prototyp-Tweak "Dark Mode").
+   Nur nötig, wenn ihr einen Dunkelmodus wollt. Aktivieren via <html class="dark">. */
+.dark, :root[data-theme="dark"] {
+  --bg:          oklch(0.205 0.012 42);
+  --paper:       oklch(0.235 0.014 42);
+  --surface:     oklch(0.262 0.016 42);
+  --surface-2:   oklch(0.305 0.018 42);
+  --ink:         oklch(0.945 0.008 42);
+  --ink-2:       oklch(0.760 0.012 42);
+  --ink-3:       oklch(0.600 0.012 42);
+  --line:        oklch(0.345 0.014 42);
+  --line-2:      oklch(0.420 0.016 42);
+  --accent:      oklch(0.700 0.115 42);
+  --accent-2:    oklch(0.770 0.115 42);
+  --accent-soft: oklch(0.320 0.045 42);
+  --on-accent:   oklch(0.180 0.010 42);
+  --map-1:       oklch(0.255 0.018 42);
+  --map-2:       oklch(0.295 0.022 42);
+  --map-3:       oklch(0.235 0.016 42);
+  --map-water:   oklch(0.420 0.055 235);
+  --map-line:    oklch(0.380 0.014 42 / 0.55);
+  --shadow:      0 1px 2px rgba(0,0,0,.5), 0 8px 30px -10px rgba(0,0,0,.6);
+  --shadow-sm:   0 1px 2px rgba(0,0,0,.45);
+}

@@ -14,7 +14,9 @@ import {
 import { z } from 'zod';
 import { useAuthStore } from './store';
 
-const BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:4000';
+// In production (Netlify) requests go to Next.js API routes on the same domain.
+// In local dev, set NEXT_PUBLIC_API_BASE_URL=http://localhost:4000 in .env to use the Hapi backend.
+const BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? '';
 
 export class ApiError extends Error {
   constructor(
