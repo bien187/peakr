@@ -3,6 +3,16 @@ import type { LiveStatus, Mode, ScoreBreakdown, TrendScore } from '@ch-alpinerou
 import sql from '@/lib/server/db';
 import { err, ok } from '@/lib/server/response';
 
+// ─── Distance ─────────────────────────────────────────────────────────────────
+
+function haversineM(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000;
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLng = (lng2 - lng1) * (Math.PI / 180);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 // ─── Score ────────────────────────────────────────────────────────────────────
 
 function conditionsScore(live: LiveStatus | null, mode: Mode, max: number): number {
@@ -45,7 +55,7 @@ interface CandidateRow {
   lat: number; lng: number; elevation_base_m: number | null; elevation_top_m: number | null;
   sac_difficulty: string | null; ascent_m: number | null; distance_km: number | null;
   wikipedia_title: string | null; slf_region_id: string | null;
-  poi_kind: string | null; quality_score: number | null; air_m: number;
+  poi_kind: string | null; quality_score: number | null;
   captured_at: Date | null; temperature_c: number | null; weather_code: number | null;
   visibility_m: number | null; wind_kmh: number | null; snow_depth_valley_cm: number | null;
   snow_depth_top_cm: number | null; fresh_snow_cm: number | null; avalanche_level: number | null;
@@ -63,6 +73,9 @@ export async function POST(req: Request) {
 
     const { lat, lng } = input.origin;
     const radiusM = (input.maxMinutes + input.toleranceMinutes) * 1500;
+    // bounding box pre-filter (1° lat ≈ 111km, 1° lng ≈ 75km at CH latitude)
+    const latDelta = radiusM / 111000;
+    const lngDelta = radiusM / 75000;
 
     const typeCond = input.mode === 'ski'
       ? sql`d.type = 'ski_resort'`
@@ -78,10 +91,9 @@ export async function POST(req: Request) {
 
     const rows = await sql<CandidateRow[]>`
       SELECT d.id, d.name, d.type, d.canton,
-        ST_Y(d.location::geometry) AS lat, ST_X(d.location::geometry) AS lng,
+        d.lat::float AS lat, d.lng::float AS lng,
         d.elevation_base_m, d.elevation_top_m, d.sac_difficulty, d.ascent_m, d.distance_km,
         d.wikipedia_title, d.slf_region_id, d.poi_kind, d.quality_score,
-        ST_Distance(d.location, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography) AS air_m,
         ls.captured_at, ls.temperature_c, ls.weather_code, ls.visibility_m, ls.wind_kmh,
         ls.snow_depth_valley_cm, ls.snow_depth_top_cm, ls.fresh_snow_cm, ls.avalanche_level,
         ls.lifts_open, ls.lifts_total, ls.slopes_open_km, ls.trail_status,
@@ -92,15 +104,20 @@ export async function POST(req: Request) {
         SELECT * FROM live_status l WHERE l.destination_id = d.id ORDER BY l.captured_at DESC LIMIT 1
       ) ls ON true
       LEFT JOIN trend_scores ts ON ts.destination_id = d.id
-      WHERE ST_DWithin(d.location, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography, ${radiusM})
+      WHERE d.lat BETWEEN ${lat - latDelta} AND ${lat + latDelta}
+        AND d.lng BETWEEN ${lng - lngDelta} AND ${lng + lngDelta}
         AND ${typeCond} ${sacCond}
-      ORDER BY air_m ASC LIMIT 200
+      LIMIT 500
     `;
 
     type Item = { blocked: boolean; score: number; driveMinutes: number; overBudgetMinutes: number | null };
     const results: Item[] = [], suggestions: Item[] = [];
+
     for (const r of rows) {
-      const airKm = Math.round((r.air_m / 1000) * 10) / 10;
+      const airM = haversineM(lat, lng, r.lat, r.lng);
+      if (airM > radiusM) continue;
+
+      const airKm = Math.round((airM / 1000) * 10) / 10;
       const driveMin = Math.round(((airKm * 1.4) / 50) * 60 * 10) / 10;
       const within = driveMin <= input.maxMinutes;
       const withinTol = driveMin <= input.maxMinutes + input.toleranceMinutes;

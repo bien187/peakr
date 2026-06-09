@@ -20,7 +20,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       trend_source: string | null; trend_is_estimate: boolean | null; trend_updated_at: Date | null;
     }[]>`
       SELECT d.id, d.name, d.type, d.canton,
-        ST_Y(d.location::geometry) AS lat, ST_X(d.location::geometry) AS lng,
+        d.lat::float AS lat, d.lng::float AS lng,
         d.elevation_base_m, d.elevation_top_m, d.sac_difficulty, d.ascent_m, d.distance_km,
         d.wikipedia_title, d.slf_region_id, d.poi_kind, d.quality_score,
         ls.captured_at, ls.temperature_c, ls.weather_code, ls.visibility_m, ls.wind_kmh,

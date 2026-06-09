@@ -11,7 +11,7 @@ async function getPublicUser(id: string) {
   }[]>`
     SELECT id, email, display_name, home_label, role, created_at,
       (openai_key_enc IS NOT NULL) AS has_openai_key,
-      ST_Y(home_location::geometry) AS home_lat, ST_X(home_location::geometry) AS home_lng
+      home_lat::float AS home_lat, home_lng::float AS home_lng
     FROM users WHERE id = ${id} LIMIT 1
   `;
   const r = rows[0];
@@ -48,8 +48,7 @@ export async function PATCH(req: Request) {
     }
     if (patch.homeLocation !== undefined) {
       await sql`
-        UPDATE users SET
-          home_location = ST_SetSRID(ST_MakePoint(${patch.homeLocation.lng}, ${patch.homeLocation.lat}), 4326)::geography,
+        UPDATE users SET home_lat = ${patch.homeLocation.lat}, home_lng = ${patch.homeLocation.lng},
           updated_at = now()
         WHERE id = ${user.sub}
       `;
