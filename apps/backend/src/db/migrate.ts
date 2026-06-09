@@ -12,7 +12,11 @@ async function main(): Promise<void> {
   const client = postgres(env.DATABASE_URL, { max: 1 });
   try {
     console.log('⏳ Stelle PostGIS-Extension sicher ...');
-    await client`CREATE EXTENSION IF NOT EXISTS postgis;`;
+    try {
+      await client`CREATE EXTENSION IF NOT EXISTS postgis;`;
+    } catch (e) {
+      console.warn('⚠️  PostGIS konnte nicht aktiviert werden (wird für Geo-Queries benötigt):', e);
+    }
 
     console.log(`⏳ Wende Migrationen an aus ${migrationsFolder} ...`);
     const db = drizzle(client);
