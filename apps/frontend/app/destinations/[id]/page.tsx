@@ -1,7 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { api, ApiError } from '@/lib/api';
 import { adaptDetail, type PDetail } from '@/lib/peakr';
@@ -16,9 +16,16 @@ const DetailView = dynamic(() => import('@/components/PeakrDetail').then((m) => 
 export default function DestinationDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { isFav, toggle } = useFavorites();
   const [d, setD] = useState<PDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const origin = (() => {
+    const lat = parseFloat(searchParams.get('fromlat') ?? '');
+    const lng = parseFloat(searchParams.get('fromlng') ?? '');
+    return !isNaN(lat) && !isNaN(lng) ? { lat, lng } : null;
+  })();
 
   useEffect(() => {
     if (!params?.id) return;
@@ -44,5 +51,5 @@ export default function DestinationDetailPage() {
 
   if (!d) return <div className="page-pad">Lädt …</div>;
 
-  return <DetailView d={d} isFav={isFav(d.id)} onFav={toggle} onBack={() => router.push('/')} />;
+  return <DetailView d={d} isFav={isFav(d.id)} onFav={toggle} onBack={() => router.push('/')} origin={origin} />;
 }

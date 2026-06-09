@@ -23,6 +23,8 @@ interface CandidateRow {
   distance_km: number | null;
   wikipedia_title: string | null;
   slf_region_id: string | null;
+  poi_kind: string | null;
+  quality_score: number | null;
   air_m: number;
   captured_at: Date | null;
   temperature_c: number | null;
@@ -65,6 +67,8 @@ function rowToDestination(r: CandidateRow): Destination {
     distanceKm: r.distance_km,
     wikipediaTitle: r.wikipedia_title,
     slfRegionId: r.slf_region_id,
+    poiKind: r.poi_kind,
+    qualityScore: r.quality_score,
   };
 }
 
@@ -104,7 +108,7 @@ const CANDIDATE_COLUMNS = sql`
   ST_Y(d.location::geometry) AS lat,
   ST_X(d.location::geometry) AS lng,
   d.elevation_base_m, d.elevation_top_m, d.sac_difficulty, d.ascent_m, d.distance_km,
-  d.wikipedia_title, d.slf_region_id,
+  d.wikipedia_title, d.slf_region_id, d.poi_kind, d.quality_score,
   ls.captured_at, ls.temperature_c, ls.weather_code, ls.visibility_m, ls.wind_kmh,
   ls.snow_depth_valley_cm, ls.snow_depth_top_cm, ls.fresh_snow_cm, ls.avalanche_level,
   ls.lifts_open, ls.lifts_total, ls.slopes_open_km, ls.trail_status,

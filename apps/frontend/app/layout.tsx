@@ -25,7 +25,7 @@ const jetbrains = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'Peakr — Ski- & Wander-Navigator Schweiz',
+  title: 'Peakr',
   description:
     'Finde das beste Ski- oder Wanderziel der Schweiz nach Fahrzeit, Schnee, Lawinenlage und Bekanntheit. Privates Tool, 100% kostenlose Datenquellen.',
 };

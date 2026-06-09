@@ -15,7 +15,7 @@ import {
   timestamp,
   uuid,
 } from 'drizzle-orm/pg-core';
-import { bytea, geographyLineString, geographyMultiPolygon, geographyPoint } from './types';
+import { bytea, geographyGeometry, geographyLineString, geographyMultiPolygon, geographyPoint } from './types';
 
 // --- Enums -----------------------------------------------------------------
 export const destinationTypeEnum = pgEnum('destination_type', [
@@ -54,6 +54,20 @@ export const avalancheRegions = pgTable(
   }),
 );
 
+// --- hiking_routes (swisstopo/OSM Wanderwege — Referenznetz für Qualitätsfilter) -----------
+export const hikingRoutes = pgTable(
+  'hiking_routes',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    osmId: text('osm_id').unique(),
+    source: text('source').notNull().default('osm'),
+    geom: geographyGeometry('geom').notNull(),
+  },
+  (t) => ({
+    geomIdx: index('hiking_routes_geom_idx').using('gist', t.geom),
+  }),
+);
+
 // --- destinations ----------------------------------------------------------
 export const destinations = pgTable(
   'destinations',
@@ -72,6 +86,10 @@ export const destinations = pgTable(
     slfRegionId: text('slf_region_id').references(() => avalancheRegions.id),
     wikipediaTitle: text('wikipedia_title'),
     sourceRef: jsonb('source_ref'),
+    poiKind: text('poi_kind'),           // 'peak'|'lake'|'hut'|'viewpoint' für hike_destination
+    sourceLayer: text('source_layer'),   // 'swisstopo_names3d'|'osm'|'curated'
+    nearestRouteM: integer('nearest_route_m'), // Distanz zum nächsten Wanderweg (m)
+    qualityScore: smallint('quality_score'),   // 0–100 (Infrastruktur + Metadaten)
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
@@ -157,3 +175,4 @@ export type AvalancheRegionRow = typeof avalancheRegions.$inferSelect;
 export type LiveStatusRow = typeof liveStatus.$inferSelect;
 export type TrendScoreRow = typeof trendScores.$inferSelect;
 export type FavoriteRow = typeof favorites.$inferSelect;
+export type HikingRouteRow = typeof hikingRoutes.$inferSelect;

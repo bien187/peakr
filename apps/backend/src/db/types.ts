@@ -32,3 +32,9 @@ export const geographyMultiPolygon = customType<{ data: string; driverData: stri
     return 'geography(MultiPolygon,4326)';
   },
 });
+
+export const geographyGeometry = customType<{ data: string; driverData: string }>({
+  dataType() {
+    return 'geography(Geometry,4326)';
+  },
+});

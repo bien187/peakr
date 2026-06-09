@@ -4,6 +4,7 @@ export interface ScoreContext {
   mode: Mode;
   live: LiveStatus | null;
   trend: TrendScore | null;
+  qualityScore?: number | null; // 0–100, aus destinations.quality_score
 }
 
 const clamp = (v: number, min: number, max: number): number => Math.min(max, Math.max(min, v));
@@ -62,11 +63,13 @@ export function conditionsScore(live: LiveStatus | null, mode: Mode, maxPoints: 
 
 /**
  * Transparente Score-Formel (0–100). Jeder Beitrag ist im Breakdown nachvollziehbar.
- * Ski:   Basis 25 + Schnee 30 + Neuschnee 15 + Lifte 10 + Bedingungen 10 + Trend 10 − Lawine
- * Wandern: Basis 50 + Bedingungen 25 + Trend 20
+ * Ski:     Basis 25 + Schnee 30 + Neuschnee 15 + Lifte 10 + Bedingungen 10 + Qualität 5 + Trend 5 − Lawine
+ * Wandern: Basis 50 + Bedingungen 25 + Qualität 5 + Trend 5 (trendBonus auf max 5 reduziert)
  */
 export function computeScore(ctx: ScoreContext): { score: number; breakdown: ScoreBreakdown } {
-  const { mode, live, trend } = ctx;
+  const { mode, live, trend, qualityScore } = ctx;
+  // quality_score (0–100) → max 5 Zusatzpunkte im Such-Score
+  const qualityBonus = qualityScore != null ? Math.round((qualityScore / 100) * 5) : 2;
 
   if (mode === 'ski') {
     const base = 25;
@@ -78,10 +81,10 @@ export function computeScore(ctx: ScoreContext): { score: number; breakdown: Sco
         ? Math.round((Math.min(live.liftsOpen ?? 0, live.liftsTotal) / live.liftsTotal) * 10)
         : 0;
     const conditions = conditionsScore(live, mode, 10);
-    const trendBonus = Math.round(((trend?.score ?? 0) / 100) * 10);
+    const trendBonus = Math.round(((trend?.score ?? 0) / 100) * 5); // max 5 (vorher 10)
     const penalty = avalanchePenalty(live?.avalancheLevel ?? null);
     const total = clamp(
-      base + snow + freshSnow + liftsOpen + conditions + trendBonus - penalty,
+      base + snow + freshSnow + liftsOpen + conditions + qualityBonus + trendBonus - penalty,
       0,
       100,
     );
@@ -103,8 +106,8 @@ export function computeScore(ctx: ScoreContext): { score: number; breakdown: Sco
   // Wandern
   const base = 50;
   const conditions = conditionsScore(live, mode, 25);
-  const trendBonus = Math.round(((trend?.score ?? 0) / 100) * 20);
-  const total = clamp(base + conditions + trendBonus, 0, 100);
+  const trendBonus = Math.round(((trend?.score ?? 0) / 100) * 5); // max 5 (vorher 20)
+  const total = clamp(base + conditions + qualityBonus + trendBonus, 0, 100);
   return {
     score: total,
     breakdown: {

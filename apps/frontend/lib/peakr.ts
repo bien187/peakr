@@ -141,10 +141,9 @@ export const HIKE_KINDS: { value: string; label: string }[] = [
 export const SAC = ['T1', 'T2', 'T3', 'T4', 'T5', 'T6'];
 
 export const SORTS: { value: string; label: string }[] = [
-  { value: 'score', label: 'Score' },
+  { value: 'score', label: 'Grösse' },
   { value: 'drive', label: 'Fahrzeit' },
   { value: 'snow', label: 'Schnee' },
-  { value: 'fame', label: 'Bekanntheit' },
 ];
 
 /** Wanderziel-Typ aus dem Namen ableiten (die API kennt keine kind-Kategorie). */
@@ -161,8 +160,7 @@ export function sortCards(list: PCard[], sort: string): PCard[] {
   const a = [...list];
   if (sort === 'drive') a.sort((x, y) => x.driveMin - y.driveMin);
   else if (sort === 'snow') a.sort((x, y) => (y.snowTop ?? 0) - (x.snowTop ?? 0));
-  else if (sort === 'fame') a.sort((x, y) => (y.fame ?? 0) - (x.fame ?? 0));
-  else a.sort((x, y) => y.score - x.score);
+  else a.sort((x, y) => y.score - x.score); // default: Grösse/Infrastruktur
   return a;
 }
 
@@ -178,7 +176,7 @@ export function adaptResult(r: SearchResult, suggestion: boolean): PCard {
     canton: r.canton ?? '',
     lat: r.location.lat,
     lng: r.location.lng,
-    score: r.score,
+    score: displayScore(r.type, live?.liftsTotal, live?.snowDepthTopCm, r.ascentM, r.distanceKm),
     driveMin: Math.round(r.driveMinutes),
     km: r.distanceAirKm,
     snowTop: live?.snowDepthTopCm ?? null,
@@ -208,9 +206,26 @@ function historyToSeries(d: DestinationDetail, ski: boolean): number[] {
   return vals.map((v) => Math.round(v));
 }
 
-export function displayScore(fame: number | null, ski: boolean, snowTop: number | null): number {
-  const f = fame ?? 50;
-  return Math.round(f * 0.6 + (ski ? (snowTop ?? 0) / 6 : 22));
+/** Grössen-/Infrastruktur-Score: Lifte/Pisteninfra statt Wikipedia-Bekanntheit. */
+export function displayScore(
+  type: string,
+  liftsTotal: number | null | undefined,
+  snowTop: number | null | undefined,
+  ascentM: number | null | undefined,
+  distanceKm: number | null | undefined,
+): number {
+  if (isSkiType(type)) {
+    // Ski: Pisteninfrastruktur (Lifte als Proxy) + Schneebonus
+    const lifts = Math.min(65, (liftsTotal ?? 0) * 1.8);
+    const snow = Math.min(30, (snowTop ?? 0) / 5);
+    return Math.max(5, Math.round(lifts + snow));
+  } else {
+    // Wandern: Gondel-/Liftinfra für Wanderer + Geländequalität (Höhenmeter, Distanz)
+    const lifts = Math.min(45, (liftsTotal ?? 0) * 5);
+    const ascent = Math.min(35, (ascentM ?? 0) / 28);
+    const dist = Math.min(20, (distanceKm ?? 0) * 2);
+    return Math.max(5, Math.round(lifts + ascent + dist));
+  }
 }
 
 export function adaptDetail(d: DestinationDetail): PDetail {
@@ -218,6 +233,7 @@ export function adaptDetail(d: DestinationDetail): PDetail {
   const live = d.live;
   const fame = d.trend?.score ?? null;
   const snowTop = live?.snowDepthTopCm ?? null;
+  const score = displayScore(d.type, live?.liftsTotal, snowTop, d.ascentM, d.distanceKm);
   return {
     id: d.id,
     name: d.name,
@@ -225,7 +241,7 @@ export function adaptDetail(d: DestinationDetail): PDetail {
     canton: d.canton ?? '',
     lat: d.location.lat,
     lng: d.location.lng,
-    score: displayScore(fame, ski, snowTop),
+    score,
     driveMin: 0,
     km: 0,
     snowTop,
@@ -249,7 +265,7 @@ export function adaptDetail(d: DestinationDetail): PDetail {
       (ski ? 'Skigebiet' : 'Wanderziel') +
       (d.canton ? ` im Kanton ${d.canton}` : '') +
       '. Live-Bedingungen aus offenen Datenquellen (Wetter, Schnee, Lawinenlage).',
-    displayScore: displayScore(fame, ski, snowTop),
+    displayScore: score,
     history: historyToSeries(d, ski),
   };
 }
@@ -267,7 +283,7 @@ export function adaptFavorite(d: DestinationWithStatus): PCard {
     canton: d.canton ?? '',
     lat: d.location.lat,
     lng: d.location.lng,
-    score: displayScore(fame, ski, snowTop),
+    score: displayScore(d.type, live?.liftsTotal, snowTop, d.ascentM, d.distanceKm),
     driveMin: 0,
     km: 0,
     snowTop,

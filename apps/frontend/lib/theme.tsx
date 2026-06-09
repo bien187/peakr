@@ -1,12 +1,5 @@
 'use client';
 
-/* ============================================================
- * Peakr — Theme-Engine (portiert aus dem Prototyp, core.jsx / peakr-theme.ts)
- * 3 Design-Richtungen × Hell/Dunkel + Dichte + Kartenlabels.
- * Liefert die CSS-Variablen als Inline-Style auf den <div className="app">-
- * Wrapper und persistiert die Einstellungen in localStorage.
- * ============================================================ */
-
 import {
   createContext,
   useContext,
@@ -29,7 +22,6 @@ export const DIRECTIONS: Record<
   pine: { label: 'Tannwald', hue: 158, ac: 0.085, sub: 'Helles Papier · Föhrengrün' },
 };
 
-/** Liefert die CSS-Custom-Properties für eine Richtung + Modus. */
 export function themeVars(dir: Direction, mode: Mode): Record<string, string> {
   const { hue: H, ac } = DIRECTIONS[dir] ?? DIRECTIONS.paper;
 
@@ -85,40 +77,51 @@ export function themeVars(dir: Direction, mode: Mode): Record<string, string> {
 }
 
 export interface Settings {
-  direction: Direction;
   mode: Mode;
-  density: Density;
-  alwaysLabels: boolean;
 }
 
 const DEFAULTS: Settings = {
-  direction: 'pine',
   mode: 'light',
-  density: 'regular',
-  alwaysLabels: true,
 };
 
 const STORAGE_KEY = 'peakr-settings';
+const PARAMS_KEY = 'peakr-params';
+
+function directionFromAppMode(appMode: 'ski' | 'hike'): Direction {
+  return appMode === 'ski' ? 'glacier' : 'pine';
+}
 
 interface ThemeCtx {
   s: Settings;
   set: (patch: Partial<Settings>) => void;
+  direction: Direction;
+  setAppMode: (m: 'ski' | 'hike') => void;
 }
 
-const Ctx = createContext<ThemeCtx>({ s: DEFAULTS, set: () => {} });
+const Ctx = createContext<ThemeCtx>({
+  s: DEFAULTS,
+  set: () => {},
+  direction: 'pine',
+  setAppMode: () => {},
+});
 export const useSettings = () => useContext(Ctx);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [s, setS] = useState<Settings>(DEFAULTS);
+  const [direction, setDirection] = useState<Direction>('pine');
 
-  // Gespeicherte Wahl nach dem Mount übernehmen (vermeidet Hydration-Mismatch).
   useEffect(() => {
     try {
-      const r = localStorage.getItem(STORAGE_KEY);
-      if (r) setS({ ...DEFAULTS, ...(JSON.parse(r) as Partial<Settings>) });
-    } catch {
-      /* ignore */
-    }
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) setS({ ...DEFAULTS, ...(JSON.parse(saved) as Partial<Settings>) });
+    } catch { /* ignore */ }
+
+    try {
+      const params = JSON.parse(localStorage.getItem(PARAMS_KEY) || '{}') as { mode?: string };
+      if (params.mode === 'ski' || params.mode === 'hike') {
+        setDirection(directionFromAppMode(params.mode));
+      }
+    } catch { /* ignore */ }
   }, []);
 
   const set = (patch: Partial<Settings>) =>
@@ -126,19 +129,19 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       const next = { ...prev, ...patch };
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-      } catch {
-        /* ignore */
-      }
+      } catch { /* ignore */ }
       return next;
     });
 
+  const setAppMode = (m: 'ski' | 'hike') => setDirection(directionFromAppMode(m));
+
   return (
-    <Ctx.Provider value={{ s, set }}>
+    <Ctx.Provider value={{ s, set, direction, setAppMode }}>
       <div
         className="app"
-        data-density={s.density}
-        data-labels={s.alwaysLabels ? '1' : '0'}
-        style={themeVars(s.direction, s.mode) as CSSProperties}
+        data-density="regular"
+        data-labels="1"
+        style={themeVars(direction, s.mode) as CSSProperties}
       >
         {children}
       </div>

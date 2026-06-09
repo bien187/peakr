@@ -42,7 +42,12 @@ export function assembleResponse(
     const withinTolerance = drive.minutes <= input.maxMinutes + input.toleranceMinutes;
     if (!within && !withinTolerance) return;
 
-    const { score, breakdown } = computeScore({ mode: input.mode, live: c.live, trend: c.trend });
+    const { score, breakdown } = computeScore({
+      mode: input.mode,
+      live: c.live,
+      trend: c.trend,
+      qualityScore: c.destination.qualityScore ?? null,
+    });
     const level = c.live?.avalancheLevel ?? null;
     const blocked = input.mode === 'ski' && level != null && level >= 4;
 

@@ -14,6 +14,8 @@
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "import:destinations": "tsx src/scripts/import-destinations.ts",
+    "import:destinations-legacy": "tsx src/scripts/import-destinations-legacy.ts",
+    "import:hiking-routes": "tsx src/scripts/import-hiking-routes.ts",
     "import:slf-regions": "tsx src/scripts/import-slf-regions.ts",
     "worker:live": "tsx src/workers/liveStatus.worker.ts",
     "worker:trend": "tsx src/workers/trend.worker.ts"

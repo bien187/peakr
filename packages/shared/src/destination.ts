@@ -44,6 +44,9 @@ export const destinationSchema = z.object({
   distanceKm: z.number().nullable(),
   wikipediaTitle: z.string().nullable(),
   slfRegionId: z.string().nullable(),
+  // v2: Qualitäts-/Klassifikationsfelder
+  poiKind: z.string().nullable().optional(),       // 'peak'|'lake'|'hut'|'viewpoint'
+  qualityScore: z.number().int().nullable().optional(), // 0–100
 });
 export type Destination = z.infer<typeof destinationSchema>;
 

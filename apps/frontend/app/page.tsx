@@ -34,9 +34,8 @@ const DEFAULT_PARAMS: PParams = {
 export default function HomePage() {
   const router = useRouter();
   const { favs, toggle: onFav } = useFavorites();
-  const { s: settings } = useSettings();
+  const { setAppMode } = useSettings();
   const { user } = useAuthStore();
-  const alwaysLabels = settings.alwaysLabels;
 
   const [params, setParams] = useState<PParams>(DEFAULT_PARAMS);
   const [data, setData] = useState<SearchResponse | null>(null);
@@ -55,11 +54,15 @@ export default function HomePage() {
     restored.current = true;
     try {
       const r = localStorage.getItem(PARAMS_KEY);
-      if (r) setParams({ ...DEFAULT_PARAMS, ...(JSON.parse(r) as Partial<PParams>) });
+      if (r) {
+        const p = { ...DEFAULT_PARAMS, ...(JSON.parse(r) as Partial<PParams>) };
+        setParams(p);
+        if (p.mode) setAppMode(p.mode);
+      }
     } catch {
       /* ignore */
     }
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Gespeicherten Heimatort automatisch laden (einmalig, nur wenn kein expliziter Startort in localStorage)
   useEffect(() => {
@@ -83,7 +86,10 @@ export default function HomePage() {
     }
   }, [params]);
 
-  const set = (patch: Partial<PParams>) => setParams((p) => ({ ...p, ...patch }));
+  const set = (patch: Partial<PParams>) => {
+    if (patch.mode) setAppMode(patch.mode);
+    setParams((p) => ({ ...p, ...patch }));
+  };
 
   // Suche bei Parameteränderung (leicht entprellt, damit Slider nicht spammt)
   useEffect(() => {
@@ -162,14 +168,14 @@ export default function HomePage() {
             setSheetOpen(true);
           }}
           mode={params.mode}
-          alwaysLabels={alwaysLabels}
+          alwaysLabels={true}
         />
         <ResultsPanel
           results={results}
           suggestions={suggestions}
           selectedId={selectedId}
           onSelect={setSelectedId}
-          onOpen={(id) => router.push(`/destinations/${id}`)}
+          onOpen={(id) => router.push(`/destinations/${id}?fromlat=${originPt.lat}&fromlng=${originPt.lng}`)}
           favs={favs}
           onFav={onFav}
           originLabel={params.originLabel || 'Start'}
