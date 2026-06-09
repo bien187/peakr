@@ -107,6 +107,7 @@ export async function POST(req: Request) {
       WHERE d.lat BETWEEN ${lat - latDelta} AND ${lat + latDelta}
         AND d.lng BETWEEN ${lng - lngDelta} AND ${lng + lngDelta}
         AND ${typeCond} ${sacCond}
+      ORDER BY (d.lat - ${lat}) * (d.lat - ${lat}) + (d.lng - ${lng}) * (d.lng - ${lng}) * 0.46 ASC
       LIMIT 500
     `;
 
