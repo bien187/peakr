@@ -1,18 +1,78 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
+/* Nur die Schrift-Variablen auf die lokal optimierten next/font-Familien zeigen.
+   Alles Visuelle (Hintergrund, Farben, Komponenten) kommt aus peakr.css. */
 :root {
-  color-scheme: light dark;
+  --font-sans: var(--font-hanken), ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-serif: var(--font-spectral), Georgia, 'Times New Roman', serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, 'SF Mono', Menlo, monospace;
 }
 
-html,
-body {
-  height: 100%;
+/* ---- echte MapLibre-Karte (swisstopo Lightbasemap), an das Design angepasst ---- */
+/* MapLibre setzt am Container die Klasse .maplibregl-map { position: relative }
+   und überschreibt damit ein position:absolute+inset:0 → der Container fällt auf
+   Höhe 0 zusammen (Karte unsichtbar, obwohl Tiles laden). Darum die Map-Container
+   explizit über width/height:100% füllen (greift unabhängig von position). */
+.pk-map { position: absolute; inset: 0; width: 100%; height: 100%; background: var(--map-1); }
+.pk-map.maplibregl-map,
+.t3d-map.maplibregl-map { width: 100% !important; height: 100% !important; }
+.pk-map .maplibregl-canvas { outline: none; }
+.pk-map .maplibregl-ctrl-bottom-right,
+.pk-map .maplibregl-ctrl-bottom-left { opacity: 0.7; }
+.pk-map .maplibregl-ctrl-group {
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+  background: color-mix(in oklch, var(--surface) 88%, transparent);
+}
+.pk-map .maplibregl-ctrl-group button + button { border-top: 1px solid var(--line); }
+
+.pk-mk { position: relative; display: grid; place-items: center; cursor: pointer; }
+.pk-mk-token {
+  width: 28px; height: 28px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--surface); color: var(--pin); border: 2px solid var(--pin);
+  font: 700 11.5px/1 var(--font-mono); box-shadow: var(--shadow-sm);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.pk-mk:hover .pk-mk-token { transform: scale(1.12); }
+.pk-mk[data-sug='1'] .pk-mk-token { border-style: dashed; opacity: 0.82; }
+.pk-mk[data-sel='1'] .pk-mk-token {
+  transform: scale(1.28);
+  border-color: var(--accent);
+  color: var(--accent-2);
+  box-shadow: 0 0 0 5px var(--accent-soft), var(--shadow);
+}
+.pk-mk-label {
+  display: none; position: absolute; top: 30px; left: 50%; transform: translateX(-50%);
+  white-space: nowrap; pointer-events: none;
+  background: color-mix(in oklch, var(--surface) 92%, transparent);
+  color: var(--ink); border: 1px solid var(--line); border-radius: 6px;
+  padding: 1px 6px; font: 600 10.5px/1.5 var(--font-sans); box-shadow: var(--shadow-sm);
+}
+.pk-map.labels-on .pk-mk-label,
+.pk-mk[data-sel='1'] .pk-mk-label { display: block; }
+.pk-origin-dot {
+  width: 15px; height: 15px; border-radius: 50%;
+  background: var(--ink); border: 3px solid var(--surface); box-shadow: var(--shadow-sm);
 }
 
-body {
-  @apply bg-white text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100;
+/* dezenter Such-Status (Laden/Fehler) unten mittig über der Karte */
+.search-status {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  z-index: 60;
+  max-width: min(90vw, 460px);
+  padding: 9px 16px;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink-2);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+  pointer-events: none;
 }
 
-/* MapLibre-Styles werden in der Map-Komponente importiert. */

@@ -1,184 +1,191 @@
 'use client';
 
-import type { SearchResponse } from '@ch-alpineroute/shared';
+import type { LatLng, SearchResponse } from '@ch-alpineroute/shared';
 import dynamic from 'next/dynamic';
+import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { FilterPanel } from '@/components/FilterPanel';
-import { Header } from '@/components/Header';
-import type { MapPoint } from '@/components/MapView';
-import { ResultList } from '@/components/ResultList';
-import { ListSkeleton } from '@/components/Skeleton';
+import { ResultsPanel } from '@/components/PeakrUI';
+import { SearchControls, type PParams } from '@/components/SearchControls';
+import { TopBar } from '@/components/PeakrChrome';
 import { api, ApiError } from '@/lib/api';
-import { defaultSearchParams, type SearchParams } from '@/lib/searchParams';
+import { adaptResult, inferHikeKind, ORIGINS, sortCards, type PCard } from '@/lib/peakr';
+import { useFavorites } from '@/lib/useFavorites';
+import { useSettings } from '@/lib/theme';
 import { useAuthStore } from '@/lib/store';
 
-const STORAGE_KEY = 'ch-alpineroute-search';
-
-const MapView = dynamic(() => import('@/components/MapView'), {
+// Echte MapLibre-Karte (swisstopo) → nur clientseitig laden.
+const PeakrMap = dynamic(() => import('@/components/PeakrMap').then((m) => m.PeakrMap), {
   ssr: false,
-  loading: () => (
-    <div className="flex h-full items-center justify-center text-slate-500">Karte lädt …</div>
-  ),
+  loading: () => <div className="map-wrap" />,
 });
 
+const PARAMS_KEY = 'peakr-params';
+
+const DEFAULT_PARAMS: PParams = {
+  origin: { lat: ORIGINS[0].lat, lng: ORIGINS[0].lng },
+  originLabel: ORIGINS[0].label,
+  mode: 'ski',
+  maxMin: 120,
+  tolMin: 20,
+  hikeKind: 'any',
+  maxSac: '',
+};
+
 export default function HomePage() {
-  const [params, setParams] = useState<SearchParams>(defaultSearchParams);
+  const router = useRouter();
+  const { favs, toggle: onFav } = useFavorites();
+  const { s: settings } = useSettings();
+  const { user } = useAuthStore();
+  const alwaysLabels = settings.alwaysLabels;
+
+  const [params, setParams] = useState<PParams>(DEFAULT_PARAMS);
   const [data, setData] = useState<SearchResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
-  const token = useAuthStore((s) => s.token);
+  const [sort, setSort] = useState('score');
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [locating, setLocating] = useState(false);
   const restored = useRef(false);
+  const homeApplied = useRef(false);
 
-  // Favoriten des angemeldeten Users laden (kontogebunden)
-  useEffect(() => {
-    if (!token) {
-      setFavoriteIds(new Set());
-      return;
-    }
-    api
-      .favorites()
-      .then((f) => setFavoriteIds(new Set(f.map((x) => x.id))))
-      .catch(() => undefined);
-  }, [token]);
-
-  const runSearch = async (p: SearchParams) => {
-    if (!p.origin) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await api.search({
-        origin: p.origin,
-        mode: p.mode,
-        maxMinutes: p.maxMinutes,
-        toleranceMinutes: p.toleranceMinutes,
-        hikeKind: p.mode === 'hike' ? p.hikeKind : undefined,
-        maxSacDifficulty: p.mode === 'hike' && p.maxSacDifficulty ? p.maxSacDifficulty : undefined,
-      });
-      setData(res);
-      setSelectedId(null);
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Suche fehlgeschlagen.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Letzte Suche wiederherstellen + automatisch erneut ausführen (Sterne kommen zurück)
+  // gespeicherte Parameter wiederherstellen
   useEffect(() => {
     if (restored.current) return;
     restored.current = true;
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return;
-      const saved = JSON.parse(raw) as SearchParams;
-      setParams(saved);
-      if (saved.origin) void runSearch(saved);
+      const r = localStorage.getItem(PARAMS_KEY);
+      if (r) setParams({ ...DEFAULT_PARAMS, ...(JSON.parse(r) as Partial<PParams>) });
     } catch {
       /* ignore */
     }
   }, []);
 
-  // Suchparameter persistieren
+  // Gespeicherten Heimatort automatisch laden (einmalig, nur wenn kein expliziter Startort in localStorage)
+  useEffect(() => {
+    if (homeApplied.current) return;
+    if (!user?.homeLocation || !user?.homeLabel) return;
+    homeApplied.current = true;
+    try {
+      const saved = JSON.parse(localStorage.getItem(PARAMS_KEY) || 'null') as Partial<PParams> | null;
+      if (!saved?.origin) {
+        setParams((p) => ({ ...p, origin: user.homeLocation!, originLabel: user.homeLabel! }));
+      }
+    } catch { /* ignore */ }
+  }, [user]);
+
+  // Parameter persistieren
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(params));
+      localStorage.setItem(PARAMS_KEY, JSON.stringify(params));
     } catch {
       /* ignore */
     }
   }, [params]);
 
-  const onChange = (patch: Partial<SearchParams>) => setParams((p) => ({ ...p, ...patch }));
+  const set = (patch: Partial<PParams>) => setParams((p) => ({ ...p, ...patch }));
 
-  const toggleFavorite = async (id: string) => {
-    if (!token) return;
-    const has = favoriteIds.has(id);
-    const optimistic = new Set(favoriteIds);
-    if (has) optimistic.delete(id);
-    else optimistic.add(id);
-    setFavoriteIds(optimistic);
-    try {
-      if (has) await api.removeFavorite(id);
-      else await api.addFavorite(id);
-    } catch {
-      setFavoriteIds(favoriteIds); // zurückrollen
-    }
+  // Suche bei Parameteränderung (leicht entprellt, damit Slider nicht spammt)
+  useEffect(() => {
+    if (!params.origin) return;
+    const origin = params.origin;
+    const handle = setTimeout(() => {
+      setLoading(true);
+      setError(null);
+      api
+        .search({
+          origin,
+          mode: params.mode,
+          maxMinutes: params.maxMin,
+          toleranceMinutes: params.tolMin,
+          hikeKind: params.mode === 'hike' ? (params.hikeKind as never) : undefined,
+          maxSacDifficulty:
+            params.mode === 'hike' && params.maxSac ? (params.maxSac as never) : undefined,
+        })
+        .then((res) => {
+          setData(res);
+          setSelectedId(null);
+        })
+        .catch((e) => setError(e instanceof ApiError ? e.message : 'Suche fehlgeschlagen.'))
+        .finally(() => setLoading(false));
+    }, 350);
+    return () => clearTimeout(handle);
+  }, [params]);
+
+  const onLocate = () => {
+    if (!('geolocation' in navigator)) return;
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        set({
+          origin: { lat: pos.coords.latitude, lng: pos.coords.longitude },
+          originLabel: 'Mein Standort',
+        });
+        setLocating(false);
+      },
+      () => setLocating(false),
+      { enableHighAccuracy: true, timeout: 8000 },
+    );
   };
 
-  const points: MapPoint[] = useMemo(() => {
-    if (!data) return [];
-    return [...data.results, ...data.suggestions].map((r) => ({
-      id: r.id,
-      name: r.name,
-      location: r.location,
-      score: r.score,
-      blocked: r.blocked,
-    }));
-  }, [data]);
+  const byKind = (cards: PCard[]) =>
+    params.mode === 'hike' && params.hikeKind !== 'any'
+      ? cards.filter((c) => inferHikeKind(c.name) === params.hikeKind)
+      : cards;
+
+  const results = useMemo(
+    () => (data ? sortCards(byKind(data.results.map((r) => adaptResult(r, false))), sort) : []),
+    [data, sort, params.mode, params.hikeKind], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const suggestions = useMemo(
+    () => (data ? sortCards(byKind(data.suggestions.map((r) => adaptResult(r, true))), sort) : []),
+    [data, sort, params.mode, params.hikeKind], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
+  const originPt: LatLng = params.origin ?? { lat: ORIGINS[0].lat, lng: ORIGINS[0].lng };
 
   return (
-    <div className="flex min-h-screen flex-col">
-      <Header />
-      <div className="flex flex-1 flex-col lg:grid lg:h-[calc(100vh-4rem)] lg:grid-cols-[20rem_1fr_26rem] lg:overflow-hidden">
-        <aside className="border-b border-slate-800 p-4 lg:overflow-y-auto lg:border-b-0 lg:border-r">
-          <FilterPanel
-            params={params}
-            onChange={onChange}
-            onSearch={() => void runSearch(params)}
-            loading={loading}
-          />
-          {error && <p className="mt-3 rounded-lg bg-red-950 p-2 text-sm text-red-300">{error}</p>}
-          {!token && (
-            <p className="mt-3 text-[11px] text-slate-500">
-              Tipp:{' '}
-              <a href="/login" className="underline">
-                anmelden
-              </a>
-              , um Favoriten (★) zu speichern.
-            </p>
-          )}
-          <p className="mt-4 text-[11px] leading-relaxed text-slate-500">
-            ⚠️ Lawinenangaben sind orientierend und ersetzen nicht das offizielle{' '}
-            <a className="underline" href="https://whiterisk.ch" target="_blank" rel="noreferrer">
-              SLF-Bulletin
-            </a>
-            .
-          </p>
-        </aside>
-
-        <div className="h-72 lg:h-full">
-          <MapView
-            points={points}
-            origin={params.origin}
-            selectedId={selectedId}
-            onSelect={setSelectedId}
-          />
-        </div>
-
-        <section className="overflow-y-auto p-4">
-          {loading ? (
-            <ListSkeleton />
-          ) : data ? (
-            <ResultList
-              data={data}
-              selectedId={selectedId}
-              onSelect={setSelectedId}
-              canFavorite={!!token}
-              favoriteIds={favoriteIds}
-              onToggleFavorite={toggleFavorite}
-            />
-          ) : (
-            <div className="rounded-xl border border-dashed border-slate-700 p-8 text-center text-slate-400">
-              <p className="mb-2 text-2xl">🎿🥾</p>
-              <p className="font-semibold text-slate-200">Wähle Modus &amp; Startort</p>
-              <p className="text-sm">
-                Dann findest du die besten Ziele nach Fahrzeit, Schnee, Lawinenlage und Bekanntheit.
-              </p>
-            </div>
-          )}
-        </section>
+    <>
+      <TopBar
+        centerSlot={
+          <SearchControls params={params} set={set} onLocate={onLocate} locating={locating} />
+        }
+      />
+      <div className="stage">
+        <PeakrMap
+          results={[...results, ...suggestions]}
+          originPt={originPt}
+          originLabel={params.originLabel || 'Start'}
+          selectedId={selectedId}
+          onSelect={(id) => {
+            setSelectedId(id);
+            setSheetOpen(true);
+          }}
+          mode={params.mode}
+          alwaysLabels={alwaysLabels}
+        />
+        <ResultsPanel
+          results={results}
+          suggestions={suggestions}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+          onOpen={(id) => router.push(`/destinations/${id}`)}
+          favs={favs}
+          onFav={onFav}
+          originLabel={params.originLabel || 'Start'}
+          mode={params.mode}
+          sort={sort}
+          onSort={setSort}
+          count={results.length}
+          sheetOpen={sheetOpen}
+          onSheetToggle={() => setSheetOpen((v) => !v)}
+        />
       </div>
-    </div>
+      {(error || loading) && (
+        <div className="search-status">
+          {loading ? 'Suche läuft …' : error}
+        </div>
+      )}
+    </>
   );
 }

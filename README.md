@@ -1,80 +1,93 @@
-# 🏔️ CH-AlpineRoute
+# Peakr
 
-Intelligenter **Ski- und Wander-Navigator für die Schweiz**. Findet das beste Ziel nach
-**echter Fahrzeit**, **Schnee- & Wetterlage**, **Lawinengefahr (SLF)** und einem ehrlichen
-**Bekanntheits-Score** — alles mit **100 % kostenlosen Datenquellen**.
+**Peakr** ist ein persönlicher Ski- und Wander-Navigator für die Schweiz. Die App findet das beste Ziel für heute — basierend auf echter Fahrzeit, Schnee- und Wetterlage, Lawinengefahr und einem Bekanntheits-Score. Kein Werbe-Ranking, keine Paywalls.
 
-> Privates Tool, kein kommerzielles Produkt. Kein Mapbox-Token, kein .NET, keine bezahlten
-> Dienste (Ausnahme: optionale, standardmäßig deaktivierte OpenAI-Anreicherung).
+Der Kern: Du gibst an, wie lange du bereit bist zu fahren. Peakr berechnet daraus erreichbare Gebiete, sortiert sie nach einer Gesamtbewertung (Schnee × Score × Wetter × Saison) und zeigt dir die besten Optionen auf einer Karte — alles mit 100 % kostenlosen Datenquellen.
+
+> Privates Werkzeug, kein kommerzielles Produkt.
+
+---
+
+## Was die App kann
+
+- **Ziele finden** nach Fahrzeit vom eigenen Standort (Geocode oder GPS) — Ski oder Wandern wählbar
+- **Detailansicht** pro Ziel: 3D-Terrain, Satellitenluftbild, topografische Karte, 7-Tage-Wetter, Höhen- und Schneeverlauf, Lawinenwarnstufe
+- **Live-Daten**: Schneehöhe auf Bergstation und Tal, offene Lifte, Wettercode, Avalanche-Level (SLF)
+- **Filterung** nach Wanderart (Gipfel, Bergsee, Hütte, Aussichtspunkt) und SAC-Schwierigkeitsgrad
+- **Favoriten** mit Stern markieren und im Dashboard verwalten — auch ohne Login via localStorage
+- **Standard-Startort** im Konto speichern → wird bei jedem Öffnen automatisch vorausgewählt
+- **3 Design-Direktionen** (Paper / Glacier / Pine), hell/dunkel, Dichte-Einstellung — alles live umschaltbar, im Browser gespeichert
+- **Vollständige Authentifizierung** (Register / Login / Logout, JWT, argon2-Hashing)
+- Optional: OpenAI-Key hinterlegen für KI-gestützte Textzusammenfassungen
 
 ---
 
 ## Tech-Stack
 
-| Bereich   | Technologie                                                              |
-| --------- | ------------------------------------------------------------------------ |
-| Monorepo  | pnpm-Workspaces (`apps/backend`, `apps/frontend`, `packages/shared`)     |
-| Backend   | Node.js + TypeScript, Fastify, Drizzle ORM, Zod, jose, argon2, node-cron |
-| Datenbank | PostgreSQL 16 + PostGIS (via Docker)                                     |
-| Frontend  | Next.js (App Router), Tailwind CSS, MapLibre GL JS                       |
-| Routing   | OpenRouteService Public API (Matrix für Fahrzeiten)                      |
-| Karte     | swisstopo Vektor-Style (kostenlos, kein Token)                           |
+| Schicht      | Technologie                                                                                   |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Monorepo     | pnpm-Workspaces (`apps/backend`, `apps/frontend`, `packages/shared`)                         |
+| Frontend     | Next.js 15 (App Router), TypeScript, Tailwind CSS, MapLibre GL JS, Zustand, lucide-react     |
+| Karten       | swisstopo Lightbasemap Vektortiles, swisstopo swissimage WMTS (Luftbild), MapLibre demotiles DEM (3D-Terrain) |
+| Design       | Eigenes oklch-Token-System — 3 Design-Direktionen × hell/dunkel × 3 Dichte-Stufen           |
+| Schriften    | Spectral (Serif), Hanken Grotesk (Sans), JetBrains Mono — alle via `next/font/google`       |
+| Backend      | Node.js + TypeScript, Hapi.js, Drizzle ORM, Zod, jose (JWT), argon2, node-cron              |
+| Datenbank    | PostgreSQL 16 + PostGIS (via Docker)                                                         |
+| Infrastruktur | Docker Compose (DB + Backend + Frontend + 2 Worker in einem `docker compose up -d`)        |
 
-## Externe Datenquellen (alle kostenlos)
+### Externe Datenquellen (alle kostenlos)
 
-Open-Meteo (Wetter/Schnee), SLF CAAML (Lawinen), swisstopo GeoAdmin (Geocoding, Wanderwege),
-Overpass/OSM (POIs, SAC-Schwierigkeit), OpenRouteService (Fahrzeit – einziger Pflicht-Key),
-Wikipedia Pageviews (Bekanntheits-Score). Optional & kostenpflichtig: OpenAI (deaktiviert).
+| Quelle               | Verwendung                                        |
+| -------------------- | ------------------------------------------------- |
+| Open-Meteo           | 7-Tage-Wettervorhersage (kein API-Key nötig)      |
+| SLF CAAML            | Tägliches Lawinenbulletin                         |
+| swisstopo GeoAdmin   | Geocoding, Kartenvektor-Style, swissimage-Luftbild |
+| Overpass / OSM       | POIs, SAC-Schwierigkeiten, Hütteninformationen    |
+| OpenRouteService     | Fahrzeitmatrix (einziger Pflicht-API-Key)         |
+| Wikipedia Pageviews  | Bekanntheits-Score (pageviews pro Monat)          |
+| MapLibre demotiles   | DEM-Terrain-Tiles für 3D-Ansicht                  |
 
 ---
 
 ## Schnellstart (lokal)
 
-> Vollständige, schrittweise Anleitung inkl. Key-Beschaffung: siehe **`SETUP_EXTERNAL.md`**.
+> Vollständige Anleitung inkl. Key-Beschaffung: `SETUP_EXTERNAL.md`
 
 ```bash
-# 1. Voraussetzungen: Node ≥ 20, pnpm 9, Docker Desktop
-# 2. Secrets anlegen
-cp .env.example .env          # danach .env ausfüllen (mind. ORS_API_KEY)
+# 1. Voraussetzungen: Node ≥ 20, pnpm 9, Docker Desktop oder Colima
+cp .env.example .env          # .env ausfüllen (mind. ORS_API_KEY)
 
-# 3. Datenbank starten
+# 2. Datenbank starten
 docker compose up -d
 
-# 4. Abhängigkeiten + Migrationen
-pnpm install
-pnpm db:migrate
+# 3. Abhängigkeiten + Migrationen
+pnpm install && pnpm db:migrate
 
-# 5. Daten laden
-pnpm import:slf-regions
-pnpm import:destinations
+# 4. Daten laden
+pnpm import:destinations && pnpm import:slf-regions
 
-# 6. Entwicklung starten (Backend :4000 + Frontend :3000)
+# 5. Entwicklung (Backend :4000 + Frontend :3000)
 pnpm dev
 ```
 
-## Produktivbetrieb (komplett in Docker)
-
-Die ganze App (DB + Backend + Frontend + beide Worker) läuft mit **einem Befehl**. Voraussetzung
-ist eine Docker-Laufzeit — entweder **Docker Desktop** oder das passwortfreie **Colima**:
+## Produktivbetrieb (komplett via Docker)
 
 ```bash
-brew install colima docker docker-compose && colima start   # einmalig (falls kein Docker Desktop)
-```
+brew install colima docker docker-compose && colima start   # einmalig, falls kein Docker Desktop
 
-```bash
-cp .env.example .env             # ausfüllen (Secrets generieren, optional ORS_API_KEY)
-docker compose up -d --build     # baut & startet alles; Migration läuft automatisch
+cp .env.example .env                      # Secrets eintragen
+docker compose up -d --build              # baut & startet alles; Migration läuft automatisch
 
-# Daten einmalig laden (danach halten die Worker sie aktuell):
+# Daten einmalig laden:
 docker compose run --rm migrate pnpm import:destinations
 docker compose run --rm migrate pnpm import:slf-regions
 ```
 
 - Frontend: <http://localhost:3000> · Backend: <http://localhost:4000/api/health>
-- Status/Logs: `docker compose ps` · `docker compose logs -f backend`
-- Stoppen: `docker compose down` (Daten bleiben im Volume `pgdata` erhalten)
-- `restart: unless-stopped` → Container starten nach einem Reboot automatisch wieder
-  (Colima vorher hochfahren: `brew services start colima`, oder in Docker Desktop „Start on login").
+- Logs: `docker compose logs -f backend`
+- Stoppen: `docker compose down` (Daten bleiben im Volume `pgdata`)
+
+---
 
 ## Nützliche Befehle
 
@@ -93,8 +106,8 @@ docker compose run --rm migrate pnpm import:slf-regions
 ```
 .
 ├── apps/
-│   ├── backend/     Fastify-API, Worker, Import-Skripte
-│   └── frontend/    Next.js-UI (Map + Liste)
+│   ├── backend/     Hapi-API, Worker, Import-Skripte
+│   └── frontend/    Next.js-UI (Karte + Ergebnisliste + Detail)
 ├── packages/
 │   └── shared/      Zod-Schemas & TypeScript-Typen (Backend + Frontend)
 ├── docker-compose.yml
@@ -111,54 +124,34 @@ docker compose run --rm migrate pnpm import:slf-regions
 | `POST /api/auth/login`               | –     | Login → JWT                            |
 | `POST /api/auth/logout`              | –     | Cookie löschen                         |
 | `GET /api/me`                        | ✓     | eigenes Profil                         |
-| `PATCH /api/me`                      | ✓     | Startort/Anzeigename ändern            |
+| `PATCH /api/me`                      | ✓     | Startort / Anzeigename ändern          |
 | `PUT/DELETE /api/me/openai-key`      | ✓     | optionalen OpenAI-Key setzen/entfernen |
 | `GET /api/geocode?q=`                | –     | Ortssuche (swisstopo-Proxy)            |
 | `POST /api/search`                   | –     | Kern-Suche (Ziele nach Fahrzeit/Score) |
-| `GET /api/destinations/:id`          | –     | Detail inkl. Live-Historie             |
+| `GET /api/destinations/:id`          | –     | Detail inkl. Live-Status & Verlauf     |
 | `GET/POST/DELETE /api/favorites[..]` | ✓     | Favoriten verwalten                    |
-| `POST /api/admin/refresh`            | admin | Worker manuell anstoßen (Hintergrund)  |
+| `POST /api/admin/refresh`            | admin | Worker manuell anstoßen                |
 
-## Worker & Daten
+## Smoke-Test
 
-```bash
-pnpm import:destinations   # Ziele laden (kuratiert + Overpass) — einmalig / bei Bedarf
-pnpm import:slf-regions    # SLF-Warnregionen laden & Zielen zuordnen
+1. <http://localhost:3000> öffnen → Suchseite mit Karte erscheint
+2. **Registrieren** (oben rechts) mit E-Mail + Passwort (≥ 8 Zeichen)
+3. Im **Dashboard** einen Standard-Startort setzen → wird beim nächsten Laden automatisch übernommen
+4. Startort eingeben (Geocode oder GPS), Modus (Ski/Wandern), Fahrzeitrahmen wählen
+5. Ergebnisse als Karte + Liste → Klick auf Marker oder Karte wechselt zu Detailseite
+6. Detailseite: zwischen 3D-Terrain, Topokarte und Luftbild wechseln, Wetter + Lawinenstufe prüfen
+7. Ziel mit ★ markieren → erscheint im **Dashboard**
 
-pnpm worker:live           # Live-Status-Worker (sofort + Cron alle 3 h)
-pnpm worker:trend          # Trend-Worker (sofort + Cron täglich 04:30)
-```
-
-Die Worker laufen als eigene, dauerhafte Prozesse. Alternativ als Admin `POST /api/admin/refresh`
-für einen einmaligen Lauf. Ohne gelaufenen Live-Worker zeigen Ziele noch keine Wetter-/Schneedaten.
-
-> **Live-Liftstatus:** Es gibt keine offizielle, schweizweite Gratis-Quelle. Die Adapter geben
-> dafür sauber „unbekannt" zurück (siehe `DECISIONS.md`).
-
-## Smoke-Test (nach `pnpm dev`)
-
-1. <http://localhost:3000> öffnen → Landing/Suche erscheint.
-2. **Registrieren** (oben rechts) mit E-Mail + Passwort (≥8 Zeichen).
-3. **Startort** eingeben (z.B. „Bern") und aus der Autocomplete wählen.
-4. Modus **Ski/Wandern**, Fahrzeit-Slider setzen → **Ziele finden**.
-5. Ergebnisse erscheinen als Karten + farbige Marker auf der Karte; Klick synchronisiert beide.
-6. Ein Ziel mit ★ als Favorit markieren → erscheint im **Dashboard**.
-7. **Details →** öffnet die Detailseite mit Verlaufs-Chart.
-
-> Ohne `ORS_API_KEY` funktioniert die Suche trotzdem — Fahrzeiten sind dann Luftlinien-Schätzungen
-> (im Ergebnis-Header vermerkt). Mit Key kommen echte Fahrzeiten aus der ORS-Matrix.
+> Ohne `ORS_API_KEY` funktioniert die Suche — Fahrzeiten sind dann Luftlinien-Schätzungen.
 
 ## Fehlerbehebung
 
-- **`pnpm` fehlt:** `npm install -g pnpm@9` (Homebrew-Node bringt kein corepack mit).
+- **`pnpm` fehlt:** `npm install -g pnpm@9`
 - **DB-Verbindungsfehler:** läuft `docker compose up -d`? Stimmt `DATABASE_URL` in `.env`?
-- **`relation \"destinations\" does not exist`:** `pnpm db:migrate` ausführen.
-- **Suche liefert nichts:** zuerst `pnpm import:destinations` ausführen.
-- **Karte bleibt grau:** der swisstopo-Vektor-Style war nicht erreichbar → automatischer
-  OSM-Raster-Fallback; Marker funktionieren unabhängig davon.
+- **`relation "destinations" does not exist`:** `pnpm db:migrate` ausführen
+- **Suche liefert nichts:** `pnpm import:destinations` ausführen
+- **Karte bleibt grau:** swisstopo-Style nicht erreichbar → automatischer OSM-Raster-Fallback greift
 
 ## Sicherheitshinweis Lawinen
 
-Die angezeigte Lawinen-Gefahrenstufe stammt aus dem offiziellen SLF-Bulletin, ersetzt aber
-**nicht** die eigene Beurteilung vor Ort. Immer das offizielle Bulletin auf
-[whiterisk.ch](https://whiterisk.ch) prüfen.
+Die Lawinenstufe stammt aus dem offiziellen SLF-Bulletin, ersetzt aber **nicht** die eigene Beurteilung vor Ort. Immer das offizielle Bulletin auf [whiterisk.ch](https://whiterisk.ch) prüfen.
