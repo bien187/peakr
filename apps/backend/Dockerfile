@@ -26,5 +26,5 @@ COPY apps/backend apps/backend
 
 WORKDIR /app/apps/backend
 ENV NODE_ENV=production
-# Standardbefehl = API; Worker/Migration überschreiben das in docker-compose.yml
-CMD ["pnpm", "start"]
+# Migration läuft beim Start automatisch (idempotent), dann API
+CMD ["sh", "-c", "pnpm db:migrate && pnpm start"]
