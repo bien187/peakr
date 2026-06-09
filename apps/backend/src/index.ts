@@ -5,7 +5,7 @@ async function main(): Promise<void> {
   const app = await buildApp();
 
   try {
-    await app.listen({ port: env.BACKEND_PORT, host: '0.0.0.0' });
+    await app.listen({ port: env.PORT ?? env.BACKEND_PORT, host: '0.0.0.0' });
   } catch (err) {
     app.log.error(err);
     process.exit(1);
