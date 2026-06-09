@@ -41,8 +41,7 @@ async function getPublicUser(id: string) {
   }[]>`
     SELECT id, email, display_name, home_label, role, created_at,
       (openai_key_enc IS NOT NULL) AS has_openai_key,
-      ST_Y(home_location::geometry) AS home_lat,
-      ST_X(home_location::geometry) AS home_lng
+      home_lat::float AS home_lat, home_lng::float AS home_lng
     FROM users WHERE id = ${id} LIMIT 1
   `;
   const r = rows[0];
