@@ -18,7 +18,9 @@
     "import:hiking-routes": "tsx src/scripts/import-hiking-routes.ts",
     "import:slf-regions": "tsx src/scripts/import-slf-regions.ts",
     "worker:live": "tsx src/workers/liveStatus.worker.ts",
-    "worker:trend": "tsx src/workers/trend.worker.ts"
+    "worker:trend": "tsx src/workers/trend.worker.ts",
+    "worker:live:once": "tsx src/workers/run-once.ts live",
+    "worker:trend:once": "tsx src/workers/run-once.ts trend"
   },
   "dependencies": {
     "@ch-alpineroute/shared": "workspace:*",

@@ -1,0 +1,67 @@
+# Geplante Peakr-Worker — gratis statt Always-on-Worker.
+# Die Jobs sind seltene Batch-Läufe (liveStatus alle 3h, trend täglich), die
+# einmalig laufen und sich beenden. GitHub Actions führt sie kostenlos auf
+# Zeitplan aus und schreibt direkt in die Supabase-DB.
+#
+# Nötige Repository-Secrets (Settings → Secrets and variables → Actions):
+#   DATABASE_URL    — Supabase Connection-String (Session-Pooler/Direct)
+#   ORS_API_KEY     — OpenRouteService-Token (für liveStatus optional, aber empfohlen)
+#   ENCRYPTION_KEY  — 64 Hex-Zeichen (openssl rand -hex 32)
+#   JWT_SECRET      — beliebiges Secret ≥16 Zeichen
+#   OPENAI_API_KEY  — nur falls ENABLE_OPENAI_TREND=true (sonst weglassen)
+name: Peakr Worker
+
+on:
+  schedule:
+    - cron: "0 */3 * * *" # liveStatus — alle 3 Stunden (UTC)
+    - cron: "30 4 * * *" # trend — täglich 04:30 (UTC)
+  workflow_dispatch:
+    inputs:
+      job:
+        description: "Welcher Job manuell laufen soll"
+        type: choice
+        options: [live, trend]
+        default: live
+
+env:
+  NODE_ENV: production
+  DATABASE_URL: ${{ secrets.DATABASE_URL }}
+  ORS_API_KEY: ${{ secrets.ORS_API_KEY }}
+  ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+  JWT_SECRET: ${{ secrets.JWT_SECRET }}
+
+jobs:
+  live:
+    name: liveStatus (Wetter/Schnee/Lifte)
+    if: github.event_name == 'schedule' && github.event.schedule == '0 */3 * * *' || (github.event_name == 'workflow_dispatch' && inputs.job == 'live')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --filter @ch-alpineroute/backend...
+      - run: pnpm --filter @ch-alpineroute/backend worker:live:once
+
+  trend:
+    name: trend (Wikipedia-/OpenAI-Score)
+    if: github.event_name == 'schedule' && github.event.schedule == '30 4 * * *' || (github.event_name == 'workflow_dispatch' && inputs.job == 'trend')
+    runs-on: ubuntu-latest
+    env:
+      ENABLE_OPENAI_TREND: "false"
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --filter @ch-alpineroute/backend...
+      - run: pnpm --filter @ch-alpineroute/backend worker:trend:once
