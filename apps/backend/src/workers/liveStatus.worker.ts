@@ -4,7 +4,7 @@ import { isMainModule } from '../lib/isMain';
 import { logger } from '../lib/logger';
 import { insertLiveStatus, listDestinationsForWorker } from '../repositories/status.repo';
 import { getLiftStatus, UNKNOWN_LIFT_STATUS } from '../scrapers/adapters';
-import { fetchWeather } from '../services/openMeteo.service';
+import { fetchWeatherBatch } from '../services/openMeteo.service';
 import { fetchAvalancheLevels } from '../services/slf.service';
 
 export interface WorkerResult {
@@ -34,14 +34,21 @@ export async function runLiveStatusOnce(): Promise<WorkerResult> {
   let updated = 0;
   let failed = 0;
 
-  for (const d of destinations) {
-    const weatherResult = await settle(fetchWeather(d.lat, d.lng));
-    if (!weatherResult.ok) {
+  // Wetter für alle Ziele in wenigen gebündelten Requests holen (statt 1 Call/Ziel).
+  // Verhindert das Open-Meteo-Stundenlimit (5.000 Calls/h) bei >5.000 Zielen.
+  const weatherByIndex = await fetchWeatherBatch(destinations.map((d) => ({ lat: d.lat, lng: d.lng })));
+  logger.info(
+    { fetched: weatherByIndex.filter(Boolean).length, total: destinations.length },
+    '🌦️  Wetter (gebündelt) geladen',
+  );
+
+  for (let idx = 0; idx < destinations.length; idx++) {
+    const d = destinations[idx];
+    const weather = weatherByIndex[idx];
+    if (!weather) {
       failed++;
-      logger.warn({ dest: d.name, error: weatherResult.error.message }, 'Wetter fehlgeschlagen');
       continue;
     }
-    const weather = weatherResult.value;
     const avalancheLevel = d.slfRegionId ? (levels.get(d.slfRegionId) ?? null) : null;
 
     const lift =
@@ -79,8 +86,6 @@ export async function runLiveStatusOnce(): Promise<WorkerResult> {
         'Insert live_status fehlgeschlagen',
       );
     }
-
-    await new Promise((r) => setTimeout(r, 100)); // sanftes Throttling
   }
 
   logger.info({ updated, failed, total: destinations.length }, '✅ liveStatus-Worker fertig');

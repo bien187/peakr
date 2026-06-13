@@ -25,11 +25,17 @@ export async function listDestinationsForWorker(): Promise<WorkerDestination[]> 
       wikipedia_title: string | null;
     }[]
   >`
-    SELECT id, name, type, canton,
-      lat::float AS lat, lng::float AS lng,
-      slf_region_id, wikipedia_title
-    FROM destinations
-    ORDER BY name
+    SELECT d.id, d.name, d.type, d.canton,
+      d.lat::float AS lat, d.lng::float AS lng,
+      d.slf_region_id, d.wikipedia_title
+    FROM destinations d
+    LEFT JOIN LATERAL (
+      SELECT captured_at FROM live_status l
+      WHERE l.destination_id = d.id ORDER BY l.captured_at DESC LIMIT 1
+    ) ls ON true
+    -- Ziele ohne / mit ältesten Live-Daten zuerst: bei >5.000 Zielen (Open-Meteo
+    -- Free-Tier Stundenlimit) füllt so jeder Lauf zuerst die Lücken/ältesten Daten.
+    ORDER BY ls.captured_at ASC NULLS FIRST, d.name
   `;
   return rows.map((r) => ({
     id: r.id,
