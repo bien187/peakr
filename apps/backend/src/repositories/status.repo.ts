@@ -26,7 +26,7 @@ export async function listDestinationsForWorker(): Promise<WorkerDestination[]> 
     }[]
   >`
     SELECT id, name, type, canton,
-      ST_Y(location::geometry) AS lat, ST_X(location::geometry) AS lng,
+      lat::float AS lat, lng::float AS lng,
       slf_region_id, wikipedia_title
     FROM destinations
     ORDER BY name
