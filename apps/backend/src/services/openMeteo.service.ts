@@ -84,3 +84,54 @@ export async function fetchWeather(lat: number, lng: number): Promise<WeatherSna
   );
   return parseWeather(data);
 }
+
+export interface Coord {
+  lat: number;
+  lng: number;
+}
+
+/**
+ * Holt Wetter für viele Koordinaten in wenigen Requests. Open-Meteo akzeptiert
+ * kommagetrennte `latitude`/`longitude`-Listen und liefert dann ein Array (ein
+ * Objekt pro Koordinate, gleiche Reihenfolge). So werden aus tausenden
+ * Einzel-Calls ~Dutzende — entscheidend gegen das Free-Tier-Stundenlimit.
+ *
+ * Liefert ein Array gleicher Länge wie `coords`; fehlgeschlagene Chunks ergeben
+ * `null`-Einträge (kein Lauf-Abbruch).
+ */
+export async function fetchWeatherBatch(
+  coords: Coord[],
+  chunkSize = 100,
+): Promise<(WeatherSnapshot | null)[]> {
+  const out: (WeatherSnapshot | null)[] = new Array(coords.length).fill(null);
+
+  for (let start = 0; start < coords.length; start += chunkSize) {
+    const chunk = coords.slice(start, start + chunkSize);
+    const params = new URLSearchParams({
+      latitude: chunk.map((c) => c.lat.toFixed(5)).join(','),
+      longitude: chunk.map((c) => c.lng.toFixed(5)).join(','),
+      hourly: 'temperature_2m,snow_depth,snowfall,visibility,wind_speed_10m,weather_code',
+      daily: 'snowfall_sum,weather_code',
+      timezone: 'Europe/Zurich',
+      forecast_days: '1',
+    });
+    try {
+      const data = await fetchJson<OpenMeteoResponse | OpenMeteoResponse[]>(
+        `https://api.open-meteo.com/v1/forecast?${params.toString()}`,
+        { timeoutMs: 15000, retries: 2 },
+      );
+      // Ein einzelnes Element → Objekt, mehrere → Array. Einheitlich behandeln.
+      const arr = Array.isArray(data) ? data : [data];
+      for (let i = 0; i < chunk.length; i++) {
+        const item = arr[i];
+        out[start + i] = item ? parseWeather(item) : null;
+      }
+    } catch {
+      // Chunk bleibt null — der Aufrufer zählt das als "failed" und macht weiter.
+    }
+    // Sanftes Throttling zwischen Chunks (deutlich unter 600 Calls/min).
+    await new Promise((r) => setTimeout(r, 200));
+  }
+
+  return out;
+}
