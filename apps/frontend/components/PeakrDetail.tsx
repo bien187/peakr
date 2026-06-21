@@ -5,7 +5,15 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Icon } from './Icon';
 import { AvalancheTag, ScoreDot, WeatherChip } from './PeakrUI';
-import { fetchForecast, weatherInfo, type PDay, type PDetail } from '@/lib/peakr';
+import {
+  fetchForecast,
+  fetchHourlyTemps,
+  KIND_META,
+  weatherInfo,
+  type HourPt,
+  type PDay,
+  type PDetail,
+} from '@/lib/peakr';
 
 type MediaVariant = '3d' | 'map' | 'aerial';
 
@@ -111,6 +119,20 @@ function DetailMap({ d, variant }: { d: PDetail; variant: MediaVariant }) {
       }
     });
 
+    // Langsame, nonstop 360°-Kamerafahrt um den Zielort (nur 3D), pausiert bei Interaktion.
+    let raf = 0;
+    let spinning = false;
+    let paused = false;
+    let last = performance.now();
+    const spin = (now: number) => {
+      const dt = Math.min(0.1, (now - last) / 1000);
+      last = now;
+      if (spinning && !cancelled && !paused) map.setBearing(map.getBearing() + 4 * dt);
+      raf = requestAnimationFrame(spin);
+    };
+    const pause = () => { paused = true; };
+    const resume = () => { last = performance.now(); paused = false; };
+
     map.on('load', () => {
       if (cancelled) return;
       new maplibregl.Marker({ element: makePeakMarker(shortName(d.name)), anchor: 'bottom' })
@@ -118,6 +140,13 @@ function DetailMap({ d, variant }: { d: PDetail; variant: MediaVariant }) {
         .addTo(map);
       map.resize();
       markReady();
+      if (is3d) {
+        spinning = true;
+        last = performance.now();
+        raf = requestAnimationFrame(spin);
+        for (const ev of ['mousedown', 'touchstart', 'wheel'] as const) map.on(ev, pause);
+        for (const ev of ['mouseup', 'touchend'] as const) map.on(ev, resume);
+      }
     });
     // Robust: Overlay auch lösen, wenn 'load' verzögert ist
     map.once('idle', markReady);
@@ -128,6 +157,7 @@ function DetailMap({ d, variant }: { d: PDetail; variant: MediaVariant }) {
 
     return () => {
       cancelled = true;
+      cancelAnimationFrame(raf);
       clearTimeout(fallback);
       ro.disconnect();
       try {
@@ -277,10 +307,67 @@ export function Sparkline({ pts, unit }: { pts: number[]; unit: string }) {
       <div className="spark-axis">
         <span className="mono">Verlauf</span>
         <span className="mono">
-          aktuell · {pts[pts.length - 1]}
+          {min}–{max}
           {unit}
         </span>
       </div>
+    </div>
+  );
+}
+
+/** Detaillierter Temperaturverlauf: Stunden auf der x-Achse, °C auf der y-Achse. */
+export function TempChart({ pts }: { pts: HourPt[] }) {
+  if (pts.length < 2) {
+    return <p className="detail-note">Noch keine Prognosedaten verfügbar.</p>;
+  }
+  const W = 540,
+    H = 170,
+    padL = 30,
+    padR = 10,
+    padT = 12,
+    padB = 28;
+  const temps = pts.map((p) => p.temp);
+  let min = Math.min(...temps);
+  let max = Math.max(...temps);
+  if (min === max) {
+    min -= 1;
+    max += 1;
+  }
+  const x = (i: number) => padL + (i / (pts.length - 1)) * (W - padL - padR);
+  const y = (v: number) => padT + (1 - (v - min) / (max - min)) * (H - padT - padB);
+  const line = pts.map((p, i) => (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(p.temp).toFixed(1)).join(' ');
+  const area = `${line} L ${x(pts.length - 1).toFixed(1)} ${H - padB} L ${x(0).toFixed(1)} ${H - padB} Z`;
+  const yTicks = [max, Math.round((min + max) / 2), min];
+  const xTicks = pts.map((p, i) => ({ p, i })).filter(({ p }) => p.hour % 6 === 0);
+
+  return (
+    <div className="tchart">
+      <svg viewBox={`0 0 ${W} ${H}`} className="tchart-svg">
+        {yTicks.map((v, k) => (
+          <g key={'y' + k}>
+            <line x1={padL} x2={W - padR} y1={y(v)} y2={y(v)} className="tchart-grid" />
+            <text x={padL - 6} y={y(v) + 3.5} textAnchor="end" className="tchart-ylabel">
+              {v}°
+            </text>
+          </g>
+        ))}
+        {xTicks.map(({ p, i }, k) => (
+          <g key={'x' + k}>
+            <line
+              x1={x(i)}
+              x2={x(i)}
+              y1={padT}
+              y2={H - padB}
+              className={'tchart-vgrid' + (p.hour === 0 ? ' is-day' : '')}
+            />
+            <text x={x(i)} y={H - padB + 16} textAnchor="middle" className="tchart-xlabel">
+              {p.hour === 0 ? p.day : String(p.hour).padStart(2, '0')}
+            </text>
+          </g>
+        ))}
+        <path d={area} className="tchart-area" />
+        <path d={line} className="tchart-line" />
+      </svg>
     </div>
   );
 }
@@ -321,6 +408,7 @@ export function DetailView({
   const [media, setMedia] = useState<MediaVariant>('3d');
   const [wxOpen, setWxOpen] = useState(false);
   const [wxDays, setWxDays] = useState<PDay[] | null>(null);
+  const [wxHours, setWxHours] = useState<HourPt[]>([]);
   const [wxErr, setWxErr] = useState(false);
   const [mapsOpen, setMapsOpen] = useState(false);
 
@@ -328,6 +416,7 @@ export function DetailView({
     setMedia('3d');
     setWxOpen(false);
     setWxDays(null);
+    setWxHours([]);
     setWxErr(false);
     setMapsOpen(false);
   }, [d.id]);
@@ -338,6 +427,9 @@ export function DetailView({
     fetchForecast(d.lat, d.lng)
       .then((f) => { if (!cancelled) setWxDays(f); })
       .catch(() => { if (!cancelled) setWxErr(true); });
+    fetchHourlyTemps(d.lat, d.lng)
+      .then((h) => { if (!cancelled) setWxHours(h); })
+      .catch(() => undefined);
     return () => { cancelled = true; };
   }, [d.id, d.lat, d.lng]);
 
@@ -375,7 +467,8 @@ export function DetailView({
         <div className="detail-head">
           <div>
             <p className="detail-kicker">
-              {isSki ? 'Skigebiet' : 'Wanderziel'}
+              <Icon name={KIND_META[d.kind].icon} size={13} stroke={2} />
+              {KIND_META[d.kind].label}
               {d.canton ? ` · Kanton ${d.canton}` : ''}
             </p>
             <h1 className="detail-name">{d.name}</h1>
@@ -426,15 +519,12 @@ export function DetailView({
               <Fact label="Schnee Berg" value={dash(d.snowTop)} unit="cm" />
               <Fact label="Neuschnee 24 h" value={dash(d.fresh)} unit="cm" />
               <Fact label="Lifte offen" value={d.liftsTotal != null ? `${d.liftsOpen ?? 0}/${d.liftsTotal}` : '–'} />
-              <Fact label="Bekanntheit" value={dash(d.fame)} unit="/100" />
             </>
           ) : (
             <>
-              <Fact label="SAC-Grad" value={d.sac ?? '–'} />
               <Fact label="Höhe" value={dash(d.topM)} unit="m" />
-              <Fact label="Aufstieg" value={dash(d.ascent)} unit="hm" />
-              <Fact label="Distanz" value={dash(d.distance)} unit="km" />
-              <Fact label="Bekanntheit" value={dash(d.fame)} unit="/100" />
+              <Fact label="SAC-Grad" value={d.sac ?? '–'} />
+              <Fact label="Typ" value={KIND_META[d.kind].label} />
               <Fact label="Wind" value={d.wind != null ? Math.round(d.wind) : '–'} unit="km/h" />
             </>
           )}
@@ -481,8 +571,8 @@ export function DetailView({
         </section>
 
         <section className="detail-card">
-          <h2 className="detail-h2">{isSki ? 'Schneeverlauf' : 'Temperaturverlauf'}</h2>
-          <Sparkline pts={d.history} unit={isSki ? ' cm' : '°'} />
+          <h2 className="detail-h2">{isSki ? 'Schneeverlauf' : 'Temperaturverlauf (stündlich)'}</h2>
+          {isSki ? <Sparkline pts={d.history} unit=" cm" /> : <TempChart pts={wxHours} />}
         </section>
       </div>
     </div>

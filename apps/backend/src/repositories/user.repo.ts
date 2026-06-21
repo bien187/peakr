@@ -32,8 +32,8 @@ function toPublicUser(r: PublicUserRow): PublicUser {
 const PUBLIC_SELECT = sql`
   id, email, display_name, home_label, role, created_at,
   (openai_key_enc IS NOT NULL) AS has_openai_key,
-  ST_Y(home_location::geometry) AS home_lat,
-  ST_X(home_location::geometry) AS home_lng
+  home_lat::float8 AS home_lat,
+  home_lng::float8 AS home_lng
 `;
 
 export async function getPublicUser(id: string): Promise<PublicUser | null> {
@@ -80,7 +80,8 @@ export async function updateProfile(id: string, patch: UpdateMeInput): Promise<v
   if (patch.homeLocation !== undefined) {
     await sql`
       UPDATE users
-      SET home_location = ST_SetSRID(ST_MakePoint(${patch.homeLocation.lng}, ${patch.homeLocation.lat}), 4326)::geography,
+      SET home_lat = ${patch.homeLocation.lat},
+          home_lng = ${patch.homeLocation.lng},
           updated_at = now()
       WHERE id = ${id}
     `;

@@ -12,15 +12,41 @@ import type {
 export type PType = 'ski' | 'hike';
 export type TrendDir = 'up' | 'down' | 'flat';
 
+/** Zielart fürs Typ-Symbol (statt der entfernten Bekanntheits-Zahl). */
+export type DestKind = 'peak' | 'lake' | 'hut' | 'viewpoint' | 'ski';
+
+export const KIND_META: Record<DestKind, { icon: string; label: string }> = {
+  peak: { icon: 'Mountain', label: 'Gipfel' },
+  lake: { icon: 'Waves', label: 'Bergsee' },
+  hut: { icon: 'House', label: 'Hütte' },
+  viewpoint: { icon: 'Eye', label: 'Aussichtspunkt' },
+  ski: { icon: 'Snowflake', label: 'Skigebiet' },
+};
+
+/** Zielart aus poi_kind ableiten (DB-Wert ist führend), sonst aus dem Namen. */
+export function destKind(
+  poiKind: string | null | undefined,
+  name: string,
+  type: PType,
+): DestKind {
+  if (type === 'ski') return 'ski';
+  if (poiKind === 'peak' || poiKind === 'lake' || poiKind === 'hut' || poiKind === 'viewpoint') {
+    return poiKind;
+  }
+  return inferHikeKind(name);
+}
+
 /** Flache Karten-Form, die alle Prototyp-UI-Komponenten erwarten. */
 export interface PCard {
   id: string;
   name: string;
   type: PType;
+  kind: DestKind;
   canton: string;
   lat: number;
   lng: number;
   score: number;
+  topM: number | null;
   driveMin: number;
   km: number;
   snowTop: number | null;
@@ -173,10 +199,12 @@ export function adaptResult(r: SearchResult, suggestion: boolean): PCard {
     id: r.id,
     name: r.name,
     type: isSkiType(r.type) ? 'ski' : 'hike',
+    kind: destKind(r.poiKind, r.name, isSkiType(r.type) ? 'ski' : 'hike'),
     canton: r.canton ?? '',
     lat: r.location.lat,
     lng: r.location.lng,
     score: displayScore(r.type, live?.liftsTotal, live?.snowDepthTopCm, r.ascentM, r.distanceKm, r.elevationTopM, r.qualityScore),
+    topM: r.elevationTopM ?? null,
     driveMin: Math.round(r.driveMinutes),
     km: r.distanceAirKm,
     snowTop: live?.snowDepthTopCm ?? null,
@@ -244,6 +272,7 @@ export function adaptDetail(d: DestinationDetail): PDetail {
     id: d.id,
     name: d.name,
     type: ski ? 'ski' : 'hike',
+    kind: destKind(d.poiKind, d.name, ski ? 'ski' : 'hike'),
     canton: d.canton ?? '',
     lat: d.location.lat,
     lng: d.location.lng,
@@ -286,10 +315,12 @@ export function adaptFavorite(d: DestinationWithStatus): PCard {
     id: d.id,
     name: d.name,
     type: ski ? 'ski' : 'hike',
+    kind: destKind(d.poiKind, d.name, ski ? 'ski' : 'hike'),
     canton: d.canton ?? '',
     lat: d.location.lat,
     lng: d.location.lng,
     score: displayScore(d.type, live?.liftsTotal, snowTop, d.ascentM, d.distanceKm, d.elevationTopM, d.qualityScore),
+    topM: d.elevationTopM ?? null,
     driveMin: 0,
     km: 0,
     snowTop,
@@ -346,6 +377,38 @@ export function routeGeo(d: { id: string; name: string; lat: number; lng: number
     parkLabel: 'Parkplatz',
     peakLabel: d.name.split(' – ')[0].split(' (')[0],
   };
+}
+
+/** Ein Stundenwert für den Temperaturverlauf. */
+export interface HourPt {
+  /** ms-Zeitstempel */
+  t: number;
+  hour: number;
+  temp: number;
+  day: string;
+}
+
+/** Stündliche Temperatur (Open-Meteo) ab jetzt für ~30 Stunden. */
+export async function fetchHourlyTemps(lat: number, lng: number): Promise<HourPt[]> {
+  const url =
+    `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}` +
+    `&hourly=temperature_2m&timezone=Europe%2FZurich&forecast_days=2`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Open-Meteo HTTP ${res.status}`);
+  const j = (await res.json()) as { hourly?: { time: string[]; temperature_2m: (number | null)[] } };
+  const h = j.hourly;
+  if (!h) return [];
+  const names = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+  const cutoff = Date.now() - 3600_000; // ab letzter voller Stunde
+  const out: HourPt[] = [];
+  for (let i = 0; i < h.time.length; i++) {
+    const dt = new Date(h.time[i]);
+    const v = h.temperature_2m[i];
+    if (dt.getTime() < cutoff || v == null) continue;
+    out.push({ t: dt.getTime(), hour: dt.getHours(), temp: Math.round(v), day: names[dt.getDay()] });
+    if (out.length >= 30) break;
+  }
+  return out;
 }
 
 /** Echte 7-Tage-Prognose von Open-Meteo (kostenlos, kein Key). */

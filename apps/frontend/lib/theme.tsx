@@ -98,17 +98,21 @@ interface ThemeCtx {
   setAppMode: (m: 'ski' | 'hike') => void;
 }
 
+// Default-App-Modus ist 'ski' (siehe DEFAULT_PARAMS) → glacier, damit Theme und
+// Modus-Schalter beim Erstbesuch (ohne gespeicherte Parameter) übereinstimmen.
+const DEFAULT_DIRECTION = directionFromAppMode('ski');
+
 const Ctx = createContext<ThemeCtx>({
   s: DEFAULTS,
   set: () => {},
-  direction: 'pine',
+  direction: DEFAULT_DIRECTION,
   setAppMode: () => {},
 });
 export const useSettings = () => useContext(Ctx);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [s, setS] = useState<Settings>(DEFAULTS);
-  const [direction, setDirection] = useState<Direction>('pine');
+  const [direction, setDirection] = useState<Direction>(DEFAULT_DIRECTION);
 
   useEffect(() => {
     try {

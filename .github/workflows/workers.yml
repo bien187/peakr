@@ -44,7 +44,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - run: pnpm install --frozen-lockfile --filter @ch-alpineroute/backend...
+      - run: pnpm install --frozen-lockfile --prod=false --filter @ch-alpineroute/backend...
       - run: pnpm --filter @ch-alpineroute/backend worker:live:once
 
   trend:
@@ -63,5 +63,5 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - run: pnpm install --frozen-lockfile --filter @ch-alpineroute/backend...
+      - run: pnpm install --frozen-lockfile --prod=false --filter @ch-alpineroute/backend...
       - run: pnpm --filter @ch-alpineroute/backend worker:trend:once

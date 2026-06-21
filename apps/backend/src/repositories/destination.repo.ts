@@ -25,7 +25,6 @@ interface CandidateRow {
   slf_region_id: string | null;
   poi_kind: string | null;
   quality_score: number | null;
-  air_m: number;
   captured_at: Date | null;
   temperature_c: number | null;
   weather_code: number | null;
@@ -105,8 +104,8 @@ function rowToTrend(r: CandidateRow): TrendScore | null {
 // Gemeinsame Spaltenliste (destination + neuester live-Snapshot + trend).
 const CANDIDATE_COLUMNS = sql`
   d.id, d.name, d.type, d.canton,
-  ST_Y(d.location::geometry) AS lat,
-  ST_X(d.location::geometry) AS lng,
+  d.lat::float8 AS lat,
+  d.lng::float8 AS lng,
   d.elevation_base_m, d.elevation_top_m, d.sac_difficulty, d.ascent_m, d.distance_km,
   d.wikipedia_title, d.slf_region_id, d.poi_kind, d.quality_score,
   ls.captured_at, ls.temperature_c, ls.weather_code, ls.visibility_m, ls.wind_kmh,
@@ -124,45 +123,79 @@ const LATEST_LIVE_JOIN = sql`
 `;
 
 /**
- * Schritt 1 der Suche: PostGIS-Grobfilter per ST_DWithin, ein einziger Query
- * (kein N+1) mit neuestem Live-Snapshot via DISTINCT-ON/LATERAL und Trend.
- * Sortiert nach Luftlinie, LIMIT 60.
+ * Obergrenze der Kandidaten (mit Live-/Trend-Daten) für Liste UND Karte. Hoch
+ * genug, dass praktisch ALLE im Fahrzeit-Budget erreichbaren Ziele zurückkommen
+ * – sonst entsteht durch den nächste-N-Cutoff ein künstlicher Ring am Kreisrand
+ * statt echter, schweizweiter Streuung. Der Live-Join läuft ohnehin über alle
+ * erreichbaren Zeilen; das LIMIT begrenzt nur die Ausgabe. Liste ist virtualisiert.
  */
-export async function findCandidates(input: SearchInput, radiusM: number): Promise<Candidate[]> {
-  const { lat, lng } = input.origin;
+const CANDIDATE_LIMIT = 8000;
 
+/**
+ * Schritt 1 der Suche: PostGIS-Grobfilter per ST_DWithin, ein einziger Query
+ * (kein N+1) mit neuestem Live-Snapshot via LATERAL und Trend.
+ * Sortiert nach Luftlinie, LIMIT {@link CANDIDATE_LIMIT}.
+ */
+const POI_KINDS = ['peak', 'lake', 'hut', 'viewpoint'] as const;
+
+/** Typ- und SAC-Filter (für Kandidaten- und Kartenpunkt-Query identisch). */
+function buildFilters(input: SearchInput) {
+  const kind = input.hikeKind;
   const typeCond =
     input.mode === 'ski'
       ? sql`d.type = 'ski_resort'`
-      : input.hikeKind === 'route'
+      : kind === 'route'
         ? sql`d.type = 'hike_route'`
-        : input.hikeKind && input.hikeKind !== 'any'
-          ? sql`d.type = 'hike_destination'`
+        : kind && (POI_KINDS as readonly string[]).includes(kind)
+          ? // Nach Zielart filtern (Gipfel/Bergsee/Hütte/Aussicht) – sonst kämen
+            // bei der nächstgelegenen-N-Auswahl fast nur Gipfel zurück.
+            sql`d.type = 'hike_destination' AND d.poi_kind = ${kind}`
           : sql`d.type IN ('hike_route', 'hike_destination')`;
 
   const sacCond = input.maxSacDifficulty
     ? sql`AND (d.sac_difficulty IS NULL OR d.sac_difficulty <= ${input.maxSacDifficulty}::sac_difficulty)`
     : sql``;
 
+  return { typeCond, sacCond };
+}
+
+/** Luftlinie in km (Haversine) – günstig in JS statt teurer PostGIS-Geography. */
+function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371;
+  const toR = (d: number) => (d * Math.PI) / 180;
+  const dLat = toR(lat2 - lat1);
+  const dLng = toR(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toR(lat1)) * Math.cos(toR(lat2)) * Math.sin(dLng / 2) ** 2;
+  return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)) * 10) / 10;
+}
+
+export async function findCandidates(input: SearchInput, radiusM: number): Promise<Candidate[]> {
+  const { lat, lng } = input.origin;
+  const { typeCond, sacCond } = buildFilters(input);
+
+  // Bounding-Box-Vorfilter auf lat/lng + planarer Abstand zum Sortieren – um
+  // Größenordnungen schneller als ST_DWithin/ST_Distance auf einer berechneten
+  // Geography (kein Index). Die echte Fahrzeit-Filterung passiert ohnehin später.
+  const latDelta = radiusM / 111_000;
+  const lngDelta = radiusM / 75_000;
+
   const rows = await sql<CandidateRow[]>`
-    SELECT ${CANDIDATE_COLUMNS},
-      ST_Distance(d.location, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography) AS air_m
+    SELECT ${CANDIDATE_COLUMNS}
     FROM destinations d
     ${LATEST_LIVE_JOIN}
-    WHERE ST_DWithin(
-            d.location,
-            ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography,
-            ${radiusM}
-          )
+    WHERE d.lat BETWEEN ${lat - latDelta} AND ${lat + latDelta}
+      AND d.lng BETWEEN ${lng - lngDelta} AND ${lng + lngDelta}
       AND ${typeCond}
       ${sacCond}
-    ORDER BY air_m ASC
-    LIMIT 200
+    ORDER BY (d.lat - ${lat}) * (d.lat - ${lat}) + (d.lng - ${lng}) * (d.lng - ${lng}) * 0.46 ASC
+    LIMIT ${CANDIDATE_LIMIT}
   `;
 
   return rows.map((r) => ({
     destination: rowToDestination(r),
-    airKm: Math.round((r.air_m / 1000) * 10) / 10,
+    airKm: haversineKm(lat, lng, r.lat, r.lng),
     live: rowToLive(r),
     trend: rowToTrend(r),
   }));
@@ -171,7 +204,7 @@ export async function findCandidates(input: SearchInput, radiusM: number): Promi
 /** Detailansicht inkl. Live-Historie für Charts. */
 export async function getDestinationDetail(id: string): Promise<DestinationDetail | null> {
   const rows = await sql<CandidateRow[]>`
-    SELECT ${CANDIDATE_COLUMNS}, 0::float8 AS air_m
+    SELECT ${CANDIDATE_COLUMNS}
     FROM destinations d
     ${LATEST_LIVE_JOIN}
     WHERE d.id = ${id}

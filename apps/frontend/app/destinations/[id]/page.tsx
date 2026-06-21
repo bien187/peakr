@@ -3,6 +3,7 @@
 import dynamic from 'next/dynamic';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { CompassLoader } from '@/components/PeakrUI';
 import { api, ApiError } from '@/lib/api';
 import { adaptDetail, type PDetail } from '@/lib/peakr';
 import { useFavorites } from '@/lib/useFavorites';
@@ -10,7 +11,11 @@ import { useFavorites } from '@/lib/useFavorites';
 // Detailansicht enthält MapLibre (3D) → nur clientseitig laden.
 const DetailView = dynamic(() => import('@/components/PeakrDetail').then((m) => m.DetailView), {
   ssr: false,
-  loading: () => <div className="page-pad">3D-Ansicht wird vorbereitet …</div>,
+  loading: () => (
+    <div className="page-pad">
+      <CompassLoader label="Ansicht wird vorbereitet …" />
+    </div>
+  ),
 });
 
 export default function DestinationDetailPage() {
@@ -49,7 +54,12 @@ export default function DestinationDetailPage() {
     );
   }
 
-  if (!d) return <div className="page-pad">Lädt …</div>;
+  if (!d)
+    return (
+      <div className="page-pad">
+        <CompassLoader label="Ziel wird geladen …" />
+      </div>
+    );
 
   return <DetailView d={d} isFav={isFav(d.id)} onFav={toggle} onBack={() => router.push('/')} origin={origin} />;
 }

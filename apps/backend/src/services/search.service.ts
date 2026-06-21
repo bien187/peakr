@@ -7,6 +7,14 @@ import { computeScore } from './score.service';
 const round1 = (n: number): number => Math.round(n * 10) / 10;
 
 /**
+ * Max. Anzahl Kandidaten (die nächstgelegenen), für die echte ORS-Fahrzeiten
+ * abgerufen werden. Entspricht ~1 Matrix-Request. Alle weiteren nutzen die
+ * Luftlinien-Schätzung, damit große Kandidatenlisten nicht dutzende ORS-Requests
+ * (Quota/Latenz) auslösen.
+ */
+const ORS_MATRIX_LIMIT = 60;
+
+/**
  * Fallback-Fahrzeit, wenn ORS keine Route findet (z.B. Gipfel ohne Straße in der Nähe)
  * oder kein Key gesetzt ist: Luftlinie × 1,4 bei ~50 km/h.
  */
@@ -30,6 +38,7 @@ export function assembleResponse(
   candidates: Candidate[],
   drives: DriveInfo[],
   matrixUsed: boolean,
+  mapPoints: SearchResponse['mapPoints'] = [],
 ): SearchResponse {
   const results: SearchResult[] = [];
   const suggestions: SearchResult[] = [];
@@ -82,6 +91,7 @@ export function assembleResponse(
   return {
     results,
     suggestions,
+    mapPoints,
     meta: {
       candidatesEvaluated: candidates.length,
       matrixUsed,
@@ -99,16 +109,21 @@ export async function search(input: SearchInput): Promise<SearchResponse> {
     return {
       results: [],
       suggestions: [],
+      mapPoints: [],
       meta: { candidatesEvaluated: 0, matrixUsed: false, generatedAt: new Date().toISOString() },
     };
   }
 
+  // ORS-Fahrzeiten nur für die nächstgelegenen Kandidaten abrufen: Bei großen
+  // Listen (bis CANDIDATE_LIMIT) wären sonst dutzende sequentielle Matrix-Requests
+  // nötig (Quota + Latenz). Die weiter entfernten – und die straßenlosen Gipfel,
+  // für die ORS ohnehin null liefert – bekommen die Luftlinien-Schätzung.
   let orsMinutes: (number | null)[] | null = null;
   if (isOrsConfigured()) {
     try {
       orsMinutes = await drivingMatrixMinutes(
         input.origin,
-        candidates.map((c) => c.destination.location),
+        candidates.slice(0, ORS_MATRIX_LIMIT).map((c) => c.destination.location),
       );
     } catch (err) {
       logger.error(
@@ -125,7 +140,7 @@ export async function search(input: SearchInput): Promise<SearchResponse> {
   // Unroutbare Ziele (ORS liefert null, z.B. Gipfel ohne Straße) werden NICHT verworfen,
   // sondern bekommen eine Luftlinien-Schätzung → deutlich mehr Treffer (v.a. beim Wandern).
   const drives: DriveInfo[] = candidates.map((c, i) => {
-    const m = orsMinutes ? orsMinutes[i] : null;
+    const m = orsMinutes && i < orsMinutes.length ? orsMinutes[i] : null;
     return typeof m === 'number' && Number.isFinite(m)
       ? { minutes: m, estimated: false }
       : { minutes: estimateDriveMinutes(c.airKm), estimated: true };

@@ -3,12 +3,12 @@
 import type { LatLng, SearchResponse } from '@ch-alpineroute/shared';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ResultsPanel } from '@/components/PeakrUI';
 import { SearchControls, type PParams } from '@/components/SearchControls';
 import { TopBar } from '@/components/PeakrChrome';
 import { api, ApiError } from '@/lib/api';
-import { adaptResult, inferHikeKind, ORIGINS, sortCards, type PCard } from '@/lib/peakr';
+import { adaptResult, ORIGINS, sortCards } from '@/lib/peakr';
 import { useFavorites } from '@/lib/useFavorites';
 import { useSettings } from '@/lib/theme';
 import { useAuthStore } from '@/lib/store';
@@ -45,6 +45,7 @@ export default function HomePage() {
   const [sort, setSort] = useState('score');
   const [sheetOpen, setSheetOpen] = useState(false);
   const [locating, setLocating] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
   const restored = useRef(false);
   const homeApplied = useRef(false);
 
@@ -61,6 +62,8 @@ export default function HomePage() {
       }
     } catch {
       /* ignore */
+    } finally {
+      setHydrated(true);
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -77,14 +80,16 @@ export default function HomePage() {
     } catch { /* ignore */ }
   }, [user]);
 
-  // Parameter persistieren
+  // Parameter persistieren – erst NACH dem Wiederherstellen, sonst überschreibt der
+  // Initial-Render (DEFAULT_PARAMS = ski) die gespeicherten Werte, bevor sie gelesen werden.
   useEffect(() => {
+    if (!hydrated) return;
     try {
       localStorage.setItem(PARAMS_KEY, JSON.stringify(params));
     } catch {
       /* ignore */
     }
-  }, [params]);
+  }, [params, hydrated]);
 
   const set = (patch: Partial<PParams>) => {
     if (patch.mode) setAppMode(patch.mode);
@@ -134,21 +139,30 @@ export default function HomePage() {
     );
   };
 
-  const byKind = (cards: PCard[]) =>
-    params.mode === 'hike' && params.hikeKind !== 'any'
-      ? cards.filter((c) => inferHikeKind(c.name) === params.hikeKind)
-      : cards;
-
+  // Zielart-Filter passiert serverseitig (poi_kind) – hier nur noch sortieren.
   const results = useMemo(
-    () => (data ? sortCards(byKind(data.results.map((r) => adaptResult(r, false))), sort) : []),
-    [data, sort, params.mode, params.hikeKind], // eslint-disable-line react-hooks/exhaustive-deps
+    () => (data ? sortCards(data.results.map((r) => adaptResult(r, false)), sort) : []),
+    [data, sort],
   );
   const suggestions = useMemo(
-    () => (data ? sortCards(byKind(data.suggestions.map((r) => adaptResult(r, true))), sort) : []),
-    [data, sort, params.mode, params.hikeKind], // eslint-disable-line react-hooks/exhaustive-deps
+    () => (data ? sortCards(data.suggestions.map((r) => adaptResult(r, true)), sort) : []),
+    [data, sort],
   );
 
+  // Karte zeigt exakt die Treffer der Liste.
+  const mapCards = useMemo(() => [...results, ...suggestions], [results, suggestions]);
+
   const originPt: LatLng = params.origin ?? { lat: ORIGINS[0].lat, lng: ORIGINS[0].lng };
+
+  // Stabile Callbacks → die memoisierten ResultCards rendern bei Auswahl nicht alle neu.
+  const handleMapSelect = useCallback((id: string) => {
+    setSelectedId(id);
+    setSheetOpen(true);
+  }, []);
+  const handleOpen = useCallback(
+    (id: string) => router.push(`/destinations/${id}?fromlat=${originPt.lat}&fromlng=${originPt.lng}`),
+    [router, originPt.lat, originPt.lng],
+  );
 
   return (
     <>
@@ -159,14 +173,11 @@ export default function HomePage() {
       />
       <div className="stage">
         <PeakrMap
-          results={[...results, ...suggestions]}
+          points={mapCards}
           originPt={originPt}
           originLabel={params.originLabel || 'Start'}
           selectedId={selectedId}
-          onSelect={(id) => {
-            setSelectedId(id);
-            setSheetOpen(true);
-          }}
+          onSelect={handleMapSelect}
           mode={params.mode}
           alwaysLabels={true}
         />
@@ -175,7 +186,7 @@ export default function HomePage() {
           suggestions={suggestions}
           selectedId={selectedId}
           onSelect={setSelectedId}
-          onOpen={(id) => router.push(`/destinations/${id}?fromlat=${originPt.lat}&fromlng=${originPt.lng}`)}
+          onOpen={handleOpen}
           favs={favs}
           onFav={onFav}
           originLabel={params.originLabel || 'Start'}
