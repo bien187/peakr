@@ -1,15 +1,16 @@
 'use client';
 
-import { useEffect, useRef, type CSSProperties } from 'react';
+import { memo, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Icon } from './Icon';
 import {
   AVALANCHE,
   fmtDrive,
+  KIND_META,
   scoreColor,
   SORTS,
   weatherInfo,
+  type DestKind,
   type PCard,
-  type TrendDir,
 } from '@/lib/peakr';
 
 type CSSVars = CSSProperties & Record<string, string | number>;
@@ -23,18 +24,24 @@ export function ScoreDot({ score, size = 'md' }: { score: number; size?: 'md' | 
   );
 }
 
-export function TrendTag({ dir, fame }: { dir: TrendDir; fame: number }) {
-  const map: Record<TrendDir, [string, string]> = {
-    up: ['TrendingUp', 'im Trend'],
-    down: ['TrendingDown', 'rückläufig'],
-    flat: ['Minus', 'stabil'],
-  };
-  const [icon, label] = map[dir] ?? map.flat;
+/** Zeigt die Zielart (Gipfel/Bergsee/Hütte/…) statt der früheren Bekanntheits-Zahl. */
+export function TypeChip({ kind }: { kind: DestKind }) {
+  const m = KIND_META[kind];
   return (
-    <span className="trend-tag" title={`Bekanntheit ${fame}/100 · ${label}`}>
-      <Icon name={icon} size={13} stroke={2} />
-      <span>{fame}</span>
+    <span className="type-chip" title={m.label}>
+      <Icon name={m.icon} size={13} stroke={2} />
+      <span>{m.label}</span>
     </span>
+  );
+}
+
+/** Sich drehender Kompass als Ladeanzeige. */
+export function CompassLoader({ label }: { label?: string }) {
+  return (
+    <div className="compass-loader" role="status" aria-live="polite">
+      <Icon name="Compass" size={34} stroke={1.75} className="compass-spin" />
+      {label && <p className="compass-loader-t">{label}</p>}
+    </div>
   );
 }
 
@@ -92,7 +99,7 @@ export function Stat({
   );
 }
 
-export function ResultCard({
+export const ResultCard = memo(function ResultCard({
   r,
   selected,
   onSelect,
@@ -132,7 +139,7 @@ export function ResultCard({
             {r.suggestion && <span className="over-pill">+{r.over} min</span>}
           </p>
         </div>
-        {r.fame != null && <TrendTag dir={r.trendDir} fame={r.fame} />}
+        <TypeChip kind={r.kind} />
       </div>
 
       <div className="rcard-stats">
@@ -147,9 +154,9 @@ export function ResultCard({
           </>
         ) : (
           <>
+            <Stat label="Höhe" value={dash(r.topM)} unit="m" />
             <Stat label="SAC" value={r.sac ?? '–'} />
-            <Stat label="Aufstieg" value={dash(r.ascent)} unit="hm" />
-            <Stat label="Distanz" value={dash(r.distance)} unit="km" />
+            <Stat label="Wind" value={r.wind != null ? Math.round(r.wind) : '–'} unit="km/h" />
           </>
         )}
       </div>
@@ -192,7 +199,7 @@ export function ResultCard({
       </div>
     </article>
   );
-}
+});
 
 export function ResultsPanel({
   results,
@@ -226,19 +233,57 @@ export function ResultsPanel({
   onSheetToggle: () => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const cardRefs = useRef<Record<string, HTMLElement | null>>({});
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewH, setViewH] = useState(800);
 
+  // Scrollposition + sichtbare Höhe verfolgen (für die Virtualisierung).
   useEffect(() => {
-    if (!selectedId) return;
-    const el = cardRefs.current[selectedId];
     const sc = scrollRef.current;
-    if (el && sc) {
-      const top = el.offsetTop - sc.offsetTop - 12;
-      sc.scrollTo({ top, behavior: 'smooth' });
-    }
-  }, [selectedId]);
+    if (!sc) return;
+    const onScroll = () => setScrollTop(sc.scrollTop);
+    const ro = new ResizeObserver(() => setViewH(sc.clientHeight));
+    ro.observe(sc);
+    setViewH(sc.clientHeight);
+    sc.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      sc.removeEventListener('scroll', onScroll);
+      ro.disconnect();
+    };
+  }, []);
 
   const all = [...results, ...suggestions];
+  // Ausgewähltes Ziel (z.B. per Klick auf die Karte) ganz oben anzeigen + umrahmen.
+  const pinned = selectedId ? all.find((c) => c.id === selectedId) : null;
+
+  // Flache Zeilenliste – nur DATEN, keine Elemente. So bleiben bei tausenden
+  // Treffern nur ~30 Karten im DOM (Virtualisierung).
+  type Row = { type: 'card'; card: PCard } | { type: 'divider' };
+  const rows = useMemo<Row[]>(() => {
+    const out: Row[] = [];
+    const pid = pinned?.id;
+    if (pinned) out.push({ type: 'card', card: pinned });
+    for (const r of results) if (r.id !== pid) out.push({ type: 'card', card: r });
+    const restSug = suggestions.filter((c) => c.id !== pid);
+    if (restSug.length) out.push({ type: 'divider' });
+    for (const r of restSug) out.push({ type: 'card', card: r });
+    return out;
+  }, [results, suggestions, pinned]);
+
+  // Auswahl pinnt nach oben → dorthin scrollen; neue Suche/Sortierung ebenfalls.
+  useEffect(() => {
+    if (pinned) scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [selectedId]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: 0 });
+    setScrollTop(0);
+  }, [results, suggestions]);
+
+  const ROW_H = 178; // geschätzte Zeilenhöhe inkl. Abstand
+  const BUFFER = 6;
+  const start = Math.max(0, Math.floor(scrollTop / ROW_H) - BUFFER);
+  const end = Math.min(rows.length, Math.ceil((scrollTop + viewH) / ROW_H) + BUFFER);
+  const topPad = start * ROW_H;
+  const botPad = Math.max(0, (rows.length - end) * ROW_H);
 
   return (
     <div className={'panel' + (sheetOpen ? ' sheet-open' : '')}>
@@ -278,45 +323,36 @@ export function ResultsPanel({
       </div>
 
       <div className="panel-scroll" ref={scrollRef}>
-        {all.length === 0 && (
+        {all.length === 0 ? (
           <div className="empty">
             <Icon name="MapPinOff" size={26} stroke={1.5} />
             <p className="empty-title">Keine Ziele in Reichweite</p>
             <p className="empty-sub">Erhöhe die Fahrzeit oder Toleranz, um mehr zu sehen.</p>
           </div>
+        ) : (
+          <>
+            {topPad > 0 && <div style={{ height: topPad, flexShrink: 0 }} aria-hidden />}
+            {rows.slice(start, end).map((row, i) =>
+              row.type === 'divider' ? (
+                <div className="sug-head" key={'div' + (start + i)}>
+                  <span>Knapp ausserhalb</span>
+                  <span className="sug-rule" />
+                </div>
+              ) : (
+                <ResultCard
+                  key={row.card.id}
+                  r={row.card}
+                  selected={row.card.id === selectedId}
+                  onSelect={onSelect}
+                  onOpen={onOpen}
+                  isFav={favs.has(row.card.id)}
+                  onFav={onFav}
+                />
+              ),
+            )}
+            {botPad > 0 && <div style={{ height: botPad, flexShrink: 0 }} aria-hidden />}
+          </>
         )}
-
-        {results.map((r) => (
-          <ResultCard
-            key={r.id}
-            r={r}
-            innerRef={(el) => (cardRefs.current[r.id] = el)}
-            selected={r.id === selectedId}
-            onSelect={onSelect}
-            onOpen={onOpen}
-            isFav={favs.has(r.id)}
-            onFav={onFav}
-          />
-        ))}
-
-        {suggestions.length > 0 && (
-          <div className="sug-head">
-            <span>Knapp ausserhalb</span>
-            <span className="sug-rule" />
-          </div>
-        )}
-        {suggestions.map((r) => (
-          <ResultCard
-            key={r.id}
-            r={r}
-            innerRef={(el) => (cardRefs.current[r.id] = el)}
-            selected={r.id === selectedId}
-            onSelect={onSelect}
-            onOpen={onOpen}
-            isFav={favs.has(r.id)}
-            onFav={onFav}
-          />
-        ))}
 
         <p className="panel-foot">
           <Icon name="TriangleAlert" size={13} stroke={2} />

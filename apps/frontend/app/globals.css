@@ -56,6 +56,39 @@
   background: var(--ink); border: 3px solid var(--surface); box-shadow: var(--shadow-sm);
 }
 
+/* ---- Typ-Chip (Zielart statt Bekanntheits-Zahl) --------------------------- */
+.type-chip {
+  display: inline-flex; align-items: center; gap: 5px; flex: none;
+  font: 600 11.5px/1 var(--font-sans); color: var(--ink-2);
+  background: var(--surface-2); padding: 6px 10px; border-radius: 999px;
+}
+.type-chip svg { color: var(--accent-2); }
+
+/* ---- Kompass-Ladeanzeige -------------------------------------------------- */
+.compass-loader {
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  padding: 48px 0; color: var(--ink-2);
+}
+.compass-loader-t { margin: 0; font: 500 14px/1 var(--font-sans); color: var(--ink-3); }
+.compass-spin {
+  color: var(--accent);
+  animation: compass-spin 1.5s cubic-bezier(0.5, 0.05, 0.5, 0.95) infinite;
+}
+@keyframes compass-spin { to { transform: rotate(360deg); } }
+
+/* ---- POI-Popup ------------------------------------------------------------ */
+.maplibregl-popup.poi-popup .maplibregl-popup-content,
+.poi-pop {
+  display: flex; flex-direction: column; gap: 1px;
+}
+.maplibregl-popup-content {
+  background: var(--surface); color: var(--ink); border: 1px solid var(--line);
+  border-radius: 9px; box-shadow: var(--shadow); padding: 8px 12px;
+}
+.maplibregl-popup-tip { border-top-color: var(--surface) !important; border-bottom-color: var(--surface) !important; }
+.poi-pop strong { font: 600 13px/1.25 var(--font-sans); }
+.poi-pop span { font: 500 10.5px/1 var(--font-mono); color: var(--ink-3); text-transform: uppercase; letter-spacing: .05em; }
+
 /* dezenter Such-Status (Laden/Fehler) unten mittig über der Karte */
 .search-status {
   position: fixed;

@@ -44,9 +44,27 @@ export const searchResultSchema = destinationSchema.extend({
 });
 export type SearchResult = z.infer<typeof searchResultSchema>;
 
+/**
+ * Kompakter Kartenpunkt für die geclusterte Übersicht ALLER erreichbaren Ziele.
+ * Bewusst ohne Live-/Trend-Daten, damit die Payload auch bei mehreren tausend
+ * Punkten klein bleibt (Detail-Daten kommen erst beim Öffnen eines Ziels).
+ */
+export const mapPointSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  lat: z.number(),
+  lng: z.number(),
+  type: destinationSchema.shape.type,
+  score: z.number().int().min(0).max(100),
+});
+export type MapPoint = z.infer<typeof mapPointSchema>;
+
 export const searchResponseSchema = z.object({
   results: z.array(searchResultSchema),
   suggestions: z.array(searchResultSchema),
+  /** Alle erreichbaren Ziele (geclustert auf der Karte). Optional/Default für
+   *  Abwärtskompatibilität mit älteren Backend-Antworten. */
+  mapPoints: z.array(mapPointSchema).default([]),
   meta: z.object({
     candidatesEvaluated: z.number().int(),
     matrixUsed: z.boolean(),

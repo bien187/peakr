@@ -52,7 +52,7 @@ interface FavoriteRow {
 export async function listFavorites(userId: string): Promise<DestinationWithStatus[]> {
   const rows = await sql<FavoriteRow[]>`
     SELECT d.id, d.name, d.type, d.canton,
-      ST_Y(d.location::geometry) AS lat, ST_X(d.location::geometry) AS lng,
+      d.lat::float8 AS lat, d.lng::float8 AS lng,
       d.elevation_base_m, d.elevation_top_m, d.sac_difficulty, d.ascent_m, d.distance_km,
       d.wikipedia_title, d.slf_region_id,
       ls.captured_at, ls.temperature_c, ls.weather_code, ls.visibility_m, ls.wind_kmh,

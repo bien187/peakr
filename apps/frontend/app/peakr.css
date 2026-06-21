@@ -310,6 +310,8 @@ body {
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg);
   padding: var(--card-pad); cursor: pointer; transition: border-color .15s, box-shadow .15s, transform .12s;
   box-shadow: var(--shadow-sm);
+  /* Off-screen-Karten überspringen (Performance bei tausenden Treffern). */
+  content-visibility: auto; contain-intrinsic-size: auto 168px;
 }
 .rcard:hover { border-color: var(--line-2); box-shadow: var(--shadow); }
 .rcard.is-sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), var(--shadow); }
@@ -399,6 +401,16 @@ body {
 .spark-line { fill: none; stroke: var(--accent); stroke-width: 2.5; vector-effect: non-scaling-stroke; }
 .spark-end { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
 .spark-axis { display: flex; justify-content: space-between; margin-top: 8px; font-size: 11px; color: var(--ink-3); }
+
+/* detaillierter Temperaturverlauf (Stunden × °C) */
+.tchart-svg { width: 100%; height: auto; display: block; }
+.tchart-grid { stroke: var(--line); stroke-width: 1; }
+.tchart-vgrid { stroke: var(--line); stroke-width: 1; opacity: .45; }
+.tchart-vgrid.is-day { stroke: var(--line-2); opacity: .9; }
+.tchart-ylabel { fill: var(--ink-3); font: 600 9.5px var(--font-mono); }
+.tchart-xlabel { fill: var(--ink-3); font: 600 10px var(--font-mono); }
+.tchart-area { fill: var(--accent-soft); opacity: .55; }
+.tchart-line { fill: none; stroke: var(--accent); stroke-width: 2.4; stroke-linejoin: round; stroke-linecap: round; }
 
 /* ---- dashboard ------------------------------------------------------------ */
 .dash { max-width: 1040px; margin: 0 auto; padding: 36px 28px 64px; width: 100%; }
@@ -594,11 +606,22 @@ body {
 .wx-backdrop { position: fixed; inset: 0; z-index: 20; }
 
 .wx-pop {
-  position: absolute; z-index: 21; left: 22px; right: 22px; top: 58px;
+  position: absolute; z-index: 21; left: 16px; right: 16px; top: 64px;
   background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--r-lg);
-  box-shadow: var(--shadow); padding: 16px; animation: wxpop .16s ease-out;
+  box-shadow: var(--shadow); padding: 16px;
+  transform-origin: 38px -8px; /* aus dem Wetter-Button heraus */
+  animation: wxpop .2s cubic-bezier(.2, .9, .25, 1);
 }
-@keyframes wxpop { from { opacity: 0; transform: translateY(-6px); } }
+/* Pfeil/Verbindung zum Auslöser-Button (Apple-like) */
+.wx-pop::before {
+  content: ''; position: absolute; top: -7px; left: 32px; width: 13px; height: 13px;
+  background: var(--surface); border-left: 1px solid var(--line-2); border-top: 1px solid var(--line-2);
+  transform: rotate(45deg); border-radius: 3px 0 0 0;
+}
+@keyframes wxpop {
+  from { opacity: 0; transform: scale(.9) translateY(-6px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
 .wx-pop-head { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 14px; }
 .wx-pop-kicker { margin: 0 0 3px; font: 600 10px/1 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); }
 .wx-pop-place { margin: 0; font: 600 16px/1.1 var(--font-serif); color: var(--ink); }

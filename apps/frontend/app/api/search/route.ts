@@ -77,12 +77,13 @@ export async function POST(req: Request) {
     const latDelta = radiusM / 111000;
     const lngDelta = radiusM / 75000;
 
+    const POI_KINDS = ['peak', 'lake', 'hut', 'viewpoint'];
     const typeCond = input.mode === 'ski'
       ? sql`d.type = 'ski_resort'`
       : input.hikeKind === 'route'
         ? sql`d.type = 'hike_route'`
-        : input.hikeKind && input.hikeKind !== 'any'
-          ? sql`d.type = 'hike_destination'`
+        : input.hikeKind && POI_KINDS.includes(input.hikeKind)
+          ? sql`d.type = 'hike_destination' AND d.poi_kind = ${input.hikeKind}`
           : sql`d.type IN ('hike_route', 'hike_destination')`;
 
     const sacCond = input.maxSacDifficulty
@@ -108,7 +109,7 @@ export async function POST(req: Request) {
         AND d.lng BETWEEN ${lng - lngDelta} AND ${lng + lngDelta}
         AND ${typeCond} ${sacCond}
       ORDER BY (d.lat - ${lat}) * (d.lat - ${lat}) + (d.lng - ${lng}) * (d.lng - ${lng}) * 0.46 ASC
-      LIMIT 500
+      LIMIT 8000
     `;
 
     type Item = { blocked: boolean; score: number; driveMinutes: number; overBudgetMinutes: number | null };
