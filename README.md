@@ -11,7 +11,7 @@
 </p>
 
 > [!NOTE]
-> **Peakr ist derzeit ausser Betrieb.** Die Anwendung wird aktuell nicht öffentlich bereitgestellt.
+> **Peakr ist derzeit ausser Betrieb.** Die Anwendung wird zwar öffentlich bereitgestellt, die Hintergrundjobs laufen aber aktuell nicht.
 > Das Repository bleibt als persönliches Entwicklungsprojekt verfügbar. Der lokale Betrieb ist nach
 > entsprechender Konfiguration weiterhin möglich – siehe [Lokal starten](#lokal-starten).
 
