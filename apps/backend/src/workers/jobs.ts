@@ -3,7 +3,7 @@ import { weatherCellCenter } from '../geo/lv95';
 import { settle } from '../lib/http';
 import { logger } from '../lib/logger';
 import { getLiftStatus } from '../lifts';
-import { chunks, setMeta } from '../pipeline/runs';
+import { chunks, setMeta, upsertDataSource } from '../pipeline/runs';
 import { env } from '../config/env';
 import { enrichTrendWithOpenAi, isOpenAiTrendEnabled } from '../services/openai.service';
 import { fetchWeatherBatch, type WeatherPoint } from '../services/openMeteo.service';
@@ -46,6 +46,9 @@ interface SkiRow {
  * Je Gebiet entsteht ein Verlaufseintrag in live_status.
  */
 async function runSki(ctx: JobContext): Promise<JobResult> {
+  // Herkunft und Stand der Live-Quellen festhalten (Detailseite, /api/health, Attribution).
+  await upsertDataSource('open_meteo');
+  await upsertDataSource('slf');
   const resorts = await sql<SkiRow[]>`
     SELECT d.id, d.name, d.slf_region_id, d.elevation_base_m, d.elevation_top_m,
            s.base_lat::float8 AS base_lat, s.base_lng::float8 AS base_lng,
@@ -126,6 +129,8 @@ async function runSki(ctx: JobContext): Promise<JobResult> {
  * Die Zeile je Zelle wird überschrieben – die Tabelle wächst nicht.
  */
 async function runWeather(ctx: JobContext): Promise<JobResult> {
+  await upsertDataSource('open_meteo');
+  await upsertDataSource('slf');
   const cells = await sql<{ cell: string }[]>`
     SELECT DISTINCT weather_cell AS cell FROM destinations
     WHERE type = 'hike_destination' AND retired_at IS NULL AND weather_cell IS NOT NULL
@@ -170,6 +175,7 @@ async function runWeather(ctx: JobContext): Promise<JobResult> {
  * 93 % der Ziele den Wert 1 und wurde entfernt.
  */
 async function runTrend(ctx: JobContext): Promise<JobResult> {
+  await upsertDataSource('wikipedia');
   const dests = await sql<{ id: string; name: string; wikipedia_title: string }[]>`
     SELECT id, name, wikipedia_title FROM destinations
     WHERE retired_at IS NULL AND wikipedia_title IS NOT NULL AND wikipedia_title <> ''
