@@ -53,20 +53,17 @@ PostGIS muss nicht von Hand aktiviert werden – die Migration erledigt das.
 
 ### 2.1 Secrets
 
+GitHub braucht die **direkte** Neon-Verbindung (ohne Pooler). Die Neon-Variablen sind in Vercel als
+sensitiv markiert; `vercel env pull` liefert sie deshalb leer. Den Wert gibt es in der Neon-Konsole:
+Vercel → *Storage* → Neon-Datenbank → *Open in Neon* → *Connect* → Schalter **Connection pooling aus**
+→ Verbindungs-URL kopieren. Dann:
+
 ```bash
-S=$(mktemp)
-vercel env pull "$S" --environment=production --yes
-URL=$(grep '^DATABASE_URL_UNPOOLED=' "$S" | cut -d= -f2- | tr -d '"')
-rm -f "$S"
-if [ -n "$URL" ]; then printf %s "$URL" | gh secret set DATABASE_URL; else echo "leer – siehe Hinweis unten"; fi
-unset URL
+gh secret set DATABASE_URL      # fragt den Wert verdeckt ab – URL einfügen, Enter
 ```
 
-Damit erhält GitHub die **direkte** Neon-Verbindung als Secret `DATABASE_URL`.
-
-Bleibt der Wert leer (Vercel gibt als «sensitiv» markierte Variablen nicht heraus): Vercel →
-*Storage* → `peakr` → Abschnitt *.env.local* → `DATABASE_URL_UNPOOLED` anzeigen und mit
-`gh secret set DATABASE_URL` eintragen (die Eingabe ist verdeckt).
+Der Host der direkten URL enthält **kein** `-pooler`. Mit der gepoolten URL funktioniert es auch, nur
+lange Importe laufen über den Pooler weniger robust.
 
 | Secret | Wert | Pflicht |
 |---|---|---|
@@ -74,7 +71,7 @@ Bleibt der Wert leer (Vercel gibt als «sensitiv» markierte Variablen nicht her
 | `VERCEL_DEPLOY_HOOK_URL` | URL aus 4.4 | empfohlen |
 
 Veraltete Secrets können gelöscht werden: `ORS_API_KEY`, `ENCRYPTION_KEY`, `OPENAI_API_KEY`, `JWT_SECRET`
-(die Worker signieren keine Token).
+(Pipeline und Worker brauchen kein Signatur-Geheimnis; die Workflows lesen es nicht mehr).
 
 ### 2.2 Änderungen pushen und Workflows aktivieren
 
@@ -139,9 +136,11 @@ der Neon-Datenbank.
 ### 4.2 Umgebungsvariablen
 
 `DATABASE_URL` und `DATABASE_URL_UNPOOLED` hat die Neon-Integration gesetzt. Zusätzlich nötig ist
-ein Signatur-Geheimnis für Anmeldungen (mindestens 32 Zeichen). Ein vorhandenes `JWT_SECRET` aus
-der Supabase-Zeit kann bleiben, wenn es mindestens 32 Zeichen hat – sonst startet die API nicht.
-Neu setzen (meldet alle Benutzer ab):
+ein Signatur-Geheimnis für Anmeldungen (`JWT_SECRET`, mindestens 32 Zeichen). Ein vorhandenes aus der
+Supabase-Zeit kann bleiben. Ob es taugt, zeigt nach dem Deploy `/api/health` → `"auth":
+{"configured": true}` (ohne den Wert preiszugeben). Bei `false` sind nur Anmeldung, Konto und
+Favoriten abgeschaltet; Suche, Karte und Detailseiten laufen weiter. Neu setzen (meldet alle
+Benutzer ab):
 
 ```bash
 for env in production preview; do
@@ -172,7 +171,8 @@ neue Strassen, Parkplätze und Saisonsperren kommen erst mit dem nächsten Push 
 ## 5. Abnahme
 
 1. `https://peakr-ch.vercel.app/api/health` → `"status": "ok"`, `"database": true`,
-   `"routing.available": true`, `"searchIndex.available": true`, alle Jobs `stale: false`.
+   `"routing.available": true`, `"searchIndex.available": true`, `"auth.configured": true`,
+   alle Jobs `stale: false`.
 2. Startseite: Startort Zürich, Wandern, 90 min → mehrere tausend Ziele, Rigi Kulm um 45 min.
 3. Ein Ziel öffnen → Anreise mit Fahrzeit, Route auf der Karte.
 4. Registrieren, Favorit setzen, Seite neu laden → Favorit bleibt.

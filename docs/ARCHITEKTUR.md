@@ -199,7 +199,9 @@ gesetzt; geratene Artikeltitel (früher 93 % «1») gibt es nicht mehr.
 
 ## Sicherheit
 
-- Passwörter mit bcrypt; Anmelde-Token (JWT, HS256) mit Pflicht-Geheimnis in Produktion.
+- Passwörter mit bcrypt; Anmelde-Token (JWT, HS256) mit Pflicht-Geheimnis (≥ 32 Zeichen) in Produktion.
+  Fehlt es oder ist es zu kurz, lehnt nur die Anmeldung mit 503 ab; Suche und Karte laufen weiter,
+  `/api/health` meldet `auth.configured: false`. Pipeline und Worker brauchen kein Geheimnis.
 - Rate-Limits in der Datenbank: Anmeldung/Registrierung je IP, Suche 120/min, Detail mit Fahrzeit 120/min.
 - Alle SQL-Abfragen sind parametrisierte Tagged Templates.
 - Eingaben werden mit Zod geprüft; Startorte ausserhalb der Schweiz werden abgelehnt.

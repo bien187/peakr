@@ -2,13 +2,36 @@ import { createHash } from 'node:crypto';
 import type { AuthResponse, LoginInput, RegisterInput } from '@ch-alpineroute/shared';
 import bcrypt from 'bcryptjs';
 import { jwtVerify, SignJWT } from 'jose';
-import { env } from '../config/env';
+import { env, JWT_SECRET_PROBLEM } from '../config/env';
 import { queryClient as sql } from '../db';
 import { AppError, isUniqueViolation } from '../lib/errors';
+import { logger } from '../lib/logger';
 import { createUser, findAuthByEmail, getPublicUser } from '../repositories/user.repo';
 
-const secret = new TextEncoder().encode(env.JWT_SECRET);
 const ALG = 'HS256';
+let key: Uint8Array | null = null;
+
+/**
+ * Signaturschlüssel für Anmelde-Token. Ist das Geheimnis in Produktion nicht
+ * oder unzureichend gesetzt, wird nur die Anmeldung abgelehnt (503) – der Rest
+ * der Anwendung läuft weiter.
+ */
+function signingKey(): Uint8Array {
+  if (JWT_SECRET_PROBLEM) {
+    logger.error({ problem: JWT_SECRET_PROBLEM }, 'Anmeldung deaktiviert');
+    throw new AppError(
+      503,
+      'AUTH_NOT_CONFIGURED',
+      'Die Anmeldung ist auf dem Server nicht eingerichtet. Suche und Karte funktionieren weiterhin.',
+    );
+  }
+  return (key ??= new TextEncoder().encode(env.JWT_SECRET));
+}
+
+/** true, wenn Anmeldung und Konten betriebsbereit sind (für /api/health). */
+export function authConfigured(): boolean {
+  return JWT_SECRET_PROBLEM === null;
+}
 const BCRYPT_COST = 12;
 // Fester Vergleichs-Hash, damit ein Login mit unbekannter E-Mail gleich lange dauert.
 const DUMMY_HASH = '$2a$12$CwTycUXWue0Thq9StjUM0uJ8rYJYxF8q3bJ7yM1r0o2bV1n0v2Y9K';
@@ -24,11 +47,11 @@ export async function signToken(payload: JwtPayload): Promise<string> {
     .setSubject(payload.sub)
     .setIssuedAt()
     .setExpirationTime(env.JWT_EXPIRES_IN)
-    .sign(secret);
+    .sign(signingKey());
 }
 
 export async function verifyToken(token: string): Promise<JwtPayload> {
-  const { payload } = await jwtVerify(token, secret, { algorithms: [ALG] });
+  const { payload } = await jwtVerify(token, signingKey(), { algorithms: [ALG] });
   if (!payload.sub) throw new Error('Token ohne Subjekt');
   return { sub: payload.sub, role: payload.role === 'admin' ? 'admin' : 'user' };
 }
@@ -37,6 +60,7 @@ export async function verifyToken(token: string): Promise<JwtPayload> {
 export async function requireUser(authorization: string | null | undefined): Promise<JwtPayload> {
   const token = authorization?.startsWith('Bearer ') ? authorization.slice(7).trim() : '';
   if (!token) throw new AppError(401, 'UNAUTHORIZED', 'Authentifizierung erforderlich.');
+  signingKey(); // Konfigurationsfehler als 503 melden, nicht als ungültiges Token
   try {
     return await verifyToken(token);
   } catch {
@@ -63,6 +87,7 @@ export async function rateLimit(scope: string, identity: string, limit: number, 
 }
 
 export async function register(input: RegisterInput, clientIp: string): Promise<AuthResponse> {
+  signingKey();
   await rateLimit('register', clientIp, 10, 3600);
   const passwordHash = await bcrypt.hash(input.password, BCRYPT_COST);
   let id: string;
@@ -78,6 +103,7 @@ export async function register(input: RegisterInput, clientIp: string): Promise<
 }
 
 export async function login(input: LoginInput, clientIp: string): Promise<AuthResponse> {
+  signingKey();
   await rateLimit('login-ip', clientIp, 20, 900);
   await rateLimit('login-email', input.email.toLowerCase(), 10, 900);
   const auth = await findAuthByEmail(input.email);

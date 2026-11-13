@@ -222,6 +222,7 @@ Supabase-spezifischen Funktionen; geändert hat sich nur die Verbindung.
 | `/api/health` meldet den Suchindex | Betrieb erkennt fehlende Artefakte | Smoke-Test |
 | Daten-Workflow veröffentlicht beide Artefakte; `prebuild` lädt beide | Index und Graph gehören zum selben Datenstand | Build lokal: beide Dateien im Funktions-Bundle (`route.js.nft.json`) |
 | `apps/frontend/vercel.json`: Region `fra1` | Datenbank in Frankfurt; Standardregion wäre Washington | – (greift beim Deploy) |
+| Ungeeignetes `JWT_SECRET` schaltet nur die Anmeldung ab (503) statt die ganze API | Vercel gibt die Werte nicht heraus, die Länge des alten Geheimnisses ist unbekannt; vorher hätte ein zu kurzes Geheimnis auch Suche und Statusseite lahmgelegt. Die Workflows lesen das GitHub-Secret nicht mehr | Unit-Test; `/api/health` meldet `auth.configured` |
 | iCloud-Konfliktkopien entfernt | leere `app/api/* 2/`-Ordner, doppelte Screenshots und `.next/* 2.ts` brachen den Typecheck | Typecheck grün |
 
 **Nicht ausgeführt (Freigabe nötig):** Variablen in Vercel ändern, GitHub-Secrets setzen, pushen,

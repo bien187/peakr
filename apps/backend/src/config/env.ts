@@ -25,7 +25,9 @@ const envSchema = z.object({
    */
   DATABASE_URL_UNPOOLED: z.string().optional(),
 
-  JWT_SECRET: z.string().min(32, 'JWT_SECRET braucht mindestens 32 Zeichen').default(DEV_JWT_SECRET),
+  // Länge wird nicht hier, sondern in jwtSecretProblem() geprüft: ein ungeeignetes
+  // Geheimnis soll nur die Anmeldung abschalten, nicht den ganzen Prozess.
+  JWT_SECRET: z.string().default(DEV_JWT_SECRET),
   JWT_EXPIRES_IN: z.string().default('7d'),
 
   /** Pfad zur Strassengraph-Datei (Standard: .data/artifacts/road-graph.bin im Repo). */
@@ -54,13 +56,25 @@ export type Env = typeof env;
 export const isProd = env.NODE_ENV === 'production';
 export const isTest = env.NODE_ENV === 'test';
 
-// In Produktion dürfen die eingebauten Entwicklungswerte nie greifen: ein
-// bekanntes Signatur-Geheimnis würde jedem erlauben, gültige Logins zu fälschen.
-// Während «next build» werden die Module nur geladen, nicht ausgeführt – dort darf das Geheimnis fehlen.
-const isBuildPhase = process.env.NEXT_PHASE === 'phase-production-build';
-if (isProd && !isBuildPhase && env.JWT_SECRET === DEV_JWT_SECRET) {
-  throw new Error('JWT_SECRET ist in Produktion nicht gesetzt.');
+/**
+ * Prüft das Signatur-Geheimnis für Anmelde-Token. In Produktion darf der
+ * eingebaute Entwicklungswert nie greifen (sonst könnte jeder gültige Token
+ * fälschen), und HS256 verlangt mindestens 256 Bit Schlüssel (RFC 7518).
+ * Liefert den Grund oder null. Der Wert selbst wird nie ausgegeben.
+ */
+export function jwtSecretProblem(nodeEnv: string, secret: string): string | null {
+  if (nodeEnv !== 'production') return null;
+  if (secret === DEV_JWT_SECRET || secret.trim() === '') return 'JWT_SECRET ist nicht gesetzt.';
+  if (secret.length < 32) return 'JWT_SECRET ist kürzer als 32 Zeichen.';
+  return null;
 }
+
+/**
+ * Ist das Geheimnis ungeeignet, sind Anmeldung, Registrierung, Konto und
+ * Favoriten deaktiviert (HTTP 503); Suche, Karte und Detailseiten laufen weiter.
+ * Pipeline und Worker brauchen kein Geheimnis.
+ */
+export const JWT_SECRET_PROBLEM = jwtSecretProblem(env.NODE_ENV, env.JWT_SECRET);
 
 export const DATA_DIR = env.DATA_DIR ? resolve(env.DATA_DIR) : resolve(REPO_ROOT, '.data');
 export const SEARCH_INDEX_PATH = process.env.SEARCH_INDEX_PATH

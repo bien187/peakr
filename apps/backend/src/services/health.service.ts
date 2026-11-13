@@ -3,6 +3,7 @@ import { queryClient as sql } from '../db';
 import { toIsoOrNull } from '../lib/dates';
 import { graphInfo } from '../routing/driveTime';
 import { getSearchIndex } from '../search/searchIndex';
+import { authConfigured } from './auth.service';
 
 /** Wie alt der letzte erfolgreiche Lauf höchstens sein darf, in Stunden. */
 export const JOB_MAX_AGE_HOURS: Record<string, number> = {
@@ -26,6 +27,7 @@ export async function health(): Promise<HealthResponse> {
     destinations: index?.destinations.length ?? 0,
     routes: index?.routes.length ?? 0,
   };
+  const auth = { configured: authConfigured() };
   const timestamp = new Date().toISOString();
   try {
     const [counts] = await sql<{ destinations: number; ski: number; routes: number; version: string | null }[]>`
@@ -51,12 +53,14 @@ export async function health(): Promise<HealthResponse> {
       SELECT id, name, attribution, license, version, fetched_at FROM data_sources ORDER BY id
     `;
     const hasData = counts.destinations > 0 && counts.ski > 0;
-    const degraded = !routing.available || !searchIndex.available || !hasData || jobs.some((j) => j.stale);
+    const degraded =
+      !routing.available || !searchIndex.available || !auth.configured || !hasData || jobs.some((j) => j.stale);
     return {
       status: degraded ? 'degraded' : 'ok',
       timestamp,
       database: true,
       routing,
+      auth,
       searchIndex,
       data: { destinations: counts.destinations, skiResorts: counts.ski, hikeRoutes: counts.routes, dataVersion: counts.version },
       jobs,
@@ -70,6 +74,7 @@ export async function health(): Promise<HealthResponse> {
       timestamp,
       database: false,
       routing,
+      auth,
       searchIndex,
       data: { destinations: 0, skiResorts: 0, hikeRoutes: 0, dataVersion: null },
       jobs: [],

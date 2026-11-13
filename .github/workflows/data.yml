@@ -38,7 +38,6 @@ jobs:
     env:
       NODE_ENV: production
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      JWT_SECRET: ${{ secrets.JWT_SECRET || 'pipeline-does-not-sign-tokens-00000000' }}
       LOG_LEVEL: info
     steps:
       - name: DATABASE_URL vorhanden?

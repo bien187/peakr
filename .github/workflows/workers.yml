@@ -5,8 +5,6 @@
 #
 # Repository-Secret (Settings → Secrets and variables → Actions):
 #   DATABASE_URL   Neon-Verbindung OHNE Pooler (Host ohne «-pooler», siehe SETUP_EXTERNAL.md)
-# Optional:
-#   JWT_SECRET     wird von den Workern nicht gebraucht, schadet aber nicht
 name: Peakr Worker
 
 on:
@@ -38,7 +36,6 @@ jobs:
     env:
       NODE_ENV: production
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      JWT_SECRET: ${{ secrets.JWT_SECRET || 'worker-does-not-sign-tokens-0000000000' }}
       LOG_LEVEL: info
     steps:
       - name: Job bestimmen

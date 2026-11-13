@@ -26,6 +26,8 @@ export const healthResponseSchema = z.object({
     graphBuiltAt: z.string().nullable(),
     osmTimestamp: z.string().nullable(),
   }),
+  /** Anmeldung betriebsbereit (Signatur-Geheimnis gesetzt und lang genug). */
+  auth: z.object({ configured: z.boolean() }),
   /** Suchindex (statische Ziele, Ausgangspunkte, Routen) im Funktions-Bundle. */
   searchIndex: z.object({
     available: z.boolean(),

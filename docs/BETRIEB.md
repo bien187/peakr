@@ -83,6 +83,7 @@ Gegen Produktion: `DATABASE_URL=<direkte Neon-URL> pnpm …` voranstellen (Wert 
 |---|---|
 | Suche zeigt «Fahrzeiten nicht verfügbar» | Strassengraph oder Suchindex fehlt in der Serverfunktion (`/api/health` → `routing.available`, `searchIndex.available`). Release `data-latest` mit beiden Dateien vorhanden? Dann Vercel ohne Cache neu deployen. Lokal: `pnpm pipeline network index`. |
 | `/api/health` → `down` | Datenbank nicht erreichbar: `DATABASE_URL` in Vercel prüfen (Neon-Integration verbunden?). Die Suche selbst läuft trotzdem – nur ohne Live-Daten, Konto und Favoriten. |
+| Anmeldung meldet «Die Anmeldung ist auf dem Server nicht eingerichtet» (HTTP 503), `/api/health` → `auth.configured: false` | `JWT_SECRET` in Vercel fehlt oder ist kürzer als 32 Zeichen. Neu setzen (siehe SETUP_EXTERNAL.md 4.2) und neu deployen. Suche und Karte sind davon nicht betroffen. |
 | Suche zeigt «Live-Daten gerade nicht abrufbar» | Datenbank kurz nicht erreichbar oder Neon-Kontingent erschöpft (Neon-Konsole → *Usage*). Treffer und Fahrzeiten bleiben korrekt. |
 | `degraded`, Job `worker:*` `stale` | *Actions → Peakr Worker*: Workflow deaktiviert? (*Enable workflow*). Letzten Lauf ansehen; Secret `DATABASE_URL` gesetzt? |
 | Job-Status `partial` | Ein Teil der Abrufe scheiterte (Open-Meteo-Kontingent, Netzwerk). Wird beim nächsten Lauf nachgeholt; dauerhaft? Log des Laufs prüfen. |
