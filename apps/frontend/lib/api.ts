@@ -79,12 +79,16 @@ export const api = {
     request('/api/me', publicUserSchema, { method: 'PATCH', body: JSON.stringify(body) }),
 
   /** Mit Startort liefert die API zusätzlich die Autofahrzeit je Ausgangspunkt. */
-  destination: (id: string, from?: LatLng | null, signal?: AbortSignal) =>
-    request(
-      `/api/destinations/${id}${from ? `?from=${from.lat.toFixed(5)},${from.lng.toFixed(5)}` : ''}`,
-      destinationDetailSchema,
-      { signal },
-    ),
+  destination: (id: string, from?: LatLng | null, signal?: AbortSignal, plan?: { date: string; startHour: number } | null) => {
+    const q = new URLSearchParams();
+    if (from) q.set('from', `${from.lat.toFixed(5)},${from.lng.toFixed(5)}`);
+    if (plan) {
+      q.set('date', plan.date);
+      q.set('start', String(plan.startHour));
+    }
+    const qs = q.toString();
+    return request(`/api/destinations/${id}${qs ? `?${qs}` : ''}`, destinationDetailSchema, { signal });
+  },
 
   favorites: () => request('/api/favorites', z.array(destinationWithStatusSchema)),
 

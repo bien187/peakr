@@ -1,7 +1,7 @@
 'use client';
 
 import { memo, useEffect, useRef, type CSSProperties, type ReactNode } from 'react';
-import type { SearchResponse } from '@ch-alpineroute/shared';
+import { AVAILABILITY_LABEL, type Availability, type SearchResponse } from '@ch-alpineroute/shared';
 import { Icon } from './Icon';
 import {
   AVALANCHE,
@@ -11,6 +11,8 @@ import {
   fmtDrive,
   fmtDuration,
   KIND_META,
+  planLabel,
+  reasonSummary,
   scoreColor,
   SORTS,
   trailheadHint,
@@ -158,6 +160,19 @@ export function DriveLine({ r }: { r: PCard }) {
   );
 }
 
+const AV_ICON: Record<string, string> = { available: 'Check', uncertain: 'CircleHelp', unavailable: 'CircleAlert' };
+
+/** Verfügbarkeit als Symbol + Text (nie nur Farbe). */
+export function AvailabilityBadge({ a, compact = false }: { a: Availability; compact?: boolean }) {
+  const label = AVAILABILITY_LABEL[a.status];
+  return (
+    <span className={'av-badge is-' + a.status} title={a.reason ?? (a.status === 'available' ? 'Alle Prüfungen bestanden' : label)}>
+      <Icon name={AV_ICON[a.status]} size={compact ? 12 : 13} stroke={2.4} />
+      <span>{label}</span>
+    </span>
+  );
+}
+
 export const ResultCard = memo(function ResultCard({
   r,
   selected,
@@ -211,6 +226,13 @@ export const ResultCard = memo(function ResultCard({
       </div>
 
       <DriveLine r={r} />
+
+      {r.availability && (
+        <p className={'rcard-av is-' + r.availability.status}>
+          <AvailabilityBadge a={r.availability} compact />
+          {r.availability.reason && <span className="rcard-av-why">{r.availability.reason}</span>}
+        </p>
+      )}
 
       <div className="rcard-stats is-4">
         {isSki ? (
@@ -339,6 +361,8 @@ export function ResultsPanel({
   onSort,
   sheetOpen,
   onSheetToggle,
+  includeUncertain,
+  onIncludeUncertain,
 }: {
   items: PCard[];
   /** Ausgewähltes Ziel – steht zuoberst, auch wenn seine Seite noch nicht geladen ist. */
@@ -363,6 +387,8 @@ export function ResultsPanel({
   onSort: (s: SortKey) => void;
   sheetOpen: boolean;
   onSheetToggle: () => void;
+  includeUncertain: boolean;
+  onIncludeUncertain: (v: boolean) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -388,6 +414,8 @@ export function ResultsPanel({
   const count = totals?.results ?? 0;
   const unavailable = meta?.routing.status === 'unavailable';
   const total = totals ? totals.results + totals.suggestions + totals.sacUnknown + totals.unrouted : 0;
+  const hiddenUncertain = totals?.hiddenUncertain ?? 0;
+  const excluded = totals?.excludedUnavailable ?? 0;
 
   const rows: ReactNode[] = [];
   let lastSection: string | null = pinned ? 'pinned' : null;
@@ -471,10 +499,11 @@ export function ResultsPanel({
         <div>
           <p className="panel-eyebrow">
             {mode === 'ski' ? 'Skigebiete' : 'Wanderziele'} · ab {originLabel}
+            {meta?.plan ? ` · ${planLabel(mode === 'ski' ? { ...meta.plan, startHour: 9 } : meta.plan)}` : ''}
           </p>
           <h2 className="panel-title">
             {loading && !totals ? '…' : nf.format(count)} {count === 1 ? 'Ziel' : 'Ziele'}{' '}
-            <span className="panel-title-sub">in Reichweite</span>
+            <span className="panel-title-sub">{includeUncertain ? 'in Reichweite' : 'verfügbar'}</span>
           </h2>
           {extra.length > 0 && <p className="panel-extra">+ {extra.join(' · ')}</p>}
         </div>
@@ -519,13 +548,31 @@ export function ResultsPanel({
               geschätzte Fahrzeiten.
             </p>
           </div>
-        ) : loading && items.length === 0 ? (
+        ) : (loading || !totals) && items.length === 0 ? (
+          // Auch vor der ersten Antwort laden statt kurz «keine Ziele» zu zeigen.
           <CompassLoader label="Fahrzeiten werden berechnet …" />
+        ) : total === 0 && hiddenUncertain > 0 ? (
+          <div className="empty">
+            <Icon name="CircleHelp" size={26} stroke={1.5} />
+            <p className="empty-title">Keine Ziele mit gesicherter Verfügbarkeit</p>
+            <p className="empty-sub">
+              {mode === 'ski'
+                ? 'Für kein Skigebiet in Reichweite gibt es einen frei nutzbaren Live-Betriebsstatus. Peakr zeigt deshalb keines als geöffnet an.'
+                : `${nf.format(hiddenUncertain)} Ziele sind in Reichweite, aber die Datenlage reicht nicht für «verfügbar».`}
+            </p>
+            <button type="button" className="btn btn-sm" onClick={() => onIncludeUncertain(true)} style={{ marginTop: 10 }}>
+              Unsichere Ziele zeigen
+            </button>
+          </div>
         ) : total === 0 ? (
           <div className="empty">
             <Icon name="MapPinOff" size={26} stroke={1.5} />
             <p className="empty-title">Keine Ziele in Reichweite</p>
-            <p className="empty-sub">Erhöhe die Fahrzeit oder lockere die Filter, um mehr zu sehen.</p>
+            <p className="empty-sub">
+              {excluded > 0
+                ? `${nf.format(excluded)} Ziele in Reichweite sind zur geplanten Zeit nicht verfügbar (${reasonSummary(totals?.hiddenReasons)}).`
+                : 'Erhöhe die Fahrzeit oder lockere die Filter, um mehr zu sehen.'}
+            </p>
           </div>
         ) : (
           <>
@@ -540,6 +587,36 @@ export function ResultsPanel({
           </>
         )}
 
+        {(hiddenUncertain > 0 || excluded > 0) && total > 0 && (
+          <div className="panel-foot av-foot">
+            <Icon name="CircleHelp" size={13} stroke={2} />
+            <span>
+              Ausgeblendet{hiddenUncertain > 0 ? `: ${nf.format(hiddenUncertain)} unsicher` : ''}
+              {excluded > 0 ? `${hiddenUncertain > 0 ? ',' : ':'} ${nf.format(excluded)} nicht verfügbar` : ''}
+              {totals?.hiddenReasons && Object.keys(totals.hiddenReasons).length > 0 ? ` (${reasonSummary(totals.hiddenReasons)})` : ''}.
+              {hiddenUncertain > 0 && (
+                <>
+                  {' '}
+                  <button type="button" className="btn-link" onClick={() => onIncludeUncertain(true)}>
+                    Unsichere zeigen
+                  </button>
+                </>
+              )}
+            </span>
+          </div>
+        )}
+        {includeUncertain && (
+          <p className="panel-foot">
+            <Icon name="Info" size={13} stroke={2} />
+            <span>
+              Unsichere Ziele werden angezeigt (Symbol «?»). Nicht verfügbare – gesperrt, verschneit, Sturm, zu wenig
+              Tageslicht – bleiben ausgeblendet.{' '}
+              <button type="button" className="btn-link" onClick={() => onIncludeUncertain(false)}>
+                Nur verfügbare
+              </button>
+            </span>
+          </p>
+        )}
         {meta && !unavailable && meta.liveData === 'unavailable' && (
           <p className="panel-foot panel-foot-warn">
             <Icon name="CircleAlert" size={13} stroke={2} />

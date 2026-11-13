@@ -26,4 +26,29 @@ describe('SLF-Bulletin', () => {
     expect(map.get('2222')?.level).toBe(3);
     expect(map.has('3333')).toBe(false);
   });
+
+  it('übernimmt Höhenlage und Expositionen der Kernzone, darunter eine Stufe tiefer', () => {
+    // Struktur wie im Bulletin vom 15.02.2026: «erheblich (3) an SW über N bis SO über 1800 m»
+    const map = parseBulletins([
+      {
+        regions: [{ regionID: 'CH-1222' }],
+        validTime: { endTime: '2026-02-15T16:00:00Z' },
+        dangerRatings: [{ mainValue: 'considerable' }],
+        avalancheProblems: [
+          { problemType: 'wind_slab', dangerRatingValue: 'considerable', elevation: { lowerBound: 1800, upperBound: null }, aspects: ['N', 'NE', 'E', 'SE', 'SW', 'W', 'NW'] },
+          { problemType: 'persistent_weak_layers', dangerRatingValue: 'considerable', elevation: { lowerBound: 'treeline' }, aspects: ['N'] },
+        ],
+      },
+    ]);
+    const info = map.get('1222')!;
+    expect(info.level).toBe(3);
+    expect(info.ratings).toContainEqual({ level: 3, lowerM: 1800, upperM: null, aspects: ['N', 'NE', 'E', 'SE', 'SW', 'W', 'NW'] });
+    expect(info.ratings).toContainEqual({ level: 3, lowerM: 1800, upperM: null, aspects: ['N'] });
+    expect(info.ratings).toContainEqual({ level: 2, lowerM: null, upperM: null, aspects: [] });
+  });
+
+  it('gilt ohne Höhenangabe überall', () => {
+    const info = parseBulletins([{ regions: [{ regionID: '7111' }], dangerRatings: [{ mainValue: 'moderate' }] }]).get('7111')!;
+    expect(info.ratings).toEqual([{ level: 2, lowerM: null, upperM: null, aspects: [] }]);
+  });
 });

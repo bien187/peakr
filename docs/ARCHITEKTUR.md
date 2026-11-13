@@ -33,6 +33,9 @@ zweite Implementierung (Fastify) ist entfernt.
 | `destination_sources` | Eindeutige Quellenreferenz → Ziel (swissNAMES3D-UUID, OSM-ID). Damit bleiben IDs und Favoriten über Importe stabil. |
 | `trailheads` | Parkplätze, Strassenzugänge, Talstationen; `drive_lat/lng` = Punkt auf dem Strassengraphen, `road_snap_m` = Abstand dorthin, `quality` 1–3. |
 | `hike_routes` | Bis zu 3 Routen je Ziel: Linie (LineString 4326), Höhe je Stützpunkt (`elevations`), Distanz, Auf-/Abstieg, Gehzeit hin/zurück, SAC min/max, Anteil amtlich signalisiert, Abstand Wegende–Ziel. |
+| `trail_closures`, `route_closures` | Gemeldete Sperrungen/Umleitungen auf Wanderwegen und ihre Zuordnung zu den Routen (Überlappung, Umleitung vorhanden). |
+| `snow_observations` | Letzte Schneehöhe je Messstation (SLF IMIS, MeteoSchweiz). |
+| `weather_cells.forecast` | Stündliche Prognose je 0,1°-Zelle für heute bis übermorgen (Tourplanung, Wetterkarte). |
 | `ski_resort_details`, `ski_lifts` | Gruppierte Skigebiete, Anlagen nach Typ, Pistenkilometer nach Schwierigkeit, Talstation. |
 | `live_status` | Verlauf der Bedingungen je Skigebiet (120 Tage). |
 | `weather_cells` | Wetterraster 0,1° für Wanderziele, überschrieben statt angehängt. |
@@ -180,6 +183,14 @@ PostGIS über postgres.js), der Wechsel betrifft nur die Verbindung:
 Warum nicht pgRouting? Die Routen werden einmal pro Woche vorberechnet, nicht pro Anfrage. Ein
 Graph im Speicher der Pipeline (2,8 Mio. Knoten) rechnet alle 19'000 Ziele in unter einer Minute;
 pgRouting bräuchte für dieselbe Arbeit ein Vielfaches an Zeit und Platz in der Gratis-Datenbank.
+
+## Verfügbarkeit und Wetterkarte
+
+Suche und Detailseite bewerten jede Route bzw. jedes Skigebiet für die geplante Tour (Sperrungen,
+Schnee, Wetter, Lawinen, Tageslicht bzw. Betrieb) – beim Lesen, aus zwischengespeicherten
+Grundlagen. Standardmässig erscheinen nur verfügbare Ziele. Die Wetterkarte lädt Radar
+(MeteoSchweiz) und Prognoseraster nur bei Bedarf. Regeln, Quellen und Grenzen:
+[VERFUEGBARKEIT_UND_WETTER.md](VERFUEGBARKEIT_UND_WETTER.md).
 
 ## Worker
 

@@ -33,10 +33,19 @@ export async function fetchWarningRegions(): Promise<WarningRegion[]> {
     .filter((r): r is WarningRegion => Boolean(r.id) && Boolean(r.geometry));
 }
 
+type ElevationBound = number | string | null | undefined;
+
 export interface CaamlBulletin {
   validTime?: { startTime?: string; endTime?: string };
   regions?: { regionID?: string }[];
-  dangerRatings?: { mainValue?: string | number }[];
+  dangerRatings?: { mainValue?: string | number; elevation?: { lowerBound?: ElevationBound; upperBound?: ElevationBound }; aspects?: string[] }[];
+  /** Im Schweizer Bulletin tragen die Lawinenprobleme Höhenlage und Expositionen der Kernzone. */
+  avalancheProblems?: {
+    problemType?: string;
+    dangerRatingValue?: string | number;
+    elevation?: { lowerBound?: ElevationBound; upperBound?: ElevationBound };
+    aspects?: string[];
+  }[];
 }
 
 /** CAAML v6 nennt die Gefahrenstufe als Wort; ältere Antworten als Zahl. */
@@ -67,26 +76,87 @@ export function normalizeRegionId(raw: string | undefined): string {
     .trim();
 }
 
-export interface AvalancheInfo {
+/** Stufe in einem Höhenband (Kernzone) samt Expositionen. */
+export interface AvalancheRating {
   level: number;
-  validUntil: string | null;
+  /** Untergrenze in m; null = alle Höhen. */
+  lowerM: number | null;
+  upperM: number | null;
+  aspects: string[];
 }
 
-/** Reine Auswertung der Bulletins: sector_id → höchste Gefahrenstufe des Tages. */
+export interface AvalancheInfo {
+  /** Höchste Stufe der Region (wie bisher). */
+  level: number;
+  validUntil: string | null;
+  /** Stufen je Höhenband; ausserhalb der Kernzone gilt in der Regel eine Stufe tiefer. */
+  ratings: AvalancheRating[];
+}
+
+/**
+ * Höhengrenze in Metern. «treeline» (Waldgrenze) ist nicht in Metern angegeben:
+ * als Untergrenze vorsichtig 1800 m, als Obergrenze 2200 m.
+ */
+export function parseBound(v: ElevationBound, kind: 'lower' | 'upper'): number | null {
+  if (typeof v === 'number' && Number.isFinite(v)) return v;
+  if (typeof v === 'string') {
+    if (/^\d+$/.test(v.trim())) return Number(v);
+    if (v.trim().toLowerCase() === 'treeline') return kind === 'lower' ? 1800 : 2200;
+  }
+  return null;
+}
+
+const ASPECTS = new Set(['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']);
+
+/** Höhenbänder eines Bulletins aus Gefahrenstufen und Lawinenproblemen. */
+export function bulletinRatings(bulletin: CaamlBulletin, mainLevel: number): AvalancheRating[] {
+  const bands: AvalancheRating[] = [];
+  const add = (level: number | null, el: { lowerBound?: ElevationBound; upperBound?: ElevationBound } | undefined, aspects: string[] | undefined) => {
+    if (level === null) return;
+    bands.push({
+      level,
+      lowerM: parseBound(el?.lowerBound, 'lower'),
+      upperM: parseBound(el?.upperBound, 'upper'),
+      aspects: (aspects ?? []).filter((a) => ASPECTS.has(a)),
+    });
+  };
+  for (const r of bulletin.dangerRatings ?? []) {
+    if (r.elevation) add(parseDangerLevel(r.mainValue), r.elevation, r.aspects);
+  }
+  for (const p of bulletin.avalancheProblems ?? []) {
+    add(parseDangerLevel(p.dangerRatingValue) ?? mainLevel, p.elevation, p.aspects);
+  }
+  const unbounded = bands.some((b) => b.lowerM === null && b.upperM === null);
+  if (bands.length === 0 || unbounded) {
+    // Ohne Höhenangabe gilt die Hauptstufe überall.
+    if (!unbounded) bands.push({ level: mainLevel, lowerM: null, upperM: null, aspects: [] });
+  } else {
+    // Ausserhalb der Kernzone ist die Gefahr laut Bulletin in der Regel eine Stufe tiefer.
+    bands.push({ level: Math.max(1, mainLevel - 1), lowerM: null, upperM: null, aspects: [] });
+  }
+  return bands;
+}
+
+/** Reine Auswertung der Bulletins: sector_id → höchste Gefahrenstufe des Tages und Höhenbänder. */
 export function parseBulletins(bulletins: CaamlBulletin[]): Map<string, AvalancheInfo> {
   const levels = new Map<string, AvalancheInfo>();
   for (const bulletin of bulletins) {
-    const ratings = (bulletin.dangerRatings ?? [])
+    const main = (bulletin.dangerRatings ?? [])
       .map((r) => parseDangerLevel(r.mainValue))
       .filter((n): n is number => n !== null);
-    if (ratings.length === 0) continue;
-    const max = Math.max(...ratings);
+    if (main.length === 0) continue;
+    const max = Math.max(...main);
     const validUntil = bulletin.validTime?.endTime ?? null;
+    const ratings = bulletinRatings(bulletin, max);
     for (const region of bulletin.regions ?? []) {
       const id = normalizeRegionId(region.regionID);
       if (!id) continue;
       const prev = levels.get(id);
-      if (!prev || max > prev.level) levels.set(id, { level: max, validUntil });
+      if (!prev) levels.set(id, { level: max, validUntil, ratings: [...ratings] });
+      else {
+        // Mehrere Bulletins je Region (z. B. vor-/nachmittags): höchste Stufe, alle Bänder.
+        levels.set(id, { level: Math.max(prev.level, max), validUntil: prev.validUntil ?? validUntil, ratings: [...prev.ratings, ...ratings] });
+      }
     }
   }
   return levels;

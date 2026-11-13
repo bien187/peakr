@@ -74,7 +74,8 @@ const MATRIX: Case[] = [
 ];
 
 const run = (raw: Record<string, unknown>): Promise<SearchResponse> =>
-  search(searchInputSchema.parse({ maxMinutes: 90, toleranceMinutes: 10, ...raw }));
+  // Datenqualität und Fahrzeit unabhängig von der Tagesverfügbarkeit prüfen (Schnee, Betrieb …).
+  search(searchInputSchema.parse({ maxMinutes: 90, toleranceMinutes: 10, ...raw }), { skipAvailability: true });
 
 afterAll(async () => {
   await queryClient.end({ timeout: 5 });
@@ -169,4 +170,23 @@ describe('Datenbestand', () => {
     `;
     expect(row.low).toBeGreaterThan(1000);
   });
+});
+
+describe('Verfügbarkeit mit echten Daten', () => {
+  it('bewertet jeden Treffer und blendet nur nach Regel aus', async () => {
+    const res = await search(
+      searchInputSchema.parse({ origin: { lat: 47.3769, lng: 8.5417 }, mode: 'hike', maxMinutes: 90, toleranceMinutes: 10 }),
+    );
+    expect(res.items.length).toBeGreaterThan(0);
+    for (const item of res.items) {
+      // Ohne «unsichere zeigen» erscheinen nur verfügbare Ziele, jeweils mit allen fünf Prüfungen.
+      expect(item.availability?.status).toBe('available');
+      expect(item.availability?.checks.map((c) => c.kind)).toEqual(['closure', 'avalanche', 'snow', 'weather', 'daylight']);
+    }
+    const all = await search(
+      searchInputSchema.parse({ origin: { lat: 47.3769, lng: 8.5417 }, mode: 'hike', maxMinutes: 90, toleranceMinutes: 10, includeUncertain: true }),
+    );
+    expect(all.totals.results + all.totals.suggestions).toBeGreaterThanOrEqual(res.totals.results + res.totals.suggestions);
+    expect(all.totals.hiddenUncertain).toBe(0);
+  }, 60_000);
 });

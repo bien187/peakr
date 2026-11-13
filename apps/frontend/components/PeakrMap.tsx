@@ -6,6 +6,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { useEffect, useRef, useState } from 'react';
 import type { ExpressionSpecification, GeoJSONSource, MapGeoJSONFeature } from 'maplibre-gl';
 import { fmtDrive, KIND_META, trailheadLabel, type MapSelection, type PPoint } from '@/lib/peakr';
+import { WeatherLayer } from './WeatherLayer';
 
 const STYLE_URL =
   process.env.NEXT_PUBLIC_SWISSTOPO_STYLE_URL ??
@@ -175,6 +176,9 @@ export function PeakrMap({
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
   const [ready, setReady] = useState(false);
+  /** Karteninstanz für die Wetterebene (erst nach «load»). */
+  const [mapObj, setMapObj] = useState<maplibregl.Map | null>(null);
+  const [wxOpen, setWxOpen] = useState(false);
 
   // Quellen + Layer installieren (idempotent; auch nach Style-Fallback erneut aufrufbar).
   const installLayers = (map: maplibregl.Map) => {
@@ -363,6 +367,7 @@ export function PeakrMap({
       installLayers(map);
       map.resize();
       setReady(true);
+      setMapObj(map);
     });
 
     const selectFromEvent = (e: maplibregl.MapLayerMouseEvent) => {
@@ -424,6 +429,7 @@ export function PeakrMap({
       ro.disconnect();
       if (poiTimer.current) clearTimeout(poiTimer.current);
       hover.remove();
+      setMapObj(null);
       map.remove();
       mapRef.current = null;
       setReady(false);
@@ -557,8 +563,9 @@ export function PeakrMap({
   }, [ready]);
 
   return (
-    <div className="map-wrap">
+    <div className={'map-wrap' + (wxOpen ? ' wx-on' : '')}>
       <div className="pk-map" ref={wrapRef} />
+      <WeatherLayer map={mapObj} onOpenChange={setWxOpen} />
       <div className="pk-legend" aria-hidden>
         <span>
           <i style={{ background: HIKE_GREEN }} /> Wandern

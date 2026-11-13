@@ -96,6 +96,7 @@ describe('Suche ohne erreichbare Datenbank', () => {
     globalThis.__peakrSql = undefined;
     globalThis.__peakrLiveCache = undefined;
     globalThis.__peakrSearchCache = undefined;
+    globalThis.__peakrConditions = undefined;
   });
   afterAll(() => {
     process.env.DATABASE_URL = saved;
@@ -122,8 +123,17 @@ describe('Suche ohne erreichbare Datenbank', () => {
     );
     setSearchIndexForTests(parseSearchIndex(sampleFile()));
 
-    const hike = await search(
+    // Ohne Datenbank fehlen die Grundlagen der Verfügbarkeitsprüfung: nichts gilt als «verfügbar»,
+    // die Ziele sind aber gezählt und mit «unsichere zeigen» samt echter Fahrzeit abrufbar.
+    const strict = await search(
       searchInputSchema.parse({ origin: { lat: 47.37, lng: 8.54 }, mode: 'hike', maxMinutes: 30, toleranceMinutes: 0 }),
+    );
+    expect(strict.meta.liveData).toBe('unavailable');
+    expect(strict.totals.results).toBe(0);
+    expect(strict.totals.hiddenUncertain).toBe(2);
+
+    const hike = await search(
+      searchInputSchema.parse({ origin: { lat: 47.37, lng: 8.54 }, mode: 'hike', maxMinutes: 30, toleranceMinutes: 0, includeUncertain: true }),
     );
     expect(hike.meta.liveData).toBe('unavailable');
     expect(hike.meta.routing.status).toBe('ok');
@@ -132,16 +142,22 @@ describe('Suche ohne erreichbare Datenbank', () => {
     expect(peak.driveMinutes).toBeCloseTo(10, 0);
     expect(peak.driveEstimated).toBe(false);
     expect(peak.live).toBeNull();
+    expect(peak.availability?.status).toBe('uncertain');
+    expect(peak.availability?.confidence).toBe('low');
 
     // Auch über den API-Einstieg: das Rate-Limit braucht die Datenbank, darf die Suche aber nicht blockieren.
     const { apiSearch } = await import('../server');
-    const viaApi = await apiSearch({ origin: { lat: 47.37, lng: 8.54 }, mode: 'hike', maxMinutes: 30, toleranceMinutes: 0 }, '198.51.100.7');
+    const viaApi = await apiSearch(
+      { origin: { lat: 47.37, lng: 8.54 }, mode: 'hike', maxMinutes: 30, toleranceMinutes: 0, includeUncertain: true },
+      '198.51.100.7',
+    );
     expect(viaApi.totals.results).toBe(2);
 
     const ski = await search(
-      searchInputSchema.parse({ origin: { lat: 47.37, lng: 8.54 }, mode: 'ski', maxMinutes: 30, toleranceMinutes: 0 }),
+      searchInputSchema.parse({ origin: { lat: 47.37, lng: 8.54 }, mode: 'ski', maxMinutes: 30, toleranceMinutes: 0, includeUncertain: true }),
     );
     expect(ski.totals.results).toBe(1);
+    expect(ski.items[0].availability?.status).toBe('uncertain');
     expect(ski.items[0].ski?.liftsTotal).toBe(12);
     // Ohne Messwert keine erfundenen Schnee- oder Liftzahlen.
     expect(ski.items[0].live?.snowDepthTopCm ?? null).toBeNull();

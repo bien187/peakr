@@ -13,6 +13,7 @@ import {
   adaptResult,
   DEFAULT_ORIGIN,
   HIKE_KINDS,
+  planDate,
   SAC,
   type MapSelection,
   type PCard,
@@ -45,6 +46,9 @@ const DEFAULT_PARAMS: PParams = {
   includeUnrouted: false,
   minElev: null,
   minSnow: null,
+  planDay: null,
+  planStart: 8,
+  includeUncertain: false,
 };
 
 /** Gespeicherte Parameter prüfen – ein veralteter oder beschädigter Eintrag darf die Suche nicht brechen. */
@@ -69,6 +73,9 @@ function sanitize(raw: unknown): PParams {
     includeUnrouted: p.includeUnrouted === true,
     minElev: optNum(p.minElev, 0, 4700),
     minSnow: optNum(p.minSnow, 0, 500),
+    planDay: optNum(p.planDay, 0, 2),
+    planStart: num(p.planStart, 0, 23, DEFAULT_PARAMS.planStart),
+    includeUncertain: p.includeUncertain === true,
   };
 }
 
@@ -86,6 +93,9 @@ function toRequest(p: PParams, origin: LatLng, sort: SortKey): SearchRequest {
     includeUnrouted: hike && p.includeUnrouted,
     minElevationM: p.minElev ?? undefined,
     minSnowCm: !hike && p.minSnow != null ? p.minSnow : undefined,
+    // Ohne Angabe wählt der Server (heute ab der nächsten Stunde, nachmittags morgen).
+    plan: p.planDay != null ? { date: planDate(p.planDay), startHour: hike ? p.planStart : 9 } : undefined,
+    includeUncertain: p.includeUncertain,
     sort,
   };
 }
@@ -326,9 +336,15 @@ export default function HomePage() {
       const q = new URLSearchParams({ from: `${originPt.lat.toFixed(5)},${originPt.lng.toFixed(5)}` });
       if (params.originLabel) q.set('label', params.originLabel);
       if (card?.hike) q.set('route', String(card.hike.routeId));
+      // Verfügbarkeit in der Detailansicht für dieselbe Planung wie in der Suche.
+      const plan = card?.availability?.plan ?? meta?.plan ?? null;
+      if (plan) {
+        q.set('date', plan.date);
+        q.set('start', String(plan.startHour));
+      }
       router.push(`/destinations/${id}?${q.toString()}`);
     },
-    [router, originPt.lat, originPt.lng, params.originLabel, pinned],
+    [router, originPt.lat, originPt.lng, params.originLabel, pinned, meta],
   );
 
   return (
@@ -369,6 +385,8 @@ export default function HomePage() {
           onSort={setSort}
           sheetOpen={sheetOpen}
           onSheetToggle={() => setSheetOpen((v) => !v)}
+          includeUncertain={params.includeUncertain}
+          onIncludeUncertain={(v) => set({ includeUncertain: v })}
         />
       </div>
       {loading && items.length > 0 && <div className="search-status">Suche läuft …</div>}

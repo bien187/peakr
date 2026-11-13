@@ -39,6 +39,16 @@ function DestinationDetail() {
   const origin = useMemo(() => parseOrigin(new URLSearchParams(searchParams.toString())), [originKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const routeParam = Number(searchParams.get('route'));
   const initialRouteId = Number.isInteger(routeParam) && routeParam > 0 ? routeParam : null;
+  // Planung aus der Suche (Datum, Startstunde); ohne Angabe wählt der Server.
+  const planDateParam = searchParams.get('date');
+  const planStartParam = Number(searchParams.get('start'));
+  const plan = useMemo(
+    () =>
+      planDateParam && /^\d{4}-\d{2}-\d{2}$/.test(planDateParam) && Number.isInteger(planStartParam)
+        ? { date: planDateParam, startHour: planStartParam }
+        : null,
+    [planDateParam, planStartParam],
+  );
 
   useEffect(() => {
     if (!params?.id) return;
@@ -46,13 +56,13 @@ function DestinationDetail() {
     setError(null);
     setD(null);
     api
-      .destination(params.id, origin, ctrl.signal)
+      .destination(params.id, origin, ctrl.signal, plan)
       .then((x) => setD(adaptDetail(x)))
       .catch((e: unknown) => {
         if (!ctrl.signal.aborted) setError(e instanceof ApiError ? e.message : 'Laden fehlgeschlagen.');
       });
     return () => ctrl.abort();
-  }, [params?.id, origin]);
+  }, [params?.id, origin, plan]);
 
   if (error) {
     return (

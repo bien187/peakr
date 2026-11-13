@@ -8,9 +8,39 @@ import { env } from '../config/env';
 import { enrichTrendWithOpenAi, isOpenAiTrendEnabled } from '../services/openai.service';
 import { fetchWeatherBatch, type WeatherPoint } from '../services/openMeteo.service';
 import { fetchAvalancheLevels, type AvalancheInfo } from '../services/slf.service';
+import { fetchTrailClosures } from '../services/closures.service';
+import { fetchSnowStations } from '../services/snowStations.service';
+import { storeSnowStations, storeTrailClosures } from '../repositories/conditions.repo';
 import { HttpError } from '../lib/http';
 import { fetchPageviewsSum, pageviewsToScore } from '../services/wikipedia.service';
 import type { JobContext, JobResult, JobSpec } from './runner';
+
+/** Schneemessungen (SLF IMIS, MeteoSchweiz) – Ausfall einer Quelle bricht den Job nicht ab. */
+async function refreshSnow(): Promise<{ snowStations: number; snowSourcesFailed: number }> {
+  try {
+    const { stations, failed } = await fetchSnowStations();
+    const n = await storeSnowStations(stations);
+    if (n > 0) await upsertDataSource('meteoswiss');
+    return { snowStations: n, snowSourcesFailed: failed.length };
+  } catch (err) {
+    logger.warn({ error: err instanceof Error ? err.message : String(err) }, 'Schneemessungen nicht gespeichert');
+    return { snowStations: 0, snowSourcesFailed: 4 };
+  }
+}
+
+/** Wegsperrungen holen, ersetzen und den Routen zuordnen. Bei Fehlern bleiben die alten Meldungen. */
+async function refreshClosures(): Promise<{ closures: number; closedRoutes: number }> {
+  try {
+    const list = await fetchTrailClosures();
+    if (list.length === 0) throw new Error('keine Meldungen erhalten');
+    const r = await storeTrailClosures(list);
+    await upsertDataSource('astra_closures');
+    return { closures: r.closures, closedRoutes: r.affectedRoutes };
+  } catch (err) {
+    logger.warn({ error: err instanceof Error ? err.message : String(err) }, 'Sperrungen nicht aktualisiert – bisherige Meldungen bleiben');
+    return { closures: -1, closedRoutes: -1 };
+  }
+}
 
 /** Lawinenbulletin holen und für alle Regionen ablegen (auch für Wanderziele nutzbar). */
 async function refreshAvalanche(): Promise<Map<string, AvalancheInfo>> {
@@ -115,12 +145,14 @@ async function runSki(ctx: JobContext): Promise<JobResult> {
       )
     `;
   }
+  const snow = await refreshSnow();
   return {
     total: resorts.length,
     updated: rows.length,
     failed,
     avalancheRegions: levels.size,
     withLiftStatus: rows.filter((r) => r.lifts_open !== null).length,
+    ...snow,
   };
 }
 
@@ -131,14 +163,16 @@ async function runSki(ctx: JobContext): Promise<JobResult> {
 async function runWeather(ctx: JobContext): Promise<JobResult> {
   await upsertDataSource('open_meteo');
   await upsertDataSource('slf');
+  // Zellen der Wanderziele und Skigebiete; je Zelle aktuelle Werte und die stündliche
+  // Prognose für heute bis übermorgen (Tourplanung, Wetterkarte).
   const cells = await sql<{ cell: string }[]>`
     SELECT DISTINCT weather_cell AS cell FROM destinations
-    WHERE type = 'hike_destination' AND retired_at IS NULL AND weather_cell IS NOT NULL
+    WHERE type IN ('hike_destination', 'ski_resort') AND retired_at IS NULL AND weather_cell IS NOT NULL
     ORDER BY 1
   `;
   const levels = await refreshAvalanche();
   const points = cells.map((c) => weatherCellCenter(c.cell));
-  const weather = await fetchWeatherBatch(points, { shouldStop: ctx.shouldStop });
+  const weather = await fetchWeatherBatch(points, { shouldStop: ctx.shouldStop, hourly: true });
 
   const rows: Record<string, unknown>[] = [];
   for (let i = 0; i < cells.length; i++) {
@@ -147,26 +181,41 @@ async function runWeather(ctx: JobContext): Promise<JobResult> {
     rows.push({
       cell: cells[i].cell, lat: points[i].lat, lng: points[i].lng, model_elev_m: w.modelElevationM,
       temperature_c: w.temperatureC, weather_code: w.weatherCode, visibility_m: w.visibilityM, wind_kmh: w.windKmh,
-      snow_depth_cm: w.snowDepthCm, fresh_snow_cm: w.freshSnowCm,
+      snow_depth_cm: w.snowDepthCm, fresh_snow_cm: w.freshSnowCm, forecast: w.forecast ?? null,
     });
   }
-  for (const batch of chunks(rows, 500)) {
+  for (const batch of chunks(rows, 200)) {
     await sql`
-      INSERT INTO weather_cells (cell, lat, lng, model_elev_m, captured_at, temperature_c, weather_code, visibility_m, wind_kmh, snow_depth_cm, fresh_snow_cm)
-      SELECT x.cell, x.lat, x.lng, x.model_elev_m, now(), x.temperature_c, x.weather_code, x.visibility_m, x.wind_kmh, x.snow_depth_cm, x.fresh_snow_cm
+      INSERT INTO weather_cells (cell, lat, lng, model_elev_m, captured_at, temperature_c, weather_code, visibility_m, wind_kmh,
+                                 snow_depth_cm, fresh_snow_cm, forecast, forecast_at)
+      SELECT x.cell, x.lat, x.lng, x.model_elev_m, now(), x.temperature_c, x.weather_code, x.visibility_m, x.wind_kmh,
+             x.snow_depth_cm, x.fresh_snow_cm, x.forecast, CASE WHEN x.forecast IS NULL THEN NULL ELSE now() END
       FROM jsonb_to_recordset(${sql.json(batch as never)}) AS x(
         cell text, lat real, lng real, model_elev_m int, temperature_c real, weather_code int, visibility_m int,
-        wind_kmh real, snow_depth_cm int, fresh_snow_cm real
+        wind_kmh real, snow_depth_cm int, fresh_snow_cm real, forecast jsonb
       )
       ON CONFLICT (cell) DO UPDATE SET
         lat = EXCLUDED.lat, lng = EXCLUDED.lng, model_elev_m = EXCLUDED.model_elev_m, captured_at = now(),
         temperature_c = EXCLUDED.temperature_c, weather_code = EXCLUDED.weather_code, visibility_m = EXCLUDED.visibility_m,
-        wind_kmh = EXCLUDED.wind_kmh, snow_depth_cm = EXCLUDED.snow_depth_cm, fresh_snow_cm = EXCLUDED.fresh_snow_cm
+        wind_kmh = EXCLUDED.wind_kmh, snow_depth_cm = EXCLUDED.snow_depth_cm, fresh_snow_cm = EXCLUDED.fresh_snow_cm,
+        -- Fehlt die neue Prognose, bleibt die bisherige stehen (sie trägt ihren eigenen Zeitstempel).
+        forecast = COALESCE(EXCLUDED.forecast, weather_cells.forecast),
+        forecast_at = COALESCE(EXCLUDED.forecast_at, weather_cells.forecast_at)
     `;
   }
   // Zellen ohne Ziele (nach einem Import) entfernen.
   await sql`DELETE FROM weather_cells w WHERE NOT EXISTS (SELECT 1 FROM destinations d WHERE d.weather_cell = w.cell AND d.retired_at IS NULL)`;
-  return { total: cells.length, updated: rows.length, failed: cells.length - rows.length, avalancheRegions: levels.size };
+  const closures = await refreshClosures();
+  const snow = await refreshSnow();
+  return {
+    total: cells.length,
+    updated: rows.length,
+    failed: cells.length - rows.length,
+    withForecast: rows.filter((r) => r.forecast !== null).length,
+    avalancheRegions: levels.size,
+    ...closures,
+    ...snow,
+  };
 }
 
 /**

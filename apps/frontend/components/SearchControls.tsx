@@ -26,7 +26,21 @@ export interface PParams {
   minElev: number | null;
   /** Mindestschneehöhe am Berg in cm (Ski); null = egal. */
   minSnow: number | null;
+  /** Planungstag relativ zu heute (0–2); null = automatisch (heute bzw. ab 14 Uhr morgen). */
+  planDay: number | null;
+  /** Startstunde der Tour (Wandern). */
+  planStart: number;
+  /** Ziele mit unsicherer Verfügbarkeit zeigen; nicht verfügbare bleiben ausgeblendet. */
+  includeUncertain: boolean;
 }
+
+const PLAN_DAYS: { value: number | null; label: string }[] = [
+  { value: null, label: 'Automatisch' },
+  { value: 0, label: 'Heute' },
+  { value: 1, label: 'Morgen' },
+  { value: 2, label: 'Übermorgen' },
+];
+const START_HOURS = [6, 7, 8, 9, 10, 11, 12, 13];
 
 /** Kurztext für die Filter-Zelle, z. B. «Gipfel, Seen · bis T3». */
 export function filterSummary(p: PParams): string {
@@ -47,6 +61,8 @@ export function filterSummary(p: PParams): string {
     if (parts.length === 0) parts.push('Alle Gebiete');
   }
   if (p.mode === 'hike' && p.minElev != null) parts.push(`ab ${p.minElev} m`);
+  if (p.planDay != null) parts.push(p.planDay === 0 ? 'heute' : p.planDay === 1 ? 'morgen' : 'übermorgen');
+  if (p.includeUncertain) parts.push('+ unsichere');
   return parts.join(' · ');
 }
 
@@ -282,6 +298,54 @@ export function SearchControls({
           <span className="cap-val cap-val-clip">{filterSummary(params)}</span>
         </button>
         <Popover open={openFilter} onClose={() => setOpenFilter(false)} align="right">
+          <p className="pop-title">Wann?</p>
+          <div className="chip-row" style={{ marginTop: 0 }}>
+            {PLAN_DAYS.map((d) => (
+              <button
+                key={String(d.value)}
+                type="button"
+                className={'chip' + (params.planDay === d.value ? ' is-on' : '')}
+                onClick={() => set({ planDay: d.value })}
+                aria-pressed={params.planDay === d.value}
+              >
+                {d.label}
+              </button>
+            ))}
+          </div>
+          {isHike && params.planDay != null && (
+            <div className="pop-field">
+              <span className="field-label">Start der Tour</span>
+              <div className="chip-row">
+                {START_HOURS.map((h) => (
+                  <button
+                    key={h}
+                    type="button"
+                    className={'chip' + (params.planStart === h ? ' is-on' : '')}
+                    onClick={() => set({ planStart: h })}
+                    aria-pressed={params.planStart === h}
+                  >
+                    {h} Uhr
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          <p className="twk-hint" style={{ marginTop: 8 }}>
+            {isHike
+              ? 'Geprüft werden Sperrungen, Schnee, Wetter zur Tourzeit, Lawinenbulletin und Tageslicht. «Automatisch»: heute ab der nächsten Stunde, ab 14 Uhr morgen ab 8 Uhr.'
+              : 'Geprüft werden Betriebsstatus, Schnee, Wetter am Skitag und Lawinenbulletin.'}
+          </p>
+          <Toggle
+            on={params.includeUncertain}
+            onChange={(v) => set({ includeUncertain: v })}
+            label="Auch unsichere Ziele zeigen"
+            hint={
+              isHike
+                ? 'Datenlage unvollständig oder ein Risiko ist möglich. Gesperrte, verschneite oder zu lange Touren bleiben ausgeblendet.'
+                : 'Ohne frei nutzbare Live-Quelle zum Betrieb gilt jedes Skigebiet als unsicher – Peakr zeigt keines als geöffnet an.'
+            }
+          />
+          <div className="pop-sep" />
           {isHike ? (
             <>
               <p className="pop-title">Zielarten</p>
@@ -426,6 +490,9 @@ export function SearchControls({
                 includeUnrouted: false,
                 minElev: null,
                 minSnow: null,
+                planDay: null,
+                planStart: 8,
+                includeUncertain: false,
               })
             }
           >

@@ -61,6 +61,20 @@ export const SOURCES: Record<string, DataSource> = {
     license: 'CC0',
     attribution: 'Wikimedia Foundation',
   },
+  astra_closures: {
+    id: 'astra_closures',
+    name: 'Sperrungen Wanderwege (geo.admin.ch)',
+    url: 'https://map.geo.admin.ch/#/map?layers=ch.astra.wanderland-sperrungen_umleitungen',
+    license: 'Open Government Data des Bundes – freie Nutzung mit Quellenangabe',
+    attribution: 'ASTRA, Schweizer Wanderwege und kantonale Fachstellen',
+  },
+  meteoswiss: {
+    id: 'meteoswiss',
+    name: 'MeteoSchweiz (Messnetz, Radar)',
+    url: 'https://www.meteoschweiz.admin.ch/service-und-publikationen/service/open-data.html',
+    license: 'Open Government Data, CC BY 4.0',
+    attribution: 'Quelle: MeteoSchweiz',
+  },
 };
 
 export async function upsertDataSource(id: keyof typeof SOURCES, version?: string | null): Promise<void> {

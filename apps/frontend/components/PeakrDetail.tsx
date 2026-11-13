@@ -5,7 +5,7 @@ import { mapLib } from '@/lib/map';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Icon } from './Icon';
-import { AvalancheTag, WeatherChip } from './PeakrUI';
+import { AvailabilityBadge, AvalancheTag, WeatherChip } from './PeakrUI';
 import {
   classLabel,
   fetchForecast,
@@ -16,6 +16,7 @@ import {
   fmtDuration,
   KIND_META,
   PISTE_LABEL,
+  planLabel,
   PISTE_ORDER,
   trailheadHint,
   trailheadLabel,
@@ -25,7 +26,17 @@ import {
   type PDetail,
   type PRoute,
 } from '@/lib/peakr';
-import { routeGpx, routeGpxPath, swisstopoLink, type DriveInfo, type Trailhead } from '@ch-alpineroute/shared';
+import {
+  AVAILABILITY_LABEL,
+  CHECK_LABEL,
+  EVIDENCE_LABEL,
+  routeGpx,
+  routeGpxPath,
+  swisstopoLink,
+  type Availability,
+  type DriveInfo,
+  type Trailhead,
+} from '@ch-alpineroute/shared';
 
 type MediaVariant = '3d' | 'map' | 'aerial';
 
@@ -503,6 +514,81 @@ function driveText(drive: DriveInfo | null, hasOrigin: boolean): { main: string;
   };
 }
 
+const AV_DOT: Record<string, string> = { available: 'Check', uncertain: 'CircleHelp', unavailable: 'X' };
+const CONF_LABEL = { high: 'hoch', medium: 'mittel', low: 'gering' } as const;
+const CONF_HINT = {
+  high: 'amtliche Meldungen, Messungen und Berechnungen',
+  medium: 'Prognose oder Modellwerte beteiligt',
+  low: 'für mindestens eine Prüfung fehlen Daten',
+} as const;
+
+/** Verfügbarkeit mit allen Einzelprüfungen: Status, Begründung, Belegart, Quelle, Stand. */
+function AvailabilityCard({ a, isSki }: { a: Availability | null; isSki: boolean }) {
+  if (!a) {
+    return (
+      <section className="detail-card av-card">
+        <h2 className="detail-h2">Verfügbarkeit</h2>
+        <p className="detail-note is-plain">
+          <Icon name="CircleHelp" size={13} stroke={2} />
+          {isSki
+            ? 'Die Verfügbarkeit konnte nicht geprüft werden.'
+            : 'Ohne berechnete Route lässt sich die Verfügbarkeit nicht prüfen.'}
+        </p>
+      </section>
+    );
+  }
+  const plan = a.plan ? planLabel(a.plan) : null;
+  const back = a.plan?.endsAt ? new Intl.DateTimeFormat('de-CH', { timeZone: 'Europe/Zurich', hour: '2-digit', minute: '2-digit' }).format(new Date(a.plan.endsAt)) : null;
+  return (
+    <section className="detail-card av-card">
+      <h2 className="detail-h2">Verfügbarkeit</h2>
+      <div className="av-summary">
+        <AvailabilityBadge a={a} />
+        {plan && (
+          <span className="av-summary-plan">
+            {isSki ? `Skitag ${plan.replace(/ ab \d+ Uhr$/, '')} (9–16 Uhr)` : `Tour ${plan}${back ? `, zurück gegen ${back} Uhr` : ''}`}
+          </span>
+        )}
+      </div>
+      <ul className="av-list">
+        {a.checks.map((c) => (
+          <li key={c.kind} className={'av-item is-' + c.status}>
+            <span className="av-dot" aria-hidden>
+              <Icon name={AV_DOT[c.status]} size={13} stroke={2.6} />
+            </span>
+            <span className="av-item-head">
+              {CHECK_LABEL[c.kind]} <span className="av-item-state">{AVAILABILITY_LABEL[c.status]}</span>
+            </span>
+            <div>
+              <p className="av-item-text">
+                {c.text}
+                {c.url && (
+                  <>
+                    {' '}
+                    <a href={c.url} target="_blank" rel="noopener noreferrer">
+                      Mehr
+                    </a>
+                  </>
+                )}
+              </p>
+              <p className="av-item-meta">
+                {EVIDENCE_LABEL[c.evidence]}
+                {c.source ? ` · ${c.source}` : ''}
+                {c.observedAt ? ` · Stand ${fmtAge(c.observedAt) ?? fmtDate(c.observedAt)}` : ''}
+              </p>
+            </div>
+          </li>
+        ))}
+      </ul>
+      <p className="detail-note">
+        <Icon name="Info" size={13} stroke={2} />
+        Vertrauen {CONF_LABEL[a.confidence]} ({CONF_HINT[a.confidence]}). Automatische Prüfung – massgebend sind Signalisation
+        vor Ort, das SLF-Bulletin und die Meldungen der Betreiber.
+      </p>
+    </section>
+  );
+}
+
 /**
  * «In Swisstopo öffnen» und «GPX herunterladen» für die gewählte Variante. Die
  * GPX-Datei entsteht im Browser aus den geladenen Routendaten; swisstopo lädt
@@ -601,6 +687,11 @@ function RouteOption({ r, active, onPick, hasOrigin }: { r: PRoute; active: bool
         </span>
         <span>{r.sacKnown ? r.sacLabel : 'SAC unbekannt'}</span>
       </span>
+      {r.src.availability && (
+        <span className="route-opt-av">
+          <AvailabilityBadge a={r.src.availability} compact />
+        </span>
+      )}
     </button>
   );
 }
@@ -784,6 +875,8 @@ export function DetailView({
             </>
           )}
         </div>
+
+        <AvailabilityCard a={isSki ? d.availability : (route?.src.availability ?? null)} isSki={isSki} />
 
         <section className="detail-card">
           <h2 className="detail-h2">Anreise mit dem Auto</h2>

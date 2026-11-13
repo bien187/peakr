@@ -37,7 +37,7 @@ export function skiRow(over: Partial<SkiCandidateRow> = {}): SkiCandidateRow {
     object_class: 'Skigebiet', quality_score: 80, importance: 3, wikipedia_title: null, slf_region_id: null, source_layer: 'osm',
     lifts_total: 10, lifts_by_type: {}, piste_km: 40, piste_km_by_difficulty: {}, grouping: 'test',
     th_id: `th-${seq}`, th_name: null, th_lat: 46.8, th_lng: 9.8, drive_lat: 46.8, drive_lng: 9.8, road_snap_m: 10, th_elev: 1200,
-    th_quality: 3, captured_at: null, temperature_c: null, weather_code: null, visibility_m: null, wind_kmh: null,
+    th_quality: 3, weather_cell: null, captured_at: null, temperature_c: null, weather_code: null, visibility_m: null, wind_kmh: null,
     snow_depth_valley_cm: null, snow_depth_top_cm: null, fresh_snow_cm: null, avalanche_level: null, lifts_open: null,
     slopes_open_km: null, lift_source: null, trend_score: null, trend_rationale: null, trend_source: null, trend_is_estimate: null,
     trend_updated_at: null,

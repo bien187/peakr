@@ -1,6 +1,8 @@
 import {
   SAC_ORDER,
+  type Availability,
   type HikeRouteSummary,
+  type TourPlan,
   type LiveStatus,
   type RoutingStatus,
   type SacDifficulty,
@@ -28,6 +30,9 @@ import {
   type WeatherCellRow,
 } from '../repositories/search.repo';
 import { getSearchIndex } from '../search/searchIndex';
+import { evaluateHikeRoute, evaluateSkiResort, reasonKind, type ConditionsContext, type HikeRouteFacts } from '../availability/engine';
+import { resolvePlan } from '../availability/time';
+import { conditionsMeta, getConditions } from '../repositories/conditions.repo';
 import {
   computeDriveContext,
   driveTimeTo,
@@ -51,23 +56,59 @@ export interface RoutingMeta {
   graphBuiltAt: string | null;
 }
 
+/** Wegen der Verfügbarkeit ausgeblendete Ziele (nur solche, die sonst angezeigt würden). */
+export interface HiddenCounts {
+  uncertain: number;
+  unavailable: number;
+  /** Prüfung (closure, snow …) → Anzahl Ziele, gezählt nach dem massgebenden Grund. */
+  reasons: Record<string, number>;
+}
+
 export interface HikeSections {
   results: SearchResult[];
   suggestions: SearchResult[];
   sacUnknown: SearchResult[];
+  hidden: HiddenCounts;
 }
 export interface SkiSections {
   results: SearchResult[];
   suggestions: SearchResult[];
   unrouted: SearchResult[];
   excludedUnknownSnow: number;
+  hidden: HiddenCounts;
+}
+
+/** Verfügbarkeitsprüfung für eine Suche; fehlt sie (ältere Tests), wird nicht gefiltert. */
+export interface AvailabilitySettings {
+  conditions: ConditionsContext;
+  plan: TourPlan;
+  now: Date;
+  includeUncertain: boolean;
 }
 
 export interface AssembleContext {
   weather: Map<string, WeatherCellRow>;
   avalanche: AvalancheMap;
   routing: RoutingMeta;
+  availability?: AvailabilitySettings;
 }
+
+const emptyHidden = (): HiddenCounts => ({ uncertain: 0, unavailable: 0, reasons: {} });
+
+/** Sichtbar: verfügbar, oder unsicher mit includeUncertain. Ohne Prüfung immer. */
+function isVisible(a: Availability | null, s: AvailabilitySettings | undefined): boolean {
+  return !a || !s || a.status === 'available' || (a.status === 'uncertain' && s.includeUncertain);
+}
+
+/** Zählt ein ausgeblendetes Ziel mit seinem massgebenden Grund. */
+function countHidden(h: HiddenCounts, a: Availability): void {
+  if (a.status === 'uncertain') h.uncertain++;
+  else h.unavailable++;
+  const kind = reasonKind(a) ?? 'other';
+  h.reasons[kind] = (h.reasons[kind] ?? 0) + 1;
+}
+
+const STATUS_RANK = { available: 0, uncertain: 1, unavailable: 2 } as const;
 
 function airKm(input: SearchInput, lat: number, lng: number): number {
   return round1(haversineM(input.origin.lat, input.origin.lng, lat, lng) / 1000);
@@ -167,6 +208,8 @@ function hikeSummary(r: HikeCandidateRow): HikeRouteSummary {
 interface Option {
   row: HikeCandidateRow;
   drive: DriveTime;
+  /** Verfügbarkeit dieser Variante; null = nicht geprüft. */
+  availability: Availability | null;
 }
 
 /** Rangfolge der Routenvarianten: kurze Gehzeit; Strassenzugang ohne Parkplatz zählt 30 min schlechter. */
@@ -174,13 +217,26 @@ function optionCost(o: Option): number {
   return o.row.duration_up_min + (o.row.th_quality === 1 ? 30 : 0);
 }
 
+/** Beste Variante: verfügbare vor unsicheren, dann kürzere Gehzeit, dann kürzere Fahrt. */
 function pickBest(options: Option[]): Option {
+  const rank = (o: Option): number => (o.availability ? STATUS_RANK[o.availability.status] : 0);
   return options.reduce((best, o) => {
+    const r = rank(o) - rank(best);
+    if (r !== 0) return r < 0 ? o : best;
     const d = optionCost(o) - optionCost(best);
     if (d < 0) return o;
     if (d === 0 && o.drive.minutes < best.drive.minutes) return o;
     return best;
   });
+}
+
+/** Grundlagen der Prüfung einer Wanderroute aus der Kandidatenzeile. */
+function routeFacts(r: HikeCandidateRow): HikeRouteFacts {
+  return {
+    destinationId: r.id, rank: r.rank, lat: r.lat, lng: r.lng, minElevM: r.min_elev_m, maxElevM: r.max_elev_m ?? r.elevation_top_m,
+    durationUpMin: r.duration_up_min, durationDownMin: r.duration_down_min, officialShare: r.official_share,
+    weatherCell: r.weather_cell, slfRegionId: r.slf_region_id,
+  };
 }
 
 function buildHikeResult(
@@ -241,6 +297,7 @@ function buildHikeResult(
     blocked: false,
     blockedReason: null,
     overBudgetMinutes: within ? null : Math.ceil(minutes - input.maxMinutes),
+    availability: chosen.availability,
   };
 }
 
@@ -283,6 +340,7 @@ export function assembleHike(
 ): HikeSections {
   const limit = input.maxMinutes + input.toleranceMinutes;
   const maxSac = input.maxSac ? SAC_ORDER[input.maxSac] : null;
+  const av = ctx.availability;
 
   const byDest = new Map<string, Option[]>();
   for (const row of rows) {
@@ -290,14 +348,16 @@ export function assembleHike(
     const drive = driveOf(row);
     // Ohne berechnete Strassenroute zählt eine Variante nicht – keine Schätzung.
     if (!drive || round1(drive.minutes) > limit) continue;
+    const availability = av ? evaluateHikeRoute(routeFacts(row), av.conditions, av.plan, av.now) : null;
     const list = byDest.get(row.id);
-    if (list) list.push({ row, drive });
-    else byDest.set(row.id, [{ row, drive }]);
+    if (list) list.push({ row, drive, availability });
+    else byDest.set(row.id, [{ row, drive, availability }]);
   }
 
   const results: SearchResult[] = [];
   const suggestions: SearchResult[] = [];
   const sacUnknown: SearchResult[] = [];
+  const hidden = emptyHidden();
 
   for (const options of byDest.values()) {
     const accepted: Option[] = [];
@@ -308,7 +368,9 @@ export function assembleHike(
       else if (SAC_ORDER[o.row.sac_max as SacDifficulty] <= maxSac) accepted.push(o);
     }
 
-    const place = (pool: Option[], target: 'main' | 'unknown'): boolean => {
+    const place = (all: Option[], target: 'main' | 'unknown'): boolean => {
+      // Nur Varianten, die nach der Verfügbarkeitsprüfung gezeigt werden dürfen.
+      const pool = all.filter((o) => isVisible(o.availability, av));
       if (pool.length === 0) return false;
       const within = pool.filter((o) => round1(o.drive.minutes) <= input.maxMinutes);
       const usable = within.length > 0 ? within : pool;
@@ -317,13 +379,16 @@ export function assembleHike(
       else (within.length > 0 ? results : suggestions).push(result);
       return true;
     };
-    if (!place(accepted, 'main')) place(unknown, 'unknown');
+    if (place(accepted, 'main') || place(unknown, 'unknown')) continue;
+    // Ausgeblendet: mit dem Grund der am wenigsten schlechten Variante zählen.
+    const candidates = (accepted.length > 0 ? accepted : unknown).filter((o) => o.availability);
+    if (candidates.length > 0) countHidden(hidden, pickBest(candidates).availability!);
   }
 
   sortResults(results);
   sortSuggestions(suggestions);
   sortResults(sacUnknown);
-  return { results, suggestions, sacUnknown };
+  return { results, suggestions, sacUnknown, hidden };
 }
 
 function unroutedResult(input: SearchInput, r: UnroutedRow, ctx: AssembleContext, status: RoutingStatus): SearchResult {
@@ -341,6 +406,8 @@ function unroutedResult(input: SearchInput, r: UnroutedRow, ctx: AssembleContext
     routeDistanceKm: null, routingUpdatedAt: ctx.routing.graphBuiltAt, distanceAirKm: airKm(input, r.lat, r.lng),
     trailhead: null, hike: null, hikeVariants: 0, ski: null, score, scoreBreakdown: breakdown, live, trend: null,
     blocked: false, blockedReason: null, overBudgetMinutes: null,
+    // Ohne Route keine Prüfung: diese Ziele erscheinen nur auf ausdrücklichen Wunsch («ohne Route»).
+    availability: null,
   };
 }
 
@@ -356,11 +423,30 @@ export function assembleSki(
   const suggestions: SearchResult[] = [];
   const unrouted: SearchResult[] = [];
   let excludedUnknownSnow = 0;
+  const hidden = emptyHidden();
+  const av = ctx.availability;
 
   for (const r of rows) {
     const hasAccess = r.th_id !== null && r.drive_lat !== null && r.drive_lng !== null;
     const drive = hasAccess ? driveOf(r) : null;
     if (hasAccess && (!drive || round1(drive.minutes) > limit)) continue; // ausserhalb der Reichweite
+
+    // Verfügbarkeit: ohne verlässlichen Live-Betriebsstatus nie «verfügbar».
+    const availability = av
+      ? evaluateSkiResort(
+          {
+            lat: r.lat, lng: r.lng, topElevM: r.elevation_top_m, baseElevM: r.elevation_base_m, slfRegionId: r.slf_region_id,
+            lifts: { liftsOpen: r.lifts_open, liftsTotal: r.lifts_total, source: r.lift_source, capturedAt: toIsoOrNull(r.captured_at) },
+            snowTopCm: r.snow_depth_top_cm, snowValleyCm: r.snow_depth_valley_cm, snowAt: toIsoOrNull(r.captured_at),
+            forecast: r.weather_cell ? av.conditions.forecasts.get(r.weather_cell) : undefined,
+          },
+          av.conditions, av.plan, av.now,
+        )
+      : null;
+    if (!isVisible(availability, av)) {
+      countHidden(hidden, availability!);
+      continue;
+    }
 
     // Lawinenstufe: Messwert des letzten Laufs, sonst aktuelles Bulletin der Region.
     const avalanche = r.avalanche_level ?? (r.slf_region_id ? (ctx.avalanche.get(r.slf_region_id)?.level ?? null) : null);
@@ -431,6 +517,7 @@ export function assembleSki(
       score, scoreBreakdown: breakdown, live, trend: trendScore, blocked,
       blockedReason: blocked ? `Lawinengefahr Stufe ${level} – nicht empfohlen` : null,
       overBudgetMinutes: minutes === null || within ? null : Math.ceil(minutes - input.maxMinutes),
+      availability,
     };
 
     if (minutes === null) unrouted.push(result);
@@ -440,7 +527,7 @@ export function assembleSki(
   sortResults(results);
   sortSuggestions(suggestions);
   unrouted.sort((a, b) => a.distanceAirKm - b.distanceAirKm);
-  return { results, suggestions, unrouted, excludedUnknownSnow };
+  return { results, suggestions, unrouted, excludedUnknownSnow, hidden };
 }
 
 // ── Zwischenspeicher, Sortierung und Seiten ──────────────────────────────────
@@ -451,6 +538,7 @@ export interface FullSearch {
   suggestions: SearchResult[];
   sacUnknown: SearchResult[];
   unrouted: SearchResult[];
+  hidden: HiddenCounts;
   meta: Omit<SearchResponse['meta'], 'cached' | 'tookMs'>;
 }
 
@@ -465,11 +553,13 @@ const CACHE_MAX = 16;
  * Sortierung und Seite gehören nicht dazu: sie werden aus dem gespeicherten
  * Gesamtergebnis bedient.
  */
-export function searchCacheKey(input: SearchInput, dataVersion: string | null): string {
+export function searchCacheKey(input: SearchInput, dataVersion: string | null, plan: TourPlan | null = null, timeBucket = 0): string {
   return JSON.stringify([
     input.origin.lat.toFixed(4), input.origin.lng.toFixed(4), input.mode, input.maxMinutes, input.toleranceMinutes,
     [...(input.kinds ?? [])].sort(), input.maxSac ?? null, input.includeUnknownSac, input.maxHikeMinutes ?? null,
     input.includeUnrouted, input.minElevationM ?? null, input.minSnowCm ?? null, dataVersion,
+    // Verfügbarkeit hängt von Planung und Uhrzeit ab (Alter der Daten, Tageslicht).
+    plan ? `${plan.date}T${plan.startHour}` : null, input.includeUncertain, timeBucket,
   ]);
 }
 
@@ -505,8 +595,11 @@ export function pageResponse(full: FullSearch, input: SearchInput, cached: boole
     suggestions: full.suggestions.length,
     sacUnknown: full.sacUnknown.length,
     unrouted: full.unrouted.length,
+    hiddenUncertain: full.hidden.uncertain,
+    excludedUnavailable: full.hidden.unavailable,
+    hiddenReasons: full.hidden.reasons,
   };
-  const total = totals.results + totals.suggestions + totals.sacUnknown + totals.unrouted;
+  const total = full.results.length + full.suggestions.length + full.sacUnknown.length + full.unrouted.length;
   const meta = { ...full.meta, cached, tookMs };
 
   if (input.ids && input.ids.length > 0) {
@@ -552,20 +645,38 @@ export function pageResponse(full: FullSearch, input: SearchInput, cached: boole
  * Kern-Suche: Fahrzeitfeld → räumlicher Vorfilter im Suchindex → Fahrzeit je
  * Kandidat → Auswahl → Bewertung. Die Datenbank liefert nur Live-Daten.
  */
-export async function search(input: SearchInput): Promise<SearchResponse> {
+/**
+ * Interne Optionen (nicht über die API erreichbar): `skipAvailability` prüft nur
+ * Fahrzeit und Daten, ohne Verfügbarkeitsfilter – für Datenqualitätstests und
+ * Diagnose. Die Website sucht immer mit Prüfung.
+ */
+export interface SearchOptions {
+  skipAvailability?: boolean;
+}
+
+export async function search(input: SearchInput, opts: SearchOptions = {}): Promise<SearchResponse> {
   const started = Date.now();
+  const now = new Date();
   const index = getSearchIndex();
-  const live = await getLiveContext(input.mode === 'ski');
+  const [live, cond] = await Promise.all([getLiveContext(input.mode === 'ski'), getConditions()]);
+  const plan = resolvePlan(input.plan, now);
   // Datenstand = Suchindex + letzter Worker-Lauf; ohne Live-Daten eigener Schlüssel,
   // damit eine Antwort ohne Wetter nicht nach der Störung weiter ausgeliefert wird.
-  const dataVersion = index ? `${index.builtAt}|${live.ok ? (live.liveVersion ?? '-') : 'nolive'}` : null;
+  const dataVersion = index
+    ? `${index.builtAt}|${live.ok ? (live.liveVersion ?? '-') : 'nolive'}|${cond.ok ? 'cond' : 'nocond'}`
+    : null;
   const cache = (globalThis.__peakrSearchCache ??= new Map());
-  const key = searchCacheKey(input, dataVersion);
+  const key = searchCacheKey(input, dataVersion, plan, Math.floor(now.getTime() / 1_800_000)) + (opts.skipAvailability ? '|ohne-pruefung' : '');
   const cached = cache.get(key);
   if (cached && Date.now() - cached.at < CACHE_TTL_MS) {
     return pageResponse(cached.full, input, true, Date.now() - started);
   }
-  const full = computeSearch(input, dataVersion, live);
+  const full = computeSearch(input, dataVersion, live, {
+    conditions: cond.conditions,
+    plan,
+    now,
+    includeUncertain: input.includeUncertain,
+  }, opts.skipAvailability === true);
   // Ohne Strassennetz/Index nichts merken: sobald die Daten da sind, soll die Suche sofort funktionieren.
   if (full.meta.routing.status !== 'unavailable') {
     cache.set(key, { at: Date.now(), full });
@@ -574,7 +685,13 @@ export async function search(input: SearchInput): Promise<SearchResponse> {
   return pageResponse(full, input, false, Date.now() - started);
 }
 
-function computeSearch(input: SearchInput, dataVersion: string | null, live: LiveContext): FullSearch {
+function computeSearch(
+  input: SearchInput,
+  dataVersion: string | null,
+  live: LiveContext,
+  availability: AvailabilitySettings,
+  skipAvailability = false,
+): FullSearch {
   const info = graphInfo();
   const index = getSearchIndex();
   const limit = input.maxMinutes + input.toleranceMinutes;
@@ -584,6 +701,8 @@ function computeSearch(input: SearchInput, dataVersion: string | null, live: Liv
     routing: { ...base, status, originSnapM },
     excludedUnknownSnow,
     liveData: live.ok ? ('ok' as const) : ('unavailable' as const),
+    plan: availability.plan,
+    conditions: conditionsMeta(availability.conditions),
     dataVersion,
     generatedAt: new Date().toISOString(),
   });
@@ -595,7 +714,7 @@ function computeSearch(input: SearchInput, dataVersion: string | null, live: Liv
     throw new AppError(422, 'ORIGIN_OFF_ROAD', 'Vom Startort aus ist im Umkreis von 3 km keine Strasse erreichbar.');
   }
   if (drive.status === 'unavailable' || !index) {
-    return { results: [], suggestions: [], sacUnknown: [], unrouted: [], meta: metaFor('unavailable', 0, null) };
+    return { results: [], suggestions: [], sacUnknown: [], unrouted: [], hidden: emptyHidden(), meta: metaFor('unavailable', 0, null) };
   }
 
   const { ctx } = drive;
@@ -603,6 +722,7 @@ function computeSearch(input: SearchInput, dataVersion: string | null, live: Liv
     weather: live.weather,
     avalanche: live.avalanche,
     routing: { provider: ROUTING_PROVIDER, graphBuiltAt: info.graphBuiltAt },
+    availability: skipAvailability ? undefined : availability,
   };
   const snapM = Math.round(ctx.originSnapM);
 
@@ -610,7 +730,7 @@ function computeSearch(input: SearchInput, dataVersion: string | null, live: Liv
     const rows = findSkiCandidates(index, input.minElevationM, live.skiLive, live.trends);
     const part = assembleSki(input, rows, (r) => driveTimeTo(ctx, r.drive_lat!, r.drive_lng!), assembleCtx);
     return {
-      results: part.results, suggestions: part.suggestions, sacUnknown: [], unrouted: part.unrouted,
+      results: part.results, suggestions: part.suggestions, sacUnknown: [], unrouted: part.unrouted, hidden: part.hidden,
       meta: metaFor('ok', rows.length, snapM, part.excludedUnknownSnow),
     };
   }

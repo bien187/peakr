@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { DriveTime } from '../routing/driveTime';
 import { ctx, hikeRow, input, skiRow } from '../test/fixtures';
+import { StationIndex } from '../availability/checks';
+import { emptyConditions, type ConditionsContext } from '../availability/engine';
 import { assembleHike, assembleSki, pageResponse, searchCacheKey, type FullSearch } from './search.service';
 
 /** Fahrzeit je Ausgangspunkt aus einer Tabelle; fehlt der Eintrag, gibt es keine Strassenroute. */
@@ -141,6 +143,8 @@ describe('Seiten und Kartenpunkte', () => {
         routing: { provider: 'test', status: 'ok', graphBuiltAt: null, osmTimestamp: null, originSnapM: 0 },
         excludedUnknownSnow: 0,
         liveData: 'ok',
+        plan: null,
+        conditions: null,
         dataVersion: null,
         generatedAt: new Date().toISOString(),
       },
@@ -179,5 +183,84 @@ describe('Seiten und Kartenpunkte', () => {
     expect(searchCacheKey(input({ maxSac: 'T3' }), 'v1')).not.toBe(base);
     expect(searchCacheKey(input(), 'v2')).not.toBe(base);
     expect(searchCacheKey(input({ kinds: ['lake', 'peak'] }), 'v1')).toBe(searchCacheKey(input({ kinds: ['peak', 'lake'] }), 'v1'));
+  });
+});
+
+describe('Verfügbarkeit in der Suche', () => {
+  const now = new Date('2026-07-15T05:00:00Z');
+  const plan = { date: '2026-07-15', startHour: 8 };
+  const fresh = new Date(now.getTime() - 3 * 3_600_000).toISOString();
+  /** Alle Prüfungen bestehbar: Sperrungen, Schnee (schneefrei gemessen), Prognose ruhig, kein Bulletin. */
+  const conditions = (): ConditionsContext => {
+    const c = emptyConditions();
+    c.closuresAt = fresh;
+    c.avalancheAt = fresh;
+    c.stations = new StationIndex([
+      { id: 's', source: 'slf_imis', name: 'Test', lat: 47.01, lng: 8.51, elevationM: 2200, snowCm: 0, newSnowCm: 0, measuredAt: fresh },
+    ]);
+    const col = (v: number) => Array.from({ length: 72 }, () => v);
+    c.forecasts.set('c1', {
+      start: '2026-07-15T00:00:00.000Z', precip: col(0), snowfall: col(0), code: col(1), gust: col(20), temp: col(12), cloud: col(20),
+      fetchedAt: fresh, elevationM: 1500,
+    });
+    return c;
+  };
+  const withAv = (c: ConditionsContext, includeUncertain = false) => ({ ...ctx, availability: { conditions: c, plan, now, includeUncertain } });
+
+  it('wählt die verfügbare Variante, wenn die kürzere gesperrt ist', () => {
+    const c = conditions();
+    const closed = hikeRow({ id: 'p', rank: 1, th_id: 'a', duration_up_min: 90, weather_cell: 'c1' });
+    const open = hikeRow({ id: 'p', rank: 2, th_id: 'b', duration_up_min: 150, weather_cell: 'c1' });
+    c.closures.set('p:1', [{ id: 'x', title: 'Hängebrücke', reason: 'Sturmschäden', duration: null, url: null, hasDetour: false }]);
+    const out = assembleHike(input({ includeUncertain: false }), [closed, open], drives({ a: 30, b: 35 }), withAv(c));
+    expect(out.results).toHaveLength(1);
+    expect(out.results[0].hike?.rank).toBe(2);
+    expect(out.results[0].availability?.status).toBe('available');
+  });
+
+  it('blendet nicht verfügbare Ziele immer aus und zählt den Grund', () => {
+    const c = conditions();
+    const r = hikeRow({ id: 'q', rank: 1, th_id: 'a', weather_cell: 'c1' });
+    c.closures.set('q:1', [{ id: 'x', title: 'Steg', reason: null, duration: null, url: null, hasDetour: false }]);
+    for (const includeUncertain of [false, true]) {
+      const out = assembleHike(input(), [r], drives({ a: 30 }), withAv(c, includeUncertain));
+      expect(out.results).toHaveLength(0);
+      expect(out.hidden).toEqual({ uncertain: 0, unavailable: 1, reasons: { closure: 1 } });
+    }
+  });
+
+  it('unsichere Ziele: standardmässig ausgeblendet, mit includeUncertain sichtbar', () => {
+    const c = conditions();
+    const r = hikeRow({ id: 'u', th_id: 'a', weather_cell: 'unbekannt' }); // keine Prognose → Wetter unsicher
+    const hiddenOut = assembleHike(input(), [r], drives({ a: 30 }), withAv(c));
+    expect(hiddenOut.results).toHaveLength(0);
+    expect(hiddenOut.hidden).toEqual({ uncertain: 1, unavailable: 0, reasons: { weather: 1 } });
+    const shown = assembleHike(input(), [r], drives({ a: 30 }), withAv(c, true));
+    expect(shown.results[0].availability?.status).toBe('uncertain');
+    expect(shown.results[0].availability?.reason).toMatch(/prognose/i);
+  });
+
+  it('verfügbare Ziele erscheinen mit vollständiger Begründung', () => {
+    const out = assembleHike(input(), [hikeRow({ th_id: 'a', weather_cell: 'c1' })], drives({ a: 30 }), withAv(conditions()));
+    const a = out.results[0].availability!;
+    expect(a.status).toBe('available');
+    expect(a.checks.map((x) => x.kind)).toEqual(['closure', 'avalanche', 'snow', 'weather', 'daylight']);
+    expect(a.plan).toMatchObject(plan);
+  });
+
+  it('Skigebiet ohne Live-Betriebsstatus: standardmässig ausgeblendet, sonst als unsicher markiert', () => {
+    const r = skiRow({ th_id: 'a', captured_at: fresh, snow_depth_top_cm: 80 });
+    const def = assembleSki(input({ mode: 'ski' }), [r], drives({ a: 30 }), withAv(conditions()));
+    expect(def.results).toHaveLength(0);
+    expect(def.hidden.reasons.operation).toBe(1);
+    const all = assembleSki(input({ mode: 'ski' }), [r], drives({ a: 30 }), withAv(conditions(), true));
+    expect(all.results[0].availability?.status).toBe('uncertain');
+  });
+
+  it('Cache-Schlüssel unterscheidet Planung und «unsichere zeigen»', () => {
+    const base = searchCacheKey(input(), 'v1', plan, 1);
+    expect(searchCacheKey(input({ includeUncertain: true }), 'v1', plan, 1)).not.toBe(base);
+    expect(searchCacheKey(input(), 'v1', { ...plan, startHour: 9 }, 1)).not.toBe(base);
+    expect(searchCacheKey(input(), 'v1', plan, 2)).not.toBe(base);
   });
 });
