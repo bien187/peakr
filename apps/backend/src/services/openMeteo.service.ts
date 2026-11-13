@@ -1,4 +1,4 @@
-import { fetchJson, HttpError } from '../lib/http';
+import { describeError, fetchJson, HttpError } from '../lib/http';
 import { logger } from '../lib/logger';
 
 /**
@@ -72,21 +72,40 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
 export interface BatchOptions {
   /** Wird zwischen den Anfragen geprüft; true bricht sauber ab. */
   shouldStop?: () => boolean;
+  /** Pause zwischen zwei Blöcken (Drosselung unter das Minutenlimit). */
   pauseMs?: number;
+  /** Wartezeit vor einer Wiederholung nach einem Netzwerkfehler, je Versuch vervielfacht. */
+  networkRetryMs?: number;
+  /** Wartezeit nach HTTP 429. */
+  rateLimitWaitMs?: number;
+  /** Pause vor dem zweiten Durchgang über die fehlgeschlagenen Blöcke. */
+  secondPassDelayMs?: number;
 }
+
+const MAX_ATTEMPTS = 4;
+
+type ChunkOutcome = 'ok' | 'failed' | 'rate_limited';
 
 /**
  * Wetter für viele Orte in gedrosselten Sammelanfragen. Liefert ein Array
- * gleicher Länge; fehlgeschlagene Blöcke ergeben null-Einträge. Bei HTTP 429
- * wird bis zu dreimal nach einer Minute wiederholt; hält das Limit an, bricht
- * der Lauf ab, statt weiter gegen das Kontingent zu laufen.
+ * gleicher Länge; fehlgeschlagene Blöcke ergeben null-Einträge.
+ *
+ * Fehlerbehandlung je Block:
+ *  - Netzwerkfehler (z. B. Verbindungsaufbau-Zeitüberschreitung, wie sie von
+ *    GitHub-Runnern zu Open-Meteo zeitweise auftreten) → bis zu 4 Versuche mit
+ *    wachsender Pause; danach folgt am Ende des Laufs ein zweiter Durchgang.
+ *  - HTTP 429 → eine Minute warten; hält das Limit an, endet der Lauf, statt
+ *    weiter gegen das Kontingent zu laufen.
+ *  - andere 4xx → endgültig (Anfrage fehlerhaft).
  */
 export async function fetchWeatherBatch(points: WeatherPoint[], opts: BatchOptions = {}): Promise<(WeatherSnapshot | null)[]> {
   const out: (WeatherSnapshot | null)[] = new Array(points.length).fill(null);
   const pause = opts.pauseMs ?? CHUNK_PAUSE_MS;
+  const networkRetry = opts.networkRetryMs ?? 15_000;
+  const rateLimitWait = opts.rateLimitWaitMs ?? 65_000;
+  const stop = (): boolean => opts.shouldStop?.() ?? false;
 
-  for (let start = 0; start < points.length; start += CHUNK) {
-    if (opts.shouldStop?.()) break;
+  const fetchChunk = async (start: number, pass: number): Promise<ChunkOutcome> => {
     const chunk = points.slice(start, start + CHUNK);
     const params = new URLSearchParams({
       latitude: chunk.map((c) => c.lat.toFixed(5)).join(','),
@@ -99,34 +118,51 @@ export async function fetchWeatherBatch(points: WeatherPoint[], opts: BatchOptio
     if (chunk.every((c) => typeof c.elevation === 'number')) {
       params.set('elevation', chunk.map((c) => Math.round(c.elevation as number)).join(','));
     }
-
-    let rateLimited = false;
-    for (let attempt = 1; attempt <= 3; attempt++) {
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       try {
         const data = await fetchJson<OpenMeteoResponse | OpenMeteoResponse[]>(`${FORECAST_URL}?${params.toString()}`, {
-          timeoutMs: 20_000,
-          retries: 1,
-          retryDelayMs: 2000,
+          timeoutMs: 30_000,
+          retries: 0,
         });
         const arr = Array.isArray(data) ? data : [data];
         for (let i = 0; i < chunk.length; i++) out[start + i] = arr[i] ? parseWeather(arr[i]) : null;
-        rateLimited = false;
-        break;
+        return 'ok';
       } catch (err) {
-        rateLimited = err instanceof HttpError && err.status === 429;
+        const status = err instanceof HttpError ? err.status : undefined;
         logger.warn(
-          { chunkStart: start, attempt, status: err instanceof HttpError ? err.status : undefined, error: err instanceof Error ? err.message.slice(0, 120) : String(err) },
+          { chunkStart: start, pass, attempt, status, error: describeError(err).slice(0, 400) },
           'Open-Meteo-Anfrage fehlgeschlagen',
         );
-        if (!rateLimited || attempt === 3) break;
-        await sleep(65_000);
+        if (status !== undefined && status >= 400 && status < 500 && status !== 429) return 'failed';
+        if (attempt === MAX_ATTEMPTS || stop()) return status === 429 ? 'rate_limited' : 'failed';
+        await sleep(status === 429 ? rateLimitWait : networkRetry * attempt);
       }
     }
-    if (rateLimited) {
+    return 'failed';
+  };
+
+  const failed: number[] = [];
+  for (let start = 0; start < points.length; start += CHUNK) {
+    if (stop()) break;
+    const outcome = await fetchChunk(start, 1);
+    if (outcome === 'rate_limited') {
       logger.error({ fetched: start }, 'Open-Meteo-Kontingent erschöpft – Lauf wird beendet');
-      break;
+      return out;
     }
+    if (outcome === 'failed') failed.push(start);
     if (start + CHUNK < points.length) await sleep(pause);
+  }
+
+  // Zweiter Durchgang: Netzwerkstörungen sind oft nach einigen Minuten vorbei.
+  if (failed.length > 0 && !stop()) {
+    logger.info({ blocks: failed.length }, 'Open-Meteo: zweiter Durchgang für fehlgeschlagene Blöcke');
+    await sleep(opts.secondPassDelayMs ?? 60_000);
+    for (const start of failed) {
+      if (stop()) break;
+      const outcome = await fetchChunk(start, 2);
+      if (outcome === 'rate_limited') break;
+      await sleep(pause);
+    }
   }
   return out;
 }
