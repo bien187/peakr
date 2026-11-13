@@ -1,40 +1,33 @@
-import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
-import { env } from '../config/env';
+import { connectionOptions, connectionUrl, sanitizeDatabaseUrl } from './index';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const migrationsFolder = resolve(here, '../../drizzle');
 
-// Gehostete DBs (z.B. Supabase) verlangen TLS; lokales docker-compose nicht.
-const isLocalDb = /@(localhost|127\.0\.0\.1|db)(:\d+)?\//.test(env.DATABASE_URL);
-
-async function main(): Promise<void> {
-  const client = postgres(env.DATABASE_URL, {
-    max: 1,
-    ssl: isLocalDb ? false : 'require',
-    prepare: false, // Supabase-Pooler-kompatibel
-  });
+/** Wendet alle ausstehenden Migrationen an. PostGIS ist Pflicht. */
+export async function runMigrations(databaseUrl?: string): Promise<void> {
+  const url = databaseUrl ? sanitizeDatabaseUrl(databaseUrl) : connectionUrl();
+  const client = postgres(url, connectionOptions(url, 1));
   try {
-    console.log('⏳ Stelle PostGIS-Extension sicher ...');
-    try {
-      await client`CREATE EXTENSION IF NOT EXISTS postgis;`;
-    } catch (e) {
-      console.warn('⚠️  PostGIS konnte nicht aktiviert werden (wird für Geo-Queries benötigt):', e);
-    }
-
-    console.log(`⏳ Wende Migrationen an aus ${migrationsFolder} ...`);
-    const db = drizzle(client);
-    await migrate(db, { migrationsFolder });
-    console.log('✅ Migrationen erfolgreich angewendet.');
+    await client`CREATE EXTENSION IF NOT EXISTS postgis`;
+    await migrate(drizzle(client), { migrationsFolder });
   } finally {
     await client.end();
   }
 }
 
-main().catch((err) => {
-  console.error('❌ Migration fehlgeschlagen:', err);
-  process.exit(1);
-});
+const isMain = process.argv[1] !== undefined && fileURLToPath(import.meta.url) === resolve(process.argv[1]);
+if (isMain) {
+  const target = connectionUrl().replace(/:\/\/[^@]*@/, '://***@');
+  console.log(`⏳ Migrationen für ${target} …`);
+  runMigrations()
+    .then(() => console.log('✅ Migrationen angewendet.'))
+    .catch((err) => {
+      console.error('❌ Migration fehlgeschlagen:', err);
+      process.exit(1);
+    });
+}

@@ -1,19 +1,31 @@
 'use client';
 
-import maplibregl from 'maplibre-gl';
+import type * as maplibregl from 'maplibre-gl';
+import { mapLib } from '@/lib/map';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Icon } from './Icon';
-import { AvalancheTag, ScoreDot, WeatherChip } from './PeakrUI';
+import { AvalancheTag, WeatherChip } from './PeakrUI';
 import {
+  classLabel,
   fetchForecast,
   fetchHourlyTemps,
+  fmtAge,
+  fmtDate,
+  fmtDrive,
+  fmtDuration,
   KIND_META,
+  PISTE_LABEL,
+  PISTE_ORDER,
+  trailheadHint,
+  trailheadLabel,
   weatherInfo,
   type HourPt,
   type PDay,
   type PDetail,
+  type PRoute,
 } from '@/lib/peakr';
+import type { DriveInfo, Trailhead } from '@ch-alpineroute/shared';
 
 type MediaVariant = '3d' | 'map' | 'aerial';
 
@@ -61,11 +73,16 @@ function styleFor(variant: MediaVariant): maplibregl.StyleSpecification | string
   } as maplibregl.StyleSpecification;
 }
 
-function makePeakMarker(label: string): HTMLDivElement {
+
+const ROUTE_COLOR = '#e8542b';
+const EMPTY: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
+
+function makeMarker(kind: 'peak' | 'park', label: string): HTMLDivElement {
   const el = document.createElement('div');
-  el.className = 't3d-marker t3d-marker-peak';
+  el.className = `t3d-marker t3d-marker-${kind}`;
   const pin = document.createElement('span');
-  pin.className = 't3d-pin t3d-pin-peak';
+  pin.className = `t3d-pin t3d-pin-${kind}`;
+  if (kind === 'park') pin.textContent = 'P';
   const tip = document.createElement('span');
   tip.className = 't3d-tip';
   tip.textContent = label;
@@ -74,9 +91,19 @@ function makePeakMarker(label: string): HTMLDivElement {
   return el;
 }
 
-function DetailMap({ d, variant }: { d: PDetail; variant: MediaVariant }) {
+/** Route und Ausgangspunkt, die auf der Detailkarte liegen. */
+interface MapRoute {
+  key: string;
+  trailhead: Trailhead | null;
+  line: [number, number][] | null;
+}
+
+function DetailMap({ d, variant, route }: { d: PDetail; variant: MediaVariant; route: MapRoute }) {
   const hostRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<maplibregl.Map | null>(null);
+  const parkRef = useRef<maplibregl.Marker | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     if (!hostRef.current) return;
@@ -84,20 +111,21 @@ function DetailMap({ d, variant }: { d: PDetail; variant: MediaVariant }) {
     const is3d = variant === '3d';
     const center: [number, number] = [d.lng, d.lat];
 
-    const map = new maplibregl.Map({
+    const map = new (mapLib().Map)({
       container: hostRef.current,
       style: styleFor(variant),
       center,
-      zoom: is3d ? 13.0 : 13,
+      zoom: 13,
       pitch: is3d ? 70 : 0,
       bearing: is3d ? -22 : 0,
       maxPitch: 85,
       dragRotate: is3d,
       attributionControl: { compact: true },
     });
-    map.addControl(new maplibregl.NavigationControl({ visualizePitch: is3d, showCompass: is3d }), 'top-right');
+    mapRef.current = map;
+    map.addControl(new (mapLib().NavigationControl)({ visualizePitch: is3d, showCompass: is3d }), 'top-right');
     if (is3d) {
-      map.addControl(new maplibregl.TerrainControl({ source: 'terrainSource', exaggeration: 1.5 }), 'top-right');
+      map.addControl(new (mapLib().TerrainControl)({ source: 'terrainSource', exaggeration: 1.5 }), 'top-right');
     }
 
     const markReady = () => {
@@ -114,12 +142,13 @@ function DetailMap({ d, variant }: { d: PDetail; variant: MediaVariant }) {
           /* ignore */
         }
       } else if ((variant === 'aerial' || variant === '3d') && !cancelled) {
-        // Luftbild/DEM evtl. nicht erreichbar → Fehlerhinweis, aber Overlay nicht ewig
+        // Luftbild/Höhenmodell evtl. nicht erreichbar → Hinweis zeigen statt endlos zu laden.
         setStatus((s) => (s === 'ready' ? s : 'error'));
       }
     });
 
-    // Langsame, nonstop 360°-Kamerafahrt um den Zielort (nur 3D), pausiert bei Interaktion.
+    // Langsame Kamerafahrt um das Ziel (nur 3D); pausiert bei Interaktion und wenn Bewegung reduziert werden soll.
+    const calm = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     let raf = 0;
     let spinning = false;
     let paused = false;
@@ -130,17 +159,36 @@ function DetailMap({ d, variant }: { d: PDetail; variant: MediaVariant }) {
       if (spinning && !cancelled && !paused) map.setBearing(map.getBearing() + 4 * dt);
       raf = requestAnimationFrame(spin);
     };
-    const pause = () => { paused = true; };
-    const resume = () => { last = performance.now(); paused = false; };
+    const pause = () => {
+      paused = true;
+    };
+    const resume = () => {
+      last = performance.now();
+      paused = false;
+    };
 
     map.on('load', () => {
       if (cancelled) return;
-      new maplibregl.Marker({ element: makePeakMarker(shortName(d.name)), anchor: 'bottom' })
-        .setLngLat(center)
-        .addTo(map);
+      new (mapLib().Marker)({ element: makeMarker('peak', shortName(d.name)), anchor: 'bottom' }).setLngLat(center).addTo(map);
+      map.addSource('route', { type: 'geojson', data: EMPTY });
+      map.addLayer({
+        id: 'route-casing',
+        type: 'line',
+        source: 'route',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': '#ffffff', 'line-width': 7, 'line-opacity': 0.9 },
+      });
+      map.addLayer({
+        id: 'route-line',
+        type: 'line',
+        source: 'route',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': ROUTE_COLOR, 'line-width': 3.5 },
+      });
       map.resize();
       markReady();
-      if (is3d) {
+      setLoaded(true);
+      if (is3d && !calm) {
         spinning = true;
         last = performance.now();
         raf = requestAnimationFrame(spin);
@@ -160,6 +208,9 @@ function DetailMap({ d, variant }: { d: PDetail; variant: MediaVariant }) {
       cancelAnimationFrame(raf);
       clearTimeout(fallback);
       ro.disconnect();
+      parkRef.current = null;
+      mapRef.current = null;
+      setLoaded(false);
       try {
         map.remove();
       } catch {
@@ -167,6 +218,31 @@ function DetailMap({ d, variant }: { d: PDetail; variant: MediaVariant }) {
       }
     };
   }, [d.id, d.lat, d.lng, variant, d.name]);
+
+  // Gewählte Route und ihren Ausgangspunkt einzeichnen; flache Ansichten zeigen die ganze Route.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !loaded) return;
+    const src = map.getSource('route') as maplibregl.GeoJSONSource | undefined;
+    const line = route.line && route.line.length > 1 ? route.line : null;
+    src?.setData(
+      line ? { type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'LineString', coordinates: line }, properties: {} }] } : EMPTY,
+    );
+    parkRef.current?.remove();
+    parkRef.current = null;
+    const th = route.trailhead;
+    if (th) {
+      parkRef.current = new (mapLib().Marker)({ element: makeMarker('park', trailheadLabel(th)), anchor: 'bottom' })
+        .setLngLat([th.location.lng, th.location.lat])
+        .addTo(map);
+    }
+    if (variant !== '3d' && (line || th)) {
+      const bounds = new (mapLib().LngLatBounds)([d.lng, d.lat], [d.lng, d.lat]);
+      if (th) bounds.extend([th.location.lng, th.location.lat]);
+      if (line) for (const c of line) bounds.extend(c);
+      map.fitBounds(bounds, { padding: { top: 70, bottom: 50, left: 50, right: 60 }, maxZoom: 15, duration: 400 });
+    }
+  }, [route.key, loaded, variant]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const label = variant === '3d' ? '3D-Gelände' : variant === 'aerial' ? 'Luftbild' : 'Karte';
   return (
@@ -178,7 +254,7 @@ function DetailMap({ d, variant }: { d: PDetail; variant: MediaVariant }) {
           <div className="t3d-overlay-inner">
             <span className="t3d-spinner" />
             <p className="t3d-overlay-t">{label} wird geladen …</p>
-            {variant === '3d' && <p className="t3d-overlay-s">Satellitenbild &amp; Höhenmodell</p>}
+            {variant === '3d' && <p className="t3d-overlay-s">Karte &amp; Höhenmodell</p>}
           </div>
         </div>
       )}
@@ -192,9 +268,24 @@ function DetailMap({ d, variant }: { d: PDetail; variant: MediaVariant }) {
           </div>
         </div>
       )}
-      <div className="t3d-attrib">
-        {variant === 'map' ? 'Karte · swisstopo' : variant === 'aerial' ? '© swisstopo · swissimage' : '© OpenStreetMap · Mapterhorn DEM'}
-      </div>
+      {(route.line || route.trailhead) && (
+        <div className="t3d-legend">
+          <span className="t3d-leg">
+            <span className="t3d-leg-dot t3d-leg-peak" /> Ziel
+          </span>
+          {route.trailhead && (
+            <span className="t3d-leg">
+              <span className="t3d-leg-dot t3d-leg-park">P</span> Ausgangspunkt
+            </span>
+          )}
+          {route.line && (
+            <span className="t3d-leg">
+              <span className="t3d-leg-route" /> Wanderroute
+            </span>
+          )}
+        </div>
+      )}
+{/* Quellenangabe liefert MapLibre selbst (unten rechts). */}
     </div>
   );
 }
@@ -223,11 +314,11 @@ export function WeatherWindow({
     let cancelled = false;
     setDays(null);
     setErr(false);
-    fetchForecast(d.lat, d.lng)
+    fetchForecast(d.lat, d.lng, d.topM)
       .then((f) => { if (!cancelled) setDays(f); })
       .catch(() => { if (!cancelled) setErr(true); });
     return () => { cancelled = true; };
-  }, [d.id, d.lat, d.lng, preloadDays, preloadErr]);
+  }, [d.id, d.lat, d.lng, d.topM, preloadDays, preloadErr]);
 
   return (
     <div className="wx-pop" role="dialog" aria-label="7-Tage-Wetter">
@@ -251,7 +342,7 @@ export function WeatherWindow({
       ) : (
         <div className="wx-grid">
           {days.map((day, i) => {
-            const w = weatherInfo(day.code);
+            const w = weatherInfo(day.code, day.tmax);
             return (
               <div key={i} className={'wx-day' + (i === 0 ? ' is-today' : '')}>
                 <span className="wx-day-name">{day.label}</span>
@@ -260,23 +351,23 @@ export function WeatherWindow({
                   <Icon name={w.icon} size={22} stroke={1.6} />
                 </span>
                 <span className="wx-day-temp">
-                  <b>{day.tmax}°</b>
-                  <span className="wx-day-min">{day.tmin}°</span>
+                  <b>{day.tmax ?? '–'}°</b>
+                  <span className="wx-day-min">{day.tmin ?? '–'}°</span>
                 </span>
                 <span className="wx-day-sub mono">
                   <Icon name="Droplets" size={11} stroke={2} />
-                  {day.pop}%
+                  {day.pop ?? '–'}%
                 </span>
                 <span className="wx-day-sub mono">
                   <Icon name="Wind" size={11} stroke={2} />
-                  {day.wind}
+                  {day.wind ?? '–'}
                 </span>
               </div>
             );
           })}
         </div>
       )}
-      <p className="wx-pop-foot mono">Quelle: Open-Meteo · Planung: MeteoSchweiz</p>
+      <p className="wx-pop-foot mono">Quelle: Open-Meteo · für die Tourenplanung MeteoSchweiz beachten</p>
     </div>
   );
 }
@@ -372,19 +463,21 @@ export function TempChart({ pts }: { pts: HourPt[] }) {
   );
 }
 
-function Fact({ label, value, unit }: { label: string; value: string | number; unit?: string }) {
+function Fact({ label, value, unit }: { label: string; value: ReactNode; unit?: string }) {
   return (
     <div className="fact">
       <span className="fact-label">{label}</span>
       <span className="fact-value">
         {value}
-        {unit && <span className="fact-unit"> {unit}</span>}
+        {unit && value !== '–' && <span className="fact-unit"> {unit}</span>}
       </span>
     </div>
   );
 }
 
-const dash = (v: number | null | undefined): string | number => (v == null ? '–' : v);
+const nf = new Intl.NumberFormat('de-CH');
+const dash = (v: number | null | undefined): string => (v == null ? '–' : nf.format(v));
+const pct = (v: number): string => `${Math.round(v * 100)} %`;
 
 const MEDIA_TABS: { value: MediaVariant; label: string; icon: string }[] = [
   { value: '3d', label: '3D', icon: 'Mountain' },
@@ -392,18 +485,68 @@ const MEDIA_TABS: { value: MediaVariant; label: string; icon: string }[] = [
   { value: 'aerial', label: 'Luftbild', icon: 'Image' },
 ];
 
+/** Fahrzeit-Angabe mit ehrlichem Text, wenn sie fehlt. */
+function driveText(drive: DriveInfo | null, hasOrigin: boolean): { main: string; note: string | null } {
+  if (!hasOrigin || !drive) return { main: '–', note: 'Für die Fahrzeit einen Startort in der Suche wählen.' };
+  if (drive.minutes == null) {
+    return {
+      main: '–',
+      note:
+        drive.status === 'unavailable'
+          ? 'Fahrzeit derzeit nicht berechenbar (Strassennetz nicht geladen).'
+          : 'Vom Startort aus wurde keine Strassenverbindung gefunden. Es wird keine Fahrzeit geschätzt.',
+    };
+  }
+  return {
+    main: `${fmtDrive(drive.minutes)}${drive.distanceKm != null ? ` · ${nf.format(Math.round(drive.distanceKm))} km` : ''}`,
+    note: drive.status === 'partial' ? 'Die Strasse endet vor dem Ziel der Anreise (autofreier Ort) – das letzte Stück mit Bahn oder zu Fuss.' : null,
+  };
+}
+
+function RouteOption({ r, active, onPick, hasOrigin }: { r: PRoute; active: boolean; onPick: () => void; hasOrigin: boolean }) {
+  return (
+    <button type="button" className={'route-opt' + (active ? ' is-on' : '')} onClick={onPick} aria-pressed={active}>
+      <span className="route-opt-head">
+        <span className="route-opt-rank">{r.rank}</span>
+        <span className="route-opt-th">
+          <Icon name={r.trailhead.kind === 'parking' ? 'SquareParking' : 'Milestone'} size={14} stroke={2} />
+          ab {trailheadLabel(r.trailhead)}
+        </span>
+        {hasOrigin && r.drive?.minutes != null && (
+          <span className="route-opt-drive mono">
+            <Icon name="Car" size={13} stroke={2} /> {fmtDrive(r.drive.minutes)}
+          </span>
+        )}
+      </span>
+      <span className="route-opt-stats mono">
+        <span>{fmtDuration(r.minUp)} ↑</span>
+        <span>{r.km.toFixed(1)} km</span>
+        <span>
+          ↑ {nf.format(r.up)} m{r.down >= 30 ? ` · ↓ ${nf.format(r.down)} m Gegenabstieg` : ''}
+        </span>
+        <span>{r.sacKnown ? r.sacLabel : 'SAC unbekannt'}</span>
+      </span>
+    </button>
+  );
+}
+
 export function DetailView({
   d,
   isFav,
   onFav,
   onBack,
   origin,
+  originLabel,
+  initialRouteId,
 }: {
   d: PDetail;
   isFav: boolean;
   onFav: (id: string) => void;
   onBack: () => void;
   origin?: { lat: number; lng: number } | null;
+  originLabel?: string | null;
+  /** Variante, die in der Suche gewählt war. */
+  initialRouteId?: number | null;
 }) {
   const [media, setMedia] = useState<MediaVariant>('3d');
   const [wxOpen, setWxOpen] = useState(false);
@@ -411,6 +554,7 @@ export function DetailView({
   const [wxHours, setWxHours] = useState<HourPt[]>([]);
   const [wxErr, setWxErr] = useState(false);
   const [mapsOpen, setMapsOpen] = useState(false);
+  const [routeId, setRouteId] = useState<number | null>(initialRouteId ?? null);
 
   useEffect(() => {
     setMedia('3d');
@@ -419,34 +563,58 @@ export function DetailView({
     setWxHours([]);
     setWxErr(false);
     setMapsOpen(false);
-  }, [d.id]);
+    setRouteId(initialRouteId ?? null);
+  }, [d.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Wetter sofort laden, nicht erst bei Klick
+  // Prognose direkt laden, nicht erst bei Klick
   useEffect(() => {
     let cancelled = false;
-    fetchForecast(d.lat, d.lng)
-      .then((f) => { if (!cancelled) setWxDays(f); })
-      .catch(() => { if (!cancelled) setWxErr(true); });
-    fetchHourlyTemps(d.lat, d.lng)
-      .then((h) => { if (!cancelled) setWxHours(h); })
+    fetchForecast(d.lat, d.lng, d.topM)
+      .then((f) => {
+        if (!cancelled) setWxDays(f);
+      })
+      .catch(() => {
+        if (!cancelled) setWxErr(true);
+      });
+    fetchHourlyTemps(d.lat, d.lng, d.topM)
+      .then((h) => {
+        if (!cancelled) setWxHours(h);
+      })
       .catch(() => undefined);
-    return () => { cancelled = true; };
-  }, [d.id, d.lat, d.lng]);
+    return () => {
+      cancelled = true;
+    };
+  }, [d.id, d.lat, d.lng, d.topM]);
 
   const isSki = d.type === 'ski';
-  const dest = `${d.lat},${d.lng}`;
+  const route = d.routes.find((r) => r.routeId === routeId) ?? d.routes[0] ?? null;
+  const trailhead = isSki ? d.access : (route?.trailhead ?? null);
+  const drive = isSki ? d.accessDrive : (route?.drive ?? null);
+  const hasOrigin = origin != null;
+  const dt = driveText(drive, hasOrigin);
+  const cls = classLabel(d.objectClass);
+
+  // Navigation führt zum Ausgangspunkt (Parkplatz/Talstation), nicht auf den Gipfel.
+  const navTarget = trailhead ? trailhead.location : { lat: d.lat, lng: d.lng };
+  const dest = `${navTarget.lat},${navTarget.lng}`;
   const orig = origin ? `${origin.lat},${origin.lng}` : null;
   const mapsGoogle = `https://www.google.com/maps/dir/?api=1${orig ? `&origin=${orig}` : ''}&destination=${dest}&travelmode=driving`;
   const mapsApple = `https://maps.apple.com/?${orig ? `saddr=${orig}&` : ''}daddr=${dest}&dirflg=d`;
+  const mapRoute: MapRoute = {
+    key: `${d.id}:${isSki ? 'ski' : (route?.routeId ?? 'none')}`,
+    trailhead,
+    line: route?.line ?? null,
+  };
+  const pisteTotal = Object.values(d.pisteKmByDifficulty).reduce((a, b) => a + b, 0);
 
   return (
     <div className="detail">
       <div className="detail-media">
         {/* Remount bei Variantenwechsel → sauberer Karten-Aufbau */}
-        <DetailMap key={media} d={d} variant={media} />
+        <DetailMap key={media} d={d} variant={media} route={mapRoute} />
 
         <button type="button" className="media-back" onClick={onBack}>
-          <Icon name="ArrowLeft" size={16} stroke={2} /> Karte
+          <Icon name="ArrowLeft" size={16} stroke={2} /> Suche
         </button>
 
         <div className="media-toggle">
@@ -456,6 +624,7 @@ export function DetailView({
               type="button"
               className={'media-tab' + (media === t.value ? ' is-on' : '')}
               onClick={() => setMedia(t.value)}
+              aria-pressed={media === t.value}
             >
               <Icon name={t.icon} size={14} stroke={2} /> {t.label}
             </button>
@@ -467,16 +636,14 @@ export function DetailView({
         <div className="detail-head">
           <div>
             <p className="detail-kicker">
-              <Icon name={KIND_META[d.kind].icon} size={13} stroke={2} />
-              {KIND_META[d.kind].label}
+              <Icon name={KIND_META[d.kind].icon} size={13} stroke={2} /> {KIND_META[d.kind].label}
+              {cls && cls !== KIND_META[d.kind].label ? ` · ${cls}` : ''}
               {d.canton ? ` · Kanton ${d.canton}` : ''}
             </p>
             <h1 className="detail-name">{d.name}</h1>
+            {d.altNames.length > 0 && <p className="detail-alt">auch: {d.altNames.slice(0, 4).join(' · ')}</p>}
           </div>
-          <ScoreDot score={d.displayScore} size="lg" />
         </div>
-
-        <p className="detail-blurb">{d.blurb}</p>
 
         <div className="detail-actions">
           <button type="button" className={'btn' + (isFav ? ' btn-on' : '')} onClick={() => onFav(d.id)}>
@@ -484,13 +651,8 @@ export function DetailView({
             {isFav ? 'Gemerkt' : 'Merken'}
           </button>
           <div style={{ position: 'relative' }}>
-            <button
-              type="button"
-              className="btn btn-soft"
-              onClick={() => setMapsOpen((v) => !v)}
-              aria-expanded={mapsOpen}
-            >
-              <Icon name="Navigation" size={16} stroke={2} /> In Karten öffnen
+            <button type="button" className="btn btn-soft" onClick={() => setMapsOpen((v) => !v)} aria-expanded={mapsOpen}>
+              <Icon name="Navigation" size={16} stroke={2} /> {trailhead ? 'Navigation zum Ausgangspunkt' : 'In Karten öffnen'}
               <Icon name="ChevronDown" size={13} stroke={2} />
             </button>
             {mapsOpen && (
@@ -509,6 +671,16 @@ export function DetailView({
               </>
             )}
           </div>
+          {d.wikipedia && (
+            <a
+              className="btn btn-soft"
+              href={`https://de.wikipedia.org/wiki/${encodeURIComponent(d.wikipedia.replace(/ /g, '_'))}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <Icon name="ExternalLink" size={15} stroke={2} /> Wikipedia
+            </a>
+          )}
         </div>
 
         <div className="facts">
@@ -517,18 +689,154 @@ export function DetailView({
               <Fact label="Höhe Tal" value={dash(d.baseM)} unit="m" />
               <Fact label="Höhe Berg" value={dash(d.topM)} unit="m" />
               <Fact label="Schnee Berg" value={dash(d.snowTop)} unit="cm" />
+              <Fact label="Schnee Tal" value={dash(d.snowValley)} unit="cm" />
               <Fact label="Neuschnee 24 h" value={dash(d.fresh)} unit="cm" />
-              <Fact label="Lifte offen" value={d.liftsTotal != null ? `${d.liftsOpen ?? 0}/${d.liftsTotal}` : '–'} />
+              {d.liftsOpen != null ? (
+                <Fact label="Lifte offen" value={`${d.liftsOpen}/${dash(d.liftsTotal)}`} />
+              ) : (
+                <Fact label="Anlagen" value={dash(d.liftsTotal)} />
+              )}
+              <Fact label="Pisten" value={d.pisteKm != null ? nf.format(Math.round(d.pisteKm)) : '–'} unit="km" />
             </>
           ) : (
             <>
               <Fact label="Höhe" value={dash(d.topM)} unit="m" />
-              <Fact label="SAC-Grad" value={d.sac ?? '–'} />
-              <Fact label="Typ" value={KIND_META[d.kind].label} />
-              <Fact label="Wind" value={d.wind != null ? Math.round(d.wind) : '–'} unit="km/h" />
+              <Fact label="Gehzeit Aufstieg" value={route ? fmtDuration(route.minUp) : '–'} />
+              <Fact label="Gehzeit Abstieg" value={route ? fmtDuration(route.minDown) : '–'} />
+              <Fact label="Strecke" value={route ? route.km.toFixed(1) : '–'} unit="km" />
+              <Fact label="Aufstieg" value={route ? nf.format(route.up) : '–'} unit="m" />
+              <Fact label="SAC" value={route ? (route.sacKnown ? route.sacLabel : 'unbekannt') : '–'} />
             </>
           )}
         </div>
+
+        <section className="detail-card">
+          <h2 className="detail-h2">Anreise mit dem Auto</h2>
+          {trailhead ? (
+            <div className="access">
+              <div className="access-main">
+                <span className="access-time mono">{dt.main}</span>
+                {hasOrigin && drive?.minutes != null && <span className="access-from">ab {originLabel || 'Startort'}</span>}
+              </div>
+              <div className="access-th">
+                <Icon name={trailhead.kind === 'valley_station' ? 'CableCar' : trailhead.kind === 'parking' ? 'SquareParking' : 'Milestone'} size={18} stroke={2} />
+                <div>
+                  <p className="access-th-name">{trailheadLabel(trailhead)}</p>
+                  <p className="access-th-sub">
+                    {trailheadHint(trailhead)}
+                    {/* Ohne Namen steht die Höhe bereits im Titel. */}
+                    {trailhead.name && trailhead.elevationM != null ? ` · ${nf.format(trailhead.elevationM)} m` : ''}
+                    {trailhead.fee === 'yes' ? ' · gebührenpflichtig' : trailhead.fee === 'no' ? ' · gratis' : ''}
+                    {trailhead.capacity && /^\d+$/.test(trailhead.capacity) ? ` · ${trailhead.capacity} Plätze` : ''}
+                  </p>
+                </div>
+              </div>
+              {dt.note && (
+                <p className="detail-note">
+                  <Icon name="Info" size={13} stroke={2} /> {dt.note}
+                </p>
+              )}
+            </div>
+          ) : (
+            <p className="detail-note is-plain">
+              <Icon name="CircleAlert" size={13} stroke={2} />
+              {isSki
+                ? 'Für dieses Skigebiet ist keine Talstation mit Strassenanschluss bekannt. Es wird keine Fahrzeit angegeben.'
+                : 'Ohne bekannte Wanderroute gibt es keinen Ausgangspunkt – und damit keine Fahrzeit.'}
+            </p>
+          )}
+        </section>
+
+        {!isSki && (
+          <section className="detail-card">
+            <h2 className="detail-h2">Wanderroute{d.routes.length > 1 ? ` · ${d.routes.length} Varianten` : ''}</h2>
+            {route ? (
+              <>
+                <div className="route-list">
+                  {d.routes.map((r) => (
+                    <RouteOption key={r.routeId} r={r} active={r.routeId === route.routeId} onPick={() => setRouteId(r.routeId)} hasOrigin={hasOrigin} />
+                  ))}
+                </div>
+                <dl className="route-meta">
+                  <div>
+                    <dt>Auf signalisierten Wanderwegen</dt>
+                    <dd>{pct(route.officialShare)}</dd>
+                  </div>
+                  <div>
+                    <dt>Schwierigkeit</dt>
+                    <dd>{route.sacKnown ? route.sacLabel : 'unbekannt – im Wegnetz nicht erfasst'}</dd>
+                  </div>
+                  <div>
+                    <dt>Höchster Punkt</dt>
+                    <dd>{route.maxElev != null ? `${nf.format(route.maxElev)} m` : '–'}</dd>
+                  </div>
+                  <div>
+                    <dt>Berechnet am</dt>
+                    <dd>{fmtDate(route.computedAt)}</dd>
+                  </div>
+                </dl>
+                {route.endGapM > 60 && (
+                  <p className="detail-note">
+                    <Icon name="Info" size={13} stroke={2} />
+                    Der erfasste Weg endet rund {nf.format(Math.round(route.endGapM / 10) * 10)} m vor dem Zielpunkt. Das
+                    letzte Stück ist im Wegnetz nicht verzeichnet.
+                  </p>
+                )}
+                <p className="detail-note">
+                  <Icon name="TriangleAlert" size={13} stroke={2} />
+                  Aus dem Wegnetz berechnet (swisstopo-Wanderwege und OpenStreetMap), nicht begangen. Gehzeit nach DIN 33466
+                  ohne Pausen. Verhältnisse, Sperrungen und Ausrüstung selbst prüfen.
+                </p>
+              </>
+            ) : (
+              <p className="detail-note is-plain">
+                <Icon name="CircleAlert" size={13} stroke={2} />
+                {d.routeStatus === 'unrouted'
+                  ? 'Für dieses Ziel wurde noch keine Route berechnet.'
+                  : 'Zu diesem Ziel wurde im Wegnetz keine durchgehende Wanderroute ab einem Parkplatz gefunden. Peakr zeigt deshalb keine Route – das Ziel selbst existiert.'}
+              </p>
+            )}
+          </section>
+        )}
+
+        {isSki && (d.liftsTotal ?? 0) > 0 && (
+          <section className="detail-card">
+            <h2 className="detail-h2">Anlagen &amp; Pisten</h2>
+            <div className="chip-row" style={{ marginTop: 0 }}>
+              {Object.entries(d.liftsByType)
+                .sort((a, b) => b[1] - a[1])
+                .map(([type, n]) => (
+                  <span key={type} className="chip is-static">
+                    {n} × {type}
+                  </span>
+                ))}
+            </div>
+            {pisteTotal > 0 && (
+              <div className="piste-bars">
+                {PISTE_ORDER.filter((k) => (d.pisteKmByDifficulty[k] ?? 0) > 0).map((k) => {
+                  const km = d.pisteKmByDifficulty[k];
+                  const meta = PISTE_LABEL[k] ?? PISTE_LABEL.unknown;
+                  return (
+                    <div key={k} className="piste-row">
+                      <span className="piste-l">{meta.label}</span>
+                      <span className="piste-track">
+                        <span className="piste-fill" style={{ width: `${Math.max(3, (km / pisteTotal) * 100)}%`, background: meta.color }} />
+                      </span>
+                      <span className="piste-v mono">{km.toFixed(1)} km</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <p className="detail-note">
+              <Icon name="Info" size={13} stroke={2} />
+              Anlagen und Pistenlängen stammen aus OpenStreetMap und sind Bestandsdaten.{' '}
+              {d.liftsOpen == null
+                ? 'Für dieses Gebiet gibt es keine frei nutzbare Live-Quelle zum Betriebsstatus – er wird deshalb nicht angezeigt.'
+                : 'Der Betriebsstatus stammt vom Betreiber.'}
+            </p>
+          </section>
+        )}
 
         <section className="detail-card live-card">
           <h2 className="detail-h2">Aktuelle Lage</h2>
@@ -540,21 +848,16 @@ export function DetailView({
               aria-expanded={wxOpen}
               title="7-Tage-Prognose anzeigen"
             >
-              <WeatherChip code={d.weather} temp={d.temp} />
+              <WeatherChip code={d.weather} temp={d.temp} approx={d.tempAdjusted} />
               <Icon name="ChevronDown" size={14} stroke={2} className={'wx-caret' + (wxOpen ? ' is-open' : '')} />
             </button>
             {d.wind != null && (
-              <button
-                type="button"
-                className="wx-trigger live-item"
-                onClick={() => setWxOpen((v) => !v)}
-                title="7-Tage-Prognose anzeigen"
-              >
+              <span className="live-item">
                 <Icon name="Wind" size={15} stroke={1.75} /> {Math.round(d.wind)} km/h
-              </button>
+              </span>
             )}
-            {isSki && <AvalancheTag level={d.avalanche} />}
-            <span className="wx-hint mono">7-Tage ansehen</span>
+            {(isSki || d.avalanche != null) && <AvalancheTag level={d.avalanche} />}
+            <span className="live-stamp mono">{d.liveAt ? `Stand ${fmtAge(d.liveAt)}` : 'noch keine Messwerte'}</span>
           </div>
           {wxOpen && (
             <>
@@ -562,17 +865,37 @@ export function DetailView({
               <WeatherWindow d={d} onClose={() => setWxOpen(false)} preloadDays={wxDays} preloadErr={wxErr} />
             </>
           )}
-          {isSki && (
+          {(isSki || d.avalanche != null) && (
             <p className="detail-note">
               <Icon name="TriangleAlert" size={13} stroke={2} />
-              Lawineneinschätzung ersetzt nicht das offizielle SLF-Bulletin auf whiterisk.ch.
+              Die Lawinenstufe ist die höchste Stufe der SLF-Warnregion und ersetzt nicht das Bulletin auf whiterisk.ch.
             </p>
           )}
         </section>
 
         <section className="detail-card">
-          <h2 className="detail-h2">{isSki ? 'Schneeverlauf' : 'Temperaturverlauf (stündlich)'}</h2>
-          {isSki ? <Sparkline pts={d.history} unit=" cm" /> : <TempChart pts={wxHours} />}
+          <h2 className="detail-h2">{isSki ? 'Schneehöhe am Berg' : 'Temperaturverlauf (stündlich)'}</h2>
+          {isSki ? <Sparkline pts={d.history.map((h) => h.snow)} unit=" cm" /> : <TempChart pts={wxHours} />}
+        </section>
+
+        <section className="detail-card">
+          <h2 className="detail-h2">Datenquellen</h2>
+          <ul className="src-list">
+            {d.sources.map((s) => (
+              <li key={s.id}>
+                <span className="src-name">{s.name}</span>
+                <span className="src-meta">
+                  {s.attribution ?? ''}
+                  {s.version ? ` · Stand ${fmtDate(s.version)}` : ''}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <p className="detail-note">
+            <Icon name="Info" size={13} stroke={2} />
+            {d.quality != null ? `Datenlage ${d.quality}/100 (Vollständigkeit der Angaben). ` : ''}
+            {d.updatedAt ? `Stammdaten zuletzt aktualisiert am ${fmtDate(d.updatedAt)}.` : ''}
+          </p>
         </section>
       </div>
     </div>

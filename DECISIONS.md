@@ -1,3 +1,8 @@
+> [!NOTE]
+> **Historisches Dokument** (Stand Juni 2026). Die aktuelle Architektur und alle Entscheidungen der
+> Überarbeitung vom November 2026 stehen in [docs/ARCHITEKTUR.md](docs/ARCHITEKTUR.md) und
+> [docs/ABSCHLUSSBERICHT.md](docs/ABSCHLUSSBERICHT.md).
+
 # Designentscheidungen & Annahmen
 
 Dieses Dokument hält bewusste Entscheidungen fest, die beim Bauen getroffen wurden.

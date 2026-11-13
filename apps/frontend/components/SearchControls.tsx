@@ -1,11 +1,11 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import type { GeocodeResult, LatLng } from '@ch-alpineroute/shared';
+import type { GeocodeResult, HikeKind, LatLng, SacDifficulty } from '@ch-alpineroute/shared';
 import { Icon } from './Icon';
 import { Popover } from './PeakrChrome';
 import { api } from '@/lib/api';
-import { HIKE_KINDS, SAC } from '@/lib/peakr';
+import { fmtDuration, HIKE_KINDS, KIND_META, SAC, SAC_HINT } from '@/lib/peakr';
 
 export interface PParams {
   origin: LatLng | null;
@@ -13,8 +13,63 @@ export interface PParams {
   mode: 'ski' | 'hike';
   maxMin: number;
   tolMin: number;
-  hikeKind: string;
-  maxSac: string;
+  /** Zielarten; leer = alle. */
+  kinds: HikeKind[];
+  maxSac: SacDifficulty | '';
+  /** Routen unbekannter Schwierigkeit trotz SAC-Filter als Treffer zählen. */
+  includeUnknownSac: boolean;
+  /** Maximale Gehzeit (Aufstieg) in Minuten; null = egal. */
+  maxHikeMin: number | null;
+  /** Auch Ziele ohne bekannte Wanderroute auflisten. */
+  includeUnrouted: boolean;
+  /** Mindesthöhe in m ü. M.; null = egal. */
+  minElev: number | null;
+  /** Mindestschneehöhe am Berg in cm (Ski); null = egal. */
+  minSnow: number | null;
+}
+
+/** Kurztext für die Filter-Zelle, z. B. «Gipfel, Seen · bis T3». */
+export function filterSummary(p: PParams): string {
+  const parts: string[] = [];
+  if (p.mode === 'hike') {
+    parts.push(
+      p.kinds.length === 0 || p.kinds.length === HIKE_KINDS.length
+        ? 'Alle Ziele'
+        : p.kinds.length <= 2
+          ? p.kinds.map((k) => KIND_META[k].plural).join(', ')
+          : `${p.kinds.length} Zielarten`,
+    );
+    if (p.maxSac) parts.push(`bis ${p.maxSac}`);
+    if (p.maxHikeMin != null) parts.push(`≤ ${fmtDuration(p.maxHikeMin)}`);
+  } else {
+    if (p.minSnow != null) parts.push(`≥ ${p.minSnow} cm`);
+    if (p.minElev != null) parts.push(`ab ${p.minElev} m`);
+    if (parts.length === 0) parts.push('Alle Gebiete');
+  }
+  if (p.mode === 'hike' && p.minElev != null) parts.push(`ab ${p.minElev} m`);
+  return parts.join(' · ');
+}
+
+function Toggle({
+  on,
+  onChange,
+  label,
+  hint,
+}: {
+  on: boolean;
+  onChange: (v: boolean) => void;
+  label: string;
+  hint?: string;
+}) {
+  return (
+    <label className="pop-toggle">
+      <input type="checkbox" checked={on} onChange={(e) => onChange(e.target.checked)} />
+      <span>
+        <span className="pop-toggle-l">{label}</span>
+        {hint && <span className="pop-toggle-h">{hint}</span>}
+      </span>
+    </label>
+  );
 }
 
 export function SearchControls({
@@ -22,18 +77,22 @@ export function SearchControls({
   set,
   onLocate,
   locating,
+  locateError,
 }: {
   params: PParams;
   set: (patch: Partial<PParams>) => void;
   onLocate: () => void;
   locating: boolean;
+  locateError?: string | null;
 }) {
   const [openOrigin, setOpenOrigin] = useState(false);
-  const [openAdjust, setOpenAdjust] = useState(false);
+  const [openDrive, setOpenDrive] = useState(false);
+  const [openFilter, setOpenFilter] = useState(false);
   const [q, setQ] = useState('');
   const [results, setResults] = useState<GeocodeResult[]>([]);
   const [searching, setSearching] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const seq = useRef(0);
 
   const onQuery = (text: string) => {
     setQ(text);
@@ -43,14 +102,16 @@ export function SearchControls({
       return;
     }
     timer.current = setTimeout(async () => {
+      const mine = ++seq.current;
       setSearching(true);
       try {
         const r = await api.geocode(text);
-        setResults(r.results);
+        // Nur die Antwort auf die jüngste Eingabe übernehmen.
+        if (mine === seq.current) setResults(r.results);
       } catch {
-        setResults([]);
+        if (mine === seq.current) setResults([]);
       } finally {
-        setSearching(false);
+        if (mine === seq.current) setSearching(false);
       }
     }, 300);
   };
@@ -62,14 +123,23 @@ export function SearchControls({
     setResults([]);
   };
 
+  const toggleKind = (k: HikeKind) => {
+    const has = params.kinds.includes(k);
+    const next = has ? params.kinds.filter((x) => x !== k) : [...params.kinds, k];
+    // Alle angewählt bedeutet dasselbe wie keine Einschränkung.
+    set({ kinds: next.length === HIKE_KINDS.length ? [] : next });
+  };
+
+  const isHike = params.mode === 'hike';
+
   return (
     <div className="capsule">
-      {/* origin */}
+      {/* Wo starte ich? */}
       <div className="cap-cell origin-cell" style={{ position: 'relative' }}>
         <Icon name="MapPin" size={16} stroke={2} className="cap-ico" />
-        <button type="button" className="cap-btn" onClick={() => setOpenOrigin((v) => !v)}>
+        <button type="button" className="cap-btn" onClick={() => setOpenOrigin((v) => !v)} aria-expanded={openOrigin}>
           <span className="cap-key">Start</span>
-          <span className="cap-val">{params.originLabel || 'wählen'}</span>
+          <span className="cap-val cap-val-clip">{params.originLabel || 'wählen'}</span>
         </button>
         <Popover open={openOrigin} onClose={() => setOpenOrigin(false)}>
           <p className="pop-title">Startort</p>
@@ -80,6 +150,7 @@ export function SearchControls({
               onChange={(e) => onQuery(e.target.value)}
               placeholder="Ort suchen (z. B. Bern, Zürich HB) …"
               aria-label="Ort suchen"
+              autoFocus
             />
           </label>
           {searching && <p className="twk-hint">Suche …</p>}
@@ -104,9 +175,7 @@ export function SearchControls({
           {!searching && results.length === 0 && q.trim().length < 2 && (
             <p className="twk-hint">Tippe einen Ort ein – oder nutze deinen Standort.</p>
           )}
-          {!searching && results.length === 0 && q.trim().length >= 2 && (
-            <p className="twk-hint">Kein Ort gefunden.</p>
-          )}
+          {!searching && results.length === 0 && q.trim().length >= 2 && <p className="twk-hint">Kein Ort gefunden.</p>}
           <button
             type="button"
             className="pop-locate"
@@ -119,18 +188,19 @@ export function SearchControls({
             <Icon name="LocateFixed" size={15} stroke={2} />
             {locating ? 'Wird ermittelt …' : 'Mein Standort'}
           </button>
+          {locateError && <p className="twk-hint pop-err">{locateError}</p>}
         </Popover>
       </div>
 
       <span className="cap-div" />
 
-      {/* mode */}
+      {/* Was suche ich? */}
       <div className="cap-cell">
         <div className="seg seg-mode">
           {(
             [
-              ['ski', 'Ski', 'Snowflake'],
               ['hike', 'Wandern', 'Footprints'],
+              ['ski', 'Ski', 'Snowflake'],
             ] as const
           ).map(([v, l, ic]) => (
             <button
@@ -138,6 +208,7 @@ export function SearchControls({
               type="button"
               className={'seg-btn' + (params.mode === v ? ' is-on' : '')}
               onClick={() => set({ mode: v })}
+              aria-pressed={params.mode === v}
             >
               <Icon name={ic} size={15} stroke={2} /> {l}
             </button>
@@ -147,19 +218,22 @@ export function SearchControls({
 
       <span className="cap-div" />
 
-      {/* drive time + advanced */}
+      {/* Wie lange möchte ich fahren? */}
       <div className="cap-cell" style={{ position: 'relative' }}>
-        <button type="button" className="cap-btn" onClick={() => setOpenAdjust((v) => !v)}>
+        <Icon name="Car" size={16} stroke={2} className="cap-ico" />
+        <button type="button" className="cap-btn" onClick={() => setOpenDrive((v) => !v)} aria-expanded={openDrive}>
           <span className="cap-key">Fahrzeit</span>
-          <span className="cap-val mono">≤ {params.maxMin} min</span>
+          <span className="cap-val mono">
+            ≤ {fmtDuration(params.maxMin)}
+            {params.tolMin > 0 ? ` +${params.tolMin}` : ''}
+          </span>
         </button>
-        <Icon name="SlidersHorizontal" size={15} stroke={2} className="cap-ico cap-ico-r" />
-        <Popover open={openAdjust} onClose={() => setOpenAdjust(false)} align="right">
-          <p className="pop-title">Filter</p>
+        <Popover open={openDrive} onClose={() => setOpenDrive(false)} align="right">
+          <p className="pop-title">Autofahrt</p>
           <div className="pop-slider">
             <div className="pop-slider-lbl">
-              <span>Max. Fahrzeit</span>
-              <span className="mono">{params.maxMin} min</span>
+              <span>Maximale Fahrzeit</span>
+              <span className="mono">{fmtDuration(params.maxMin)}</span>
             </div>
             <input
               type="range"
@@ -169,11 +243,12 @@ export function SearchControls({
               value={params.maxMin}
               onChange={(e) => set({ maxMin: +e.target.value })}
               className="range"
+              aria-label="Maximale Fahrzeit in Minuten"
             />
           </div>
           <div className="pop-slider">
             <div className="pop-slider-lbl">
-              <span>Toleranz · Vorschläge</span>
+              <span>Toleranz</span>
               <span className="mono">+{params.tolMin} min</span>
             </div>
             <input
@@ -184,32 +259,62 @@ export function SearchControls({
               value={params.tolMin}
               onChange={(e) => set({ tolMin: +e.target.value })}
               className="range"
+              aria-label="Toleranz in Minuten"
             />
           </div>
-          {params.mode === 'hike' && (
+          <p className="twk-hint">
+            Ziele bis {fmtDuration(params.maxMin)} sind Treffer.{' '}
+            {params.tolMin > 0
+              ? `Bis ${fmtDuration(params.maxMin + params.tolMin)} erscheinen sie als «knapp ausserhalb», darüber gar nicht.`
+              : 'Ohne Toleranz gibt es keine zusätzlichen Vorschläge.'}{' '}
+            Gerechnet wird über das Strassennetz bis zum Parkplatz bzw. zur Talstation.
+          </p>
+        </Popover>
+      </div>
+
+      <span className="cap-div" />
+
+      {/* Welche Ziele, wie anspruchsvoll? */}
+      <div className="cap-cell filter-cell" style={{ position: 'relative' }}>
+        <Icon name="SlidersHorizontal" size={16} stroke={2} className="cap-ico" />
+        <button type="button" className="cap-btn" onClick={() => setOpenFilter((v) => !v)} aria-expanded={openFilter}>
+          <span className="cap-key">{isHike ? 'Ziele & Anspruch' : 'Filter'}</span>
+          <span className="cap-val cap-val-clip">{filterSummary(params)}</span>
+        </button>
+        <Popover open={openFilter} onClose={() => setOpenFilter(false)} align="right">
+          {isHike ? (
             <>
-              <div className="pop-field">
-                <span className="field-label">Zieltyp</span>
-                <div className="chip-row">
-                  {HIKE_KINDS.map((k) => (
-                    <button
-                      key={k.value}
-                      type="button"
-                      className={'chip' + (params.hikeKind === k.value ? ' is-on' : '')}
-                      onClick={() => set({ hikeKind: k.value })}
-                    >
-                      {k.label}
-                    </button>
-                  ))}
-                </div>
+              <p className="pop-title">Zielarten</p>
+              <div className="chip-row" style={{ marginTop: 0 }}>
+                <button
+                  type="button"
+                  className={'chip' + (params.kinds.length === 0 ? ' is-on' : '')}
+                  onClick={() => set({ kinds: [] })}
+                  aria-pressed={params.kinds.length === 0}
+                >
+                  Alle
+                </button>
+                {HIKE_KINDS.map((k) => (
+                  <button
+                    key={k}
+                    type="button"
+                    className={'chip' + (params.kinds.includes(k) ? ' is-on' : '')}
+                    onClick={() => toggleKind(k)}
+                    aria-pressed={params.kinds.includes(k)}
+                  >
+                    <Icon name={KIND_META[k].icon} size={13} stroke={2} /> {KIND_META[k].plural}
+                  </button>
+                ))}
               </div>
+
               <div className="pop-field">
-                <span className="field-label">Max. SAC-Schwierigkeit</span>
+                <span className="field-label">Schwierigkeit der Route (SAC)</span>
                 <div className="chip-row">
                   <button
                     type="button"
                     className={'chip' + (!params.maxSac ? ' is-on' : '')}
                     onClick={() => set({ maxSac: '' })}
+                    aria-pressed={!params.maxSac}
                   >
                     egal
                   </button>
@@ -218,15 +323,114 @@ export function SearchControls({
                       key={sac}
                       type="button"
                       className={'chip' + (params.maxSac === sac ? ' is-on' : '')}
-                      onClick={() => set({ maxSac: sac })}
+                      onClick={() => set({ maxSac: sac as SacDifficulty })}
+                      aria-pressed={params.maxSac === sac}
+                      title={SAC_HINT[sac]}
                     >
-                      {sac}
+                      bis {sac}
                     </button>
                   ))}
                 </div>
+                {params.maxSac && (
+                  <>
+                    <p className="twk-hint" style={{ marginTop: 8 }}>
+                      Bis {params.maxSac}: {SAC_HINT[params.maxSac]}. Massgebend ist die gewählte Route, nicht das Ziel.
+                    </p>
+                    <Toggle
+                      on={params.includeUnknownSac}
+                      onChange={(v) => set({ includeUnknownSac: v })}
+                      label="Unbekannte Schwierigkeit mitzählen"
+                      hint="Sonst stehen solche Routen in einem eigenen Abschnitt."
+                    />
+                  </>
+                )}
+              </div>
+
+              <div className="pop-slider" style={{ marginTop: 14 }}>
+                <div className="pop-slider-lbl">
+                  <span>Gehzeit Aufstieg</span>
+                  <span className="mono">{params.maxHikeMin == null ? 'egal' : `≤ ${fmtDuration(params.maxHikeMin)}`}</span>
+                </div>
+                <input
+                  type="range"
+                  min={30}
+                  max={510}
+                  step={30}
+                  value={params.maxHikeMin ?? 510}
+                  onChange={(e) => set({ maxHikeMin: +e.target.value >= 510 ? null : +e.target.value })}
+                  className="range"
+                  aria-label="Maximale Gehzeit"
+                />
               </div>
             </>
+          ) : (
+            <>
+              <p className="pop-title">Skigebiete</p>
+              <div className="pop-slider">
+                <div className="pop-slider-lbl">
+                  <span>Schneehöhe am Berg</span>
+                  <span className="mono">{params.minSnow == null ? 'egal' : `≥ ${params.minSnow} cm`}</span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={200}
+                  step={10}
+                  value={params.minSnow ?? 0}
+                  onChange={(e) => set({ minSnow: +e.target.value === 0 ? null : +e.target.value })}
+                  className="range"
+                  aria-label="Mindestschneehöhe"
+                />
+              </div>
+              {params.minSnow != null && (
+                <p className="twk-hint">Gebiete ohne Schneemesswert fallen bei diesem Filter weg und werden gezählt.</p>
+              )}
+            </>
           )}
+
+          <div className="pop-slider" style={{ marginTop: 14 }}>
+            <div className="pop-slider-lbl">
+              <span>{isHike ? 'Mindesthöhe Ziel' : 'Mindesthöhe Bergstation'}</span>
+              <span className="mono">{params.minElev == null ? 'egal' : `ab ${params.minElev} m`}</span>
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={3500}
+              step={100}
+              value={params.minElev ?? 0}
+              onChange={(e) => set({ minElev: +e.target.value === 0 ? null : +e.target.value })}
+              className="range"
+              aria-label="Mindesthöhe"
+            />
+          </div>
+
+          {isHike && (
+            <Toggle
+              on={params.includeUnrouted}
+              onChange={(v) => set({ includeUnrouted: v })}
+              label="Ziele ohne bekannte Route zeigen"
+              hint="Reale Ziele, zu denen im Wegnetz keine Wanderroute gefunden wurde – ohne Fahrzeit."
+            />
+          )}
+
+          <button
+            type="button"
+            className="pop-locate"
+            onClick={() =>
+              set({
+                kinds: [],
+                maxSac: '',
+                includeUnknownSac: false,
+                maxHikeMin: null,
+                includeUnrouted: false,
+                minElev: null,
+                minSnow: null,
+              })
+            }
+          >
+            <Icon name="X" size={14} stroke={2} /> Filter zurücksetzen
+          </button>
         </Popover>
       </div>
     </div>

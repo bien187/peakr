@@ -8,3 +8,5 @@
 .env
 *.log
 *.tsbuildinfo
+.data
+apps/frontend/data

@@ -1,60 +1,61 @@
-# Geplante Peakr-Worker — gratis statt Always-on-Worker.
-# Die Jobs sind seltene Batch-Läufe (liveStatus alle 3h, trend täglich), die
-# einmalig laufen und sich beenden. GitHub Actions führt sie kostenlos auf
-# Zeitplan aus und schreibt direkt in die Supabase-DB.
+# Peakr – Live-Daten (kostenlos auf GitHub Actions, öffentliches Repository).
 #
-# Nötige Repository-Secrets (Settings → Secrets and variables → Actions):
-#   DATABASE_URL    — Supabase Connection-String (Session-Pooler/Direct)
-#   ORS_API_KEY     — OpenRouteService-Token (für liveStatus optional, aber empfohlen)
-#   ENCRYPTION_KEY  — 64 Hex-Zeichen (openssl rand -hex 32)
-#   JWT_SECRET      — beliebiges Secret ≥16 Zeichen
-#   OPENAI_API_KEY  — nur falls ENABLE_OPENAI_TREND=true (sonst weglassen)
+# Jeder Job läuft einmal und beendet sich. Doppelte Läufe verhindert die Sperre
+# in der Datenbank (job_locks) zusätzlich zur concurrency-Gruppe unten.
+#
+# Repository-Secret (Settings → Secrets and variables → Actions):
+#   DATABASE_URL   Neon-Verbindung OHNE Pooler (Host ohne «-pooler», siehe SETUP_EXTERNAL.md)
+# Optional:
+#   JWT_SECRET     wird von den Workern nicht gebraucht, schadet aber nicht
 name: Peakr Worker
 
 on:
   schedule:
-    - cron: "0 */3 * * *" # liveStatus — alle 3 Stunden (UTC)
-    - cron: "30 4 * * *" # trend — täglich 04:30 (UTC)
+    - cron: '5 */3 * * *'   # ski: Wetter, Schnee, Lawine – alle 3 Stunden
+    - cron: '35 */6 * * *'  # weather: Wetterraster der Wanderziele – alle 6 Stunden
+    - cron: '20 4 * * 1'    # trend: Wikipedia-Seitenaufrufe – montags
+    - cron: '50 3 * * *'    # maintenance: Aufräumen – täglich
   workflow_dispatch:
     inputs:
       job:
-        description: "Welcher Job manuell laufen soll"
+        description: 'Job'
         type: choice
-        options: [live, trend]
-        default: live
+        options: [ski, weather, trend, maintenance]
+        default: ski
 
-env:
-  NODE_ENV: production
-  DATABASE_URL: ${{ secrets.DATABASE_URL }}
-  ORS_API_KEY: ${{ secrets.ORS_API_KEY }}
-  ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
-  JWT_SECRET: ${{ secrets.JWT_SECRET }}
+concurrency:
+  group: peakr-worker-${{ github.event.schedule || inputs.job }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 jobs:
-  live:
-    name: liveStatus (Wetter/Schnee/Lifte)
-    if: github.event_name == 'schedule' && github.event.schedule == '0 */3 * * *' || (github.event_name == 'workflow_dispatch' && inputs.job == 'live')
+  run:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9.15.9
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile --prod=false --filter @ch-alpineroute/backend...
-      - run: pnpm --filter @ch-alpineroute/backend worker:live:once
-
-  trend:
-    name: trend (Wikipedia-/OpenAI-Score)
-    if: github.event_name == 'schedule' && github.event.schedule == '30 4 * * *' || (github.event_name == 'workflow_dispatch' && inputs.job == 'trend')
-    runs-on: ubuntu-latest
+    # Die Jobs begrenzen sich selbst (20 min, Trend 90 min); das hier ist nur die äussere Grenze.
+    timeout-minutes: 100
     env:
-      ENABLE_OPENAI_TREND: "false"
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      NODE_ENV: production
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      JWT_SECRET: ${{ secrets.JWT_SECRET || 'worker-does-not-sign-tokens-0000000000' }}
+      LOG_LEVEL: info
     steps:
+      - name: Job bestimmen
+        id: job
+        run: |
+          case "${{ github.event.schedule }}" in
+            '5 */3 * * *')  echo "name=ski" >> "$GITHUB_OUTPUT" ;;
+            '35 */6 * * *') echo "name=weather" >> "$GITHUB_OUTPUT" ;;
+            '20 4 * * 1')   echo "name=trend" >> "$GITHUB_OUTPUT" ;;
+            '50 3 * * *')   echo "name=maintenance" >> "$GITHUB_OUTPUT" ;;
+            *)              echo "name=${{ inputs.job }}" >> "$GITHUB_OUTPUT" ;;
+          esac
+      - name: DATABASE_URL vorhanden?
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::Secret DATABASE_URL fehlt (siehe SETUP_EXTERNAL.md)."; exit 1
+          fi
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
         with:
@@ -63,5 +64,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      # tsx ist eine devDependency; NODE_ENV=production würde sie sonst weglassen.
       - run: pnpm install --frozen-lockfile --prod=false --filter @ch-alpineroute/backend...
-      - run: pnpm --filter @ch-alpineroute/backend worker:trend:once
+      - name: Worker ${{ steps.job.outputs.name }}
+        run: pnpm worker ${{ steps.job.outputs.name }}

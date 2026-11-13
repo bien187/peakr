@@ -4,44 +4,48 @@ import { config as loadDotenv } from 'dotenv';
 import { z } from 'zod';
 
 // .env liegt im Monorepo-Root — unabhängig vom aktuellen Arbeitsverzeichnis laden.
+// Bereits gesetzte Variablen (CI, Vercel, `DATABASE_URL=… pnpm …`) haben Vorrang.
 const here = dirname(fileURLToPath(import.meta.url));
-loadDotenv({ path: resolve(here, '../../../../.env') });
+export const REPO_ROOT = resolve(here, '../../../..');
+loadDotenv({ path: resolve(REPO_ROOT, '.env') });
 
 const booleanFromString = z
-  .union([z.boolean(), z.enum(['true', 'false', '1', '0'])])
+  .union([z.boolean(), z.enum(['true', 'false', '1', '0', ''])])
   .transform((v) => v === true || v === 'true' || v === '1');
+
+const DEV_JWT_SECRET = 'dev-only-insecure-secret-change-me-please';
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
-  PORT: z.coerce.number().int().positive().optional(), // Railway injects this
-  BACKEND_PORT: z.coerce.number().int().positive().default(4000),
-  CORS_ORIGIN: z.string().default('http://localhost:3000'),
+  /** Gepoolte Verbindung (Neon: «-pooler»-Host) – für die Website auf Vercel. */
+  DATABASE_URL: z.string().default('postgresql://alpine:alpine@localhost:5432/peakr'),
+  /**
+   * Direkte Verbindung ohne Pooler – für Migrationen, Datenpipeline und Worker
+   * (lange Transaktionen). Fehlt sie, wird DATABASE_URL verwendet.
+   */
+  DATABASE_URL_UNPOOLED: z.string().optional(),
 
-  DATABASE_URL: z.string().default('postgresql://alpine:alpine@localhost:5432/ch_alpineroute'),
-
-  JWT_SECRET: z.string().min(16).default('dev-only-insecure-secret-change-me-please'),
+  JWT_SECRET: z.string().min(32, 'JWT_SECRET braucht mindestens 32 Zeichen').default(DEV_JWT_SECRET),
   JWT_EXPIRES_IN: z.string().default('7d'),
 
-  // 64 Hex-Zeichen = 32 Byte für AES-256-GCM
-  ENCRYPTION_KEY: z
-    .string()
-    .regex(/^[0-9a-fA-F]{64}$/, 'ENCRYPTION_KEY muss 64 Hex-Zeichen sein (openssl rand -hex 32)')
-    .default('0'.repeat(64)),
+  /** Pfad zur Strassengraph-Datei (Standard: .data/artifacts/road-graph.bin im Repo). */
+  ROAD_GRAPH_PATH: z.string().optional(),
+  /** Arbeitsverzeichnis der Datenpipeline für Downloads und Zwischenstände. */
+  DATA_DIR: z.string().optional(),
 
+  /** Optional: OpenRouteService-Schlüssel, nur für den Vergleichstest der Fahrzeiten. */
   ORS_API_KEY: z.string().default(''),
 
   ENABLE_OPENAI_TREND: booleanFromString.default(false),
   OPENAI_API_KEY: z.string().default(''),
 
-  REDIS_URL: z.string().optional(),
+  LOG_LEVEL: z.string().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);
-
 if (!parsed.success) {
-  console.error('❌ Ungültige Umgebungsvariablen:');
-  console.error(parsed.error.flatten().fieldErrors);
-  process.exit(1);
+  const fields = parsed.error.flatten().fieldErrors;
+  throw new Error(`Ungültige Umgebungsvariablen: ${JSON.stringify(fields)}`);
 }
 
 export const env = parsed.data;
@@ -49,3 +53,19 @@ export type Env = typeof env;
 
 export const isProd = env.NODE_ENV === 'production';
 export const isTest = env.NODE_ENV === 'test';
+
+// In Produktion dürfen die eingebauten Entwicklungswerte nie greifen: ein
+// bekanntes Signatur-Geheimnis würde jedem erlauben, gültige Logins zu fälschen.
+// Während «next build» werden die Module nur geladen, nicht ausgeführt – dort darf das Geheimnis fehlen.
+const isBuildPhase = process.env.NEXT_PHASE === 'phase-production-build';
+if (isProd && !isBuildPhase && env.JWT_SECRET === DEV_JWT_SECRET) {
+  throw new Error('JWT_SECRET ist in Produktion nicht gesetzt.');
+}
+
+export const DATA_DIR = env.DATA_DIR ? resolve(env.DATA_DIR) : resolve(REPO_ROOT, '.data');
+export const SEARCH_INDEX_PATH = process.env.SEARCH_INDEX_PATH
+  ? resolve(process.env.SEARCH_INDEX_PATH)
+  : resolve(DATA_DIR, 'artifacts/search-index.json.gz');
+export const ROAD_GRAPH_PATH = env.ROAD_GRAPH_PATH
+  ? resolve(env.ROAD_GRAPH_PATH)
+  : resolve(DATA_DIR, 'artifacts/road-graph.bin');

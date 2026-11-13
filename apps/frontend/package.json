@@ -4,37 +4,37 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "predev": "node scripts/copy-map-worker.mjs && node scripts/fetch-road-graph.mjs",
     "dev": "next dev -p 3000",
+    "prebuild": "node scripts/copy-map-worker.mjs && node scripts/fetch-road-graph.mjs",
     "build": "next build",
     "start": "next start -p 3000",
     "typecheck": "tsc --noEmit",
-    "lint": "next lint"
+    "test": "vitest run"
   },
   "dependencies": {
+    "@ch-alpineroute/backend": "workspace:*",
     "@ch-alpineroute/shared": "workspace:*",
-    "bcryptjs": "^2.4.3",
-    "jose": "^5.9.6",
     "lucide-react": "^1.17.0",
-    "maplibre-gl": "^4.7.1",
-    "next": "^15.1.3",
-    "postgres": "^3.4.5",
+    "maplibre-gl": "^6.18.0",
+    "next": "^15.5.28",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "recharts": "^2.15.0",
     "zod": "^3.24.1",
     "zustand": "^5.0.2"
   },
   "devDependencies": {
-    "@types/bcryptjs": "^2.4.6",
+    "@types/geojson": "^7946.0.15",
     "@types/node": "^22.10.2",
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
     "autoprefixer": "^10.4.20",
     "dotenv": "^16.4.7",
     "eslint": "^9.17.0",
-    "eslint-config-next": "^15.1.3",
+    "eslint-config-next": "^15.5.28",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
   }
 }

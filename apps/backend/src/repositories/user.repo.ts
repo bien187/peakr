@@ -9,7 +9,6 @@ interface PublicUserRow {
   home_label: string | null;
   role: 'user' | 'admin';
   created_at: Date;
-  has_openai_key: boolean;
   home_lat: number | null;
   home_lng: number | null;
 }
@@ -24,21 +23,15 @@ function toPublicUser(r: PublicUserRow): PublicUser {
     homeLocation,
     homeLabel: r.home_label,
     role: r.role,
-    hasOpenAiKey: r.has_openai_key,
     createdAt: toIso(r.created_at),
   };
 }
 
-const PUBLIC_SELECT = sql`
-  id, email, display_name, home_label, role, created_at,
-  (openai_key_enc IS NOT NULL) AS has_openai_key,
-  home_lat::float8 AS home_lat,
-  home_lng::float8 AS home_lng
-`;
-
 export async function getPublicUser(id: string): Promise<PublicUser | null> {
   const rows = await sql<PublicUserRow[]>`
-    SELECT ${PUBLIC_SELECT} FROM users WHERE id = ${id} LIMIT 1
+    SELECT id, email, display_name, home_label, role, created_at,
+           home_lat::float8 AS home_lat, home_lng::float8 AS home_lng
+    FROM users WHERE id = ${id} LIMIT 1
   `;
   return rows[0] ? toPublicUser(rows[0]) : null;
 }
@@ -71,41 +64,13 @@ export async function findAuthByEmail(email: string): Promise<AuthRecord | null>
 }
 
 export async function updateProfile(id: string, patch: UpdateMeInput): Promise<void> {
-  if (patch.displayName !== undefined) {
-    await sql`UPDATE users SET display_name = ${patch.displayName}, updated_at = now() WHERE id = ${id}`;
-  }
-  if (patch.homeLabel !== undefined) {
-    await sql`UPDATE users SET home_label = ${patch.homeLabel}, updated_at = now() WHERE id = ${id}`;
-  }
-  if (patch.homeLocation !== undefined) {
-    await sql`
-      UPDATE users
-      SET home_lat = ${patch.homeLocation.lat},
-          home_lng = ${patch.homeLocation.lng},
-          updated_at = now()
-      WHERE id = ${id}
-    `;
-  }
-}
-
-export async function setOpenAiKey(id: string, ciphertext: Buffer, iv: Buffer): Promise<void> {
   await sql`
-    UPDATE users SET openai_key_enc = ${ciphertext}, openai_key_iv = ${iv}, updated_at = now()
+    UPDATE users SET
+      display_name = ${patch.displayName === undefined ? sql`display_name` : patch.displayName},
+      home_label = ${patch.homeLabel === undefined ? sql`home_label` : patch.homeLabel},
+      home_lat = ${patch.homeLocation === undefined ? sql`home_lat` : patch.homeLocation.lat},
+      home_lng = ${patch.homeLocation === undefined ? sql`home_lng` : patch.homeLocation.lng},
+      updated_at = now()
     WHERE id = ${id}
   `;
-}
-
-export async function clearOpenAiKey(id: string): Promise<void> {
-  await sql`
-    UPDATE users SET openai_key_enc = NULL, openai_key_iv = NULL, updated_at = now() WHERE id = ${id}
-  `;
-}
-
-export async function getOpenAiKey(id: string): Promise<{ ciphertext: Buffer; iv: Buffer } | null> {
-  const rows = await sql<{ openai_key_enc: Buffer | null; openai_key_iv: Buffer | null }[]>`
-    SELECT openai_key_enc, openai_key_iv FROM users WHERE id = ${id} LIMIT 1
-  `;
-  const r = rows[0];
-  if (!r || !r.openai_key_enc || !r.openai_key_iv) return null;
-  return { ciphertext: r.openai_key_enc, iv: r.openai_key_iv };
 }

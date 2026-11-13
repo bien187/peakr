@@ -15,6 +15,13 @@
       "when": 1780950000000,
       "tag": "0001_hiking_pipeline",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794500000000,
+      "tag": "0002_postgis_rebuild",
+      "breakpoints": true
     }
   ]
 }

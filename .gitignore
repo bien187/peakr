@@ -30,3 +30,12 @@ coverage/
 
 # Drizzle
 apps/backend/drizzle/meta/_journal.tmp
+
+# Datenpipeline (Downloads, Zwischenstände, Artefakte)
+.data/
+apps/frontend/data/
+
+# Von scripts/copy-map-worker.mjs erzeugt
+apps/frontend/public/maplibre-gl-worker.mjs
+.vercel
+.env*

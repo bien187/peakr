@@ -1,87 +1,111 @@
-/* Peakr — Helfer, Konstanten und Adapter (Prototyp-Logik → echte API-Typen).
- * Portiert aus reference/core.jsx + data.jsx, an die realen Schemas angebunden. */
+/* Peakr — Helfer, Konstanten und Adapter zwischen API-Typen und Oberfläche.
+ * Alles, was hier angezeigt wird, stammt aus der API. Fehlende Werte bleiben
+ * null und werden als «–» bzw. «unbekannt» dargestellt. */
 
 import type {
   DestinationDetail,
   DestinationWithStatus,
+  DriveInfo,
+  HikeKind,
+  HikeRouteDetail,
+  HikeRouteSummary,
   LatLng,
   LiveStatus,
-  SearchResult,
+  MapPoint,
+  RoutingStatus,
+  SearchItem,
+  SearchSection,
+  Trailhead,
 } from '@ch-alpineroute/shared';
 
 export type PType = 'ski' | 'hike';
-export type TrendDir = 'up' | 'down' | 'flat';
+export type DestKind = 'peak' | 'lake' | 'hut' | 'viewpoint' | 'pass' | 'ski';
 
-/** Zielart fürs Typ-Symbol (statt der entfernten Bekanntheits-Zahl). */
-export type DestKind = 'peak' | 'lake' | 'hut' | 'viewpoint' | 'ski';
-
-export const KIND_META: Record<DestKind, { icon: string; label: string }> = {
-  peak: { icon: 'Mountain', label: 'Gipfel' },
-  lake: { icon: 'Waves', label: 'Bergsee' },
-  hut: { icon: 'House', label: 'Hütte' },
-  viewpoint: { icon: 'Eye', label: 'Aussichtspunkt' },
-  ski: { icon: 'Snowflake', label: 'Skigebiet' },
+export const KIND_META: Record<DestKind, { icon: string; label: string; plural: string }> = {
+  peak: { icon: 'Mountain', label: 'Gipfel', plural: 'Gipfel' },
+  lake: { icon: 'Waves', label: 'See', plural: 'Seen' },
+  hut: { icon: 'House', label: 'Hütte', plural: 'Hütten' },
+  viewpoint: { icon: 'Eye', label: 'Aussichtspunkt', plural: 'Aussicht' },
+  pass: { icon: 'Milestone', label: 'Pass', plural: 'Pässe' },
+  ski: { icon: 'Snowflake', label: 'Skigebiet', plural: 'Skigebiete' },
 };
 
-/** Zielart aus poi_kind ableiten (DB-Wert ist führend), sonst aus dem Namen. */
-export function destKind(
-  poiKind: string | null | undefined,
-  name: string,
-  type: PType,
-): DestKind {
-  if (type === 'ski') return 'ski';
-  if (poiKind === 'peak' || poiKind === 'lake' || poiKind === 'hut' || poiKind === 'viewpoint') {
-    return poiKind;
-  }
-  return inferHikeKind(name);
+/** Objektart der Quelle in Anzeigeform (swissNAMES3D schreibt Umlaute aus). */
+export function classLabel(objectClass: string | null | undefined): string | null {
+  if (!objectClass) return null;
+  // Reine OSM-Tag-Angaben («OSM natural=peak») sagen nicht mehr als die Zielart selbst.
+  if (objectClass.startsWith('OSM ') && objectClass.includes('=')) return null;
+  return objectClass.replace(/uegel/g, 'ügel').replace(/^OSM /, '').replace(/ \(OSM[^)]*\)$/, '');
 }
 
-/** Flache Karten-Form, die alle Prototyp-UI-Komponenten erwarten. */
+export const PISTE_LABEL: Record<string, { label: string; color: string }> = {
+  novice: { label: 'sehr leicht', color: '#4caf50' },
+  easy: { label: 'leicht (blau)', color: '#2f7fd1' },
+  intermediate: { label: 'mittel (rot)', color: '#d8362a' },
+  advanced: { label: 'schwer (schwarz)', color: '#1f2933' },
+  expert: { label: 'sehr schwer', color: '#1f2933' },
+  extreme: { label: 'extrem', color: '#1f2933' },
+  freeride: { label: 'Freeride / Skiroute', color: '#e0a100' },
+  unknown: { label: 'ohne Angabe', color: '#9aa3ad' },
+};
+export const PISTE_ORDER = ['novice', 'easy', 'intermediate', 'advanced', 'expert', 'extreme', 'freeride', 'unknown'];
+
+export function destKind(poiKind: string | null | undefined, type: PType): DestKind {
+  if (type === 'ski') return 'ski';
+  return poiKind === 'lake' || poiKind === 'hut' || poiKind === 'viewpoint' || poiKind === 'pass' ? poiKind : 'peak';
+}
+
+/** Kennzahlen einer Wanderroute in Anzeigeform. */
+export interface PHike {
+  routeId: number;
+  km: number;
+  up: number;
+  down: number;
+  minUp: number;
+  minDown: number;
+  sacLabel: string;
+  sacKnown: boolean;
+  officialShare: number;
+  maxElev: number | null;
+  variants: number;
+}
+
+/** Flache Karten-Form für Trefferliste, Favoriten und Detailkopf. */
 export interface PCard {
   id: string;
   name: string;
   type: PType;
   kind: DestKind;
+  objectClass: string | null;
   canton: string;
   lat: number;
   lng: number;
   score: number;
   topM: number | null;
-  driveMin: number;
-  km: number;
-  snowTop: number | null;
-  fresh: number | null;
-  liftsOpen: number | null;
+  baseM: number | null;
+  /** Autofahrzeit in Minuten; null = nicht berechenbar. */
+  driveMin: number | null;
+  driveKm: number | null;
+  airKm: number;
+  routingStatus: RoutingStatus;
+  section: SearchSection;
+  over: number;
+  trailhead: Trailhead | null;
+  hike: PHike | null;
   liftsTotal: number | null;
+  liftsOpen: number | null;
+  pisteKm: number | null;
+  snowTop: number | null;
+  snowValley: number | null;
+  fresh: number | null;
   weather: number | null;
   temp: number | null;
+  tempAdjusted: boolean;
   wind: number | null;
   avalanche: number | null;
-  fame: number | null;
-  trendDir: TrendDir;
-  sac: string | null;
-  ascent: number | null;
-  distance: number | null;
-  suggestion: boolean;
-  over: number;
-}
-
-export interface PDetail extends PCard {
-  baseM: number | null;
-  topM: number | null;
-  blurb: string;
-  displayScore: number;
-  history: number[];
-}
-
-export interface PDay {
-  label: string;
-  date: string;
-  code: number | null;
-  tmax: number;
-  tmin: number;
-  wind: number;
-  pop: number;
+  liveAt: string | null;
+  quality: number | null;
+  blockedReason: string | null;
 }
 
 /* ---- Farben / Labels ----------------------------------------------------- */
@@ -101,9 +125,14 @@ export const AVALANCHE: Record<number, { label: string; color: string; text: str
   5: { label: 'sehr gross', color: '#9b1414', text: '#fff' },
 };
 
-/** WMO-Wettercode → Lucide-Icon-Name + deutsches Label (kein Emoji). */
-export function weatherInfo(code: number | null): { icon: string; label: string } {
-  if (code == null) return { icon: 'CircleHelp', label: 'unbekannt' };
+/**
+ * WMO-Wettercode → Lucide-Icon-Name + deutsches Label (kein Emoji).
+ * `tempC`: Bei Frost am Ziel ist «Regen» der Rasterzelle (tiefer gelegen) irreführend.
+ */
+export function weatherInfo(code: number | null, tempC?: number | null): { icon: string; label: string } {
+  if (code == null) return { icon: 'CircleHelp', label: 'Wetter unbekannt' };
+  const rainy = (code >= 51 && code <= 67) || (code >= 80 && code <= 82);
+  if (rainy && tempC != null && tempC <= 0.5) return { icon: 'CloudSnow', label: 'Niederschlag' };
   if (code === 0) return { icon: 'Sun', label: 'Klar' };
   if (code <= 2) return { icon: 'CloudSun', label: 'Heiter' };
   if (code === 3) return { icon: 'Cloud', label: 'Bewölkt' };
@@ -116,11 +145,58 @@ export function weatherInfo(code: number | null): { icon: string; label: string 
   return { icon: 'CloudLightning', label: 'Gewitter' };
 }
 
-export function fmtDrive(min: number): string {
+/** Dauer in Minuten als «45 min» bzw. «2 h 05». */
+export function fmtDuration(min: number | null | undefined): string {
+  if (min == null) return '–';
   const t = Math.round(min);
   const h = Math.floor(t / 60);
   const m = t % 60;
   return h > 0 ? `${h} h ${String(m).padStart(2, '0')}` : `${m} min`;
+}
+export const fmtDrive = fmtDuration;
+
+/**
+ * SAC-Schwierigkeit einer Route als Text. Die amtliche Signalisation kennt nur
+ * drei Klassen, deshalb kann ein Bereich («T2–T3») herauskommen.
+ */
+export function sacLabel(sacMin: string | null, sacMax: string | null): string {
+  if (sacMax === null) return sacMin ? `unbekannt (mind. ${sacMin})` : 'unbekannt';
+  if (!sacMin || sacMin === sacMax) return sacMax;
+  return `${sacMin}–${sacMax}`;
+}
+
+export function trailheadLabel(t: Trailhead): string {
+  if (t.name) return t.name;
+  const base = t.kind === 'parking' ? 'Parkplatz' : t.kind === 'valley_station' ? 'Talstation' : 'Strassenzugang';
+  // Unbenannte Ausgangspunkte über die Höhe unterscheidbar machen.
+  return t.elevationM != null ? `${base} auf ${new Intl.NumberFormat('de-CH').format(t.elevationM)} m` : base;
+}
+
+/** Kurzer Hinweis zur Verlässlichkeit des Ausgangspunkts. */
+export function trailheadHint(t: Trailhead): string {
+  if (t.kind === 'valley_station') {
+    return (t.roadGapM ?? 0) > 600
+      ? `Strasse endet ${((t.roadGapM ?? 0) / 1000).toFixed(1)} km vor der Talstation`
+      : 'Zufahrt bis Talstation';
+  }
+  if (t.kind === 'road_access') return 'Strassenzugang – Parkplatz nicht bestätigt';
+  return t.quality >= 3 ? 'Öffentlicher Parkplatz' : 'Parkplatz (Zugang nicht angegeben)';
+}
+
+/** Relative Zeitangabe wie «vor 2 h». */
+export function fmtAge(iso: string | null): string | null {
+  if (!iso) return null;
+  const min = Math.round((Date.now() - Date.parse(iso)) / 60_000);
+  if (!Number.isFinite(min)) return null;
+  if (min < 60) return `vor ${Math.max(1, min)} min`;
+  if (min < 48 * 60) return `vor ${Math.round(min / 60)} h`;
+  return `vor ${Math.round(min / 1440)} Tagen`;
+}
+
+export function fmtDate(iso: string | null | undefined): string {
+  if (!iso) return '–';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString('de-CH', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
 export function airKm(a: LatLng, b: LatLng): number {
@@ -128,293 +204,305 @@ export function airKm(a: LatLng, b: LatLng): number {
   const toR = (d: number) => (d * Math.PI) / 180;
   const dLat = toR(b.lat - a.lat);
   const dLng = toR(b.lng - a.lng);
-  const s =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toR(a.lat)) * Math.cos(toR(b.lat)) * Math.sin(dLng / 2) ** 2;
+  const s = Math.sin(dLat / 2) ** 2 + Math.cos(toR(a.lat)) * Math.cos(toR(b.lat)) * Math.sin(dLng / 2) ** 2;
   return Math.round(2 * R * Math.asin(Math.sqrt(s)));
 }
 
-/* ---- schematische Reliefkarte: Schweiz-Bounding-Box → Prozent ------------ */
-const BOX = { w: 5.9, e: 10.5, n: 47.85, s: 45.78 };
-export const mapX = (lng: number) => ((lng - BOX.w) / (BOX.e - BOX.w)) * 100;
-export const mapY = (lat: number) => ((BOX.n - lat) / (BOX.n - BOX.s)) * 100;
+export const DEFAULT_ORIGIN = { label: 'Zürich', lat: 47.3769, lng: 8.5417 };
 
-export const ORIGINS: { id: string; label: string; lat: number; lng: number }[] = [
-  { id: 'bern', label: 'Bern', lat: 46.948, lng: 7.447 },
-  { id: 'zurich', label: 'Zürich', lat: 47.377, lng: 8.54 },
-  { id: 'geneve', label: 'Genève', lat: 46.204, lng: 6.143 },
-  { id: 'basel', label: 'Basel', lat: 47.56, lng: 7.588 },
-  { id: 'luzern', label: 'Luzern', lat: 47.05, lng: 8.307 },
-  { id: 'lugano', label: 'Lugano', lat: 46.005, lng: 8.951 },
-];
-
-export const LAKES: { name: string; lng: number; lat: number; w: number; h: number; r: number }[] = [
-  { name: 'Genfersee', lng: 6.55, lat: 46.45, w: 13, h: 4.5, r: -18 },
-  { name: 'Bodensee', lng: 9.35, lat: 47.55, w: 11, h: 4, r: -8 },
-  { name: 'Vierwaldst.', lng: 8.45, lat: 47.0, w: 6, h: 3.5, r: 20 },
-  { name: 'Zürichsee', lng: 8.72, lat: 47.22, w: 6, h: 2.6, r: -32 },
-  { name: 'Neuenburg.', lng: 6.9, lat: 46.92, w: 7, h: 3, r: -34 },
-  { name: 'Lago Magg.', lng: 8.78, lat: 46.1, w: 3.5, h: 6, r: 6 },
-];
-
-export const HIKE_KINDS: { value: string; label: string }[] = [
-  { value: 'any', label: 'Alle' },
-  { value: 'peak', label: 'Gipfel' },
-  { value: 'lake', label: 'Bergsee' },
-  { value: 'hut', label: 'Hütte' },
-  { value: 'viewpoint', label: 'Aussicht' },
-];
+export const HIKE_KINDS: HikeKind[] = ['peak', 'lake', 'hut', 'viewpoint', 'pass'];
 export const SAC = ['T1', 'T2', 'T3', 'T4', 'T5', 'T6'];
+export const SAC_HINT: Record<string, string> = {
+  T1: 'Wandern',
+  T2: 'Bergwandern',
+  T3: 'anspruchsvolles Bergwandern',
+  T4: 'Alpinwandern',
+  T5: 'anspruchsvolles Alpinwandern',
+  T6: 'schwieriges Alpinwandern',
+};
 
-export const SORTS: { value: string; label: string }[] = [
-  { value: 'score', label: 'Grösse' },
-  { value: 'drive', label: 'Fahrzeit' },
-  { value: 'snow', label: 'Schnee' },
-];
+export type SortKey = 'score' | 'drive' | 'hike' | 'elevation' | 'snow';
+export const SORTS: Record<PType, { value: SortKey; label: string }[]> = {
+  hike: [
+    { value: 'score', label: 'Bewertung' },
+    { value: 'drive', label: 'Fahrzeit' },
+    { value: 'hike', label: 'Gehzeit' },
+    { value: 'elevation', label: 'Höhe' },
+  ],
+  ski: [
+    { value: 'score', label: 'Bewertung' },
+    { value: 'drive', label: 'Fahrzeit' },
+    { value: 'snow', label: 'Schnee' },
+    { value: 'elevation', label: 'Höhe' },
+  ],
+};
 
-/** Wanderziel-Typ aus dem Namen ableiten (die API kennt keine kind-Kategorie). */
-export function inferHikeKind(name: string): 'lake' | 'hut' | 'peak' | 'viewpoint' {
-  const n = name.toLowerCase();
-  if (/see\b|seen\b|lac\b|lago|\blai\b|weiher|stausee|lej\b/.test(n)) return 'lake';
-  if (/hütte|huette|cabane|capanna|\bhut\b|berghaus|clubhütte/.test(n)) return 'hut';
-  if (/horn|spitz|gipfel|\bpiz\b|pizzo|\bmont\b|\bpic\b|kulm|stock|fluh|grat|rothorn|turm|säntis|titlis|matterhorn/.test(n))
-    return 'peak';
-  return 'viewpoint';
+/* ---- Adapter: API-Typen → Anzeigeform ------------------------------------ */
+function hikeOf(h: HikeRouteSummary | null, variants: number): PHike | null {
+  if (!h) return null;
+  return {
+    routeId: h.routeId,
+    km: h.distanceKm,
+    up: h.ascentM,
+    down: h.descentM,
+    minUp: h.durationUpMin,
+    minDown: h.durationDownMin,
+    sacLabel: sacLabel(h.sacMin, h.sacMax),
+    sacKnown: h.sacMax !== null,
+    officialShare: h.officialShare,
+    maxElev: h.maxElevM,
+    variants,
+  };
 }
 
-export function sortCards(list: PCard[], sort: string): PCard[] {
-  const a = [...list];
-  if (sort === 'drive') a.sort((x, y) => x.driveMin - y.driveMin);
-  else if (sort === 'snow') a.sort((x, y) => (y.snowTop ?? 0) - (x.snowTop ?? 0));
-  else a.sort((x, y) => y.score - x.score); // default: Grösse/Infrastruktur
-  return a;
+function liveFields(live: LiveStatus | null) {
+  return {
+    liftsOpen: live?.liftsOpen ?? null,
+    snowTop: live?.snowDepthTopCm ?? null,
+    snowValley: live?.snowDepthValleyCm ?? null,
+    fresh: live?.freshSnowCm != null ? Math.round(live.freshSnowCm) : null,
+    weather: live?.weatherCode ?? null,
+    temp: live?.temperatureC ?? null,
+    tempAdjusted: live?.temperatureAdjusted ?? false,
+    wind: live?.windKmh ?? null,
+    avalanche: live?.avalancheLevel ?? null,
+    liveAt: live?.capturedAt ?? null,
+  };
 }
 
-/* ---- Adapter: echte API-Typen → Prototyp-Form ---------------------------- */
-const isSkiType = (t: string) => t === 'ski_resort';
-
-export function adaptResult(r: SearchResult, suggestion: boolean): PCard {
-  const live = r.live;
+export function adaptResult(r: SearchItem): PCard {
+  const type: PType = r.type === 'ski_resort' ? 'ski' : 'hike';
   return {
     id: r.id,
     name: r.name,
-    type: isSkiType(r.type) ? 'ski' : 'hike',
-    kind: destKind(r.poiKind, r.name, isSkiType(r.type) ? 'ski' : 'hike'),
+    type,
+    kind: destKind(r.poiKind, type),
+    objectClass: r.objectClass ?? null,
     canton: r.canton ?? '',
     lat: r.location.lat,
     lng: r.location.lng,
-    score: displayScore(r.type, live?.liftsTotal, live?.snowDepthTopCm, r.ascentM, r.distanceKm, r.elevationTopM, r.qualityScore),
-    topM: r.elevationTopM ?? null,
-    driveMin: Math.round(r.driveMinutes),
-    km: r.distanceAirKm,
-    snowTop: live?.snowDepthTopCm ?? null,
-    fresh: live?.freshSnowCm != null ? Math.round(live.freshSnowCm) : null,
-    liftsOpen: live?.liftsOpen ?? null,
-    liftsTotal: live?.liftsTotal ?? null,
-    weather: live?.weatherCode ?? null,
-    temp: live?.temperatureC ?? null,
-    wind: live?.windKmh ?? null,
-    avalanche: live?.avalancheLevel ?? null,
-    fame: r.trend?.score ?? null,
-    trendDir: 'flat',
-    sac: r.sacDifficulty ?? null,
-    ascent: r.ascentM ?? null,
-    distance: r.distanceKm ?? null,
-    suggestion,
+    score: r.score,
+    topM: r.elevationTopM,
+    baseM: r.elevationBaseM,
+    driveMin: r.driveMinutes,
+    driveKm: r.routeDistanceKm,
+    airKm: r.distanceAirKm,
+    routingStatus: r.routingStatus,
+    section: r.section,
     over: r.overBudgetMinutes ?? 0,
+    trailhead: r.trailhead,
+    hike: hikeOf(r.hike, r.hikeVariants),
+    liftsTotal: r.ski?.liftsTotal ?? null,
+    pisteKm: r.ski?.pisteKm ?? null,
+    quality: r.qualityScore ?? null,
+    blockedReason: r.blockedReason,
+    ...liveFields(r.live),
   };
 }
 
-/** 14-Punkt-Serie aus dem echten Verlauf (Schnee für Ski, Temperatur sonst). */
-function historyToSeries(d: DestinationDetail, ski: boolean): number[] {
-  const src = [...d.history].reverse(); // API: neueste zuerst → chronologisch
-  const vals = src
-    .map((h: LiveStatus) => (ski ? h.snowDepthTopCm : h.temperatureC))
-    .filter((v): v is number => v != null);
-  return vals.map((v) => Math.round(v));
+/** Kartenpunkt in Anzeigeform. */
+export interface PPoint {
+  id: string;
+  name: string;
+  lat: number;
+  lng: number;
+  kind: DestKind;
+  type: PType;
+  section: SearchSection;
+  score: number;
+  driveMin: number | null;
 }
 
-/** Grössen-/Infrastruktur-Score: Lifte/Pisteninfra statt Wikipedia-Bekanntheit. */
-export function displayScore(
-  type: string,
-  liftsTotal: number | null | undefined,
-  snowTop: number | null | undefined,
-  ascentM: number | null | undefined,
-  distanceKm: number | null | undefined,
-  elevationTopM?: number | null,
-  qualityScore?: number | null,
-): number {
-  if (isSkiType(type)) {
-    // Ski: Pisteninfrastruktur (Lifte als Proxy) + Schneebonus
-    const lifts = Math.min(65, (liftsTotal ?? 0) * 1.8);
-    const snow = Math.min(30, (snowTop ?? 0) / 5);
-    return Math.max(5, Math.round(lifts + snow));
-  } else {
-    // Wandern: Routen haben Höhenmeter/Distanz; Gipfel/Seen/Hütten nur Höhe + Qualität.
-    // Wir nehmen das stärkere der beiden Signale, damit Gipfel nach Höhe differenziert werden.
-    const ascent = Math.min(35, (ascentM ?? 0) / 28);
-    const dist = Math.min(20, (distanceKm ?? 0) * 2);
-    const routeScore = ascent + dist; // > 0 nur bei echten Routen mit Metriken
-    const elev = Math.min(75, Math.max(0, ((elevationTopM ?? 0) - 600) / 50)); // 600m→0, 4350m→75
-    const qual = Math.min(25, (qualityScore ?? 0) / 4); // 100→25
-    const peakScore = elev + qual;
-    return Math.max(5, Math.round(Math.max(routeScore, peakScore)));
-  }
+/** Auf der Karte hervorgehobenes Ziel samt Ausgangspunkt und Route. */
+export interface MapSelection {
+  id: string;
+  lat: number;
+  lng: number;
+  trailhead: Trailhead | null;
+  /** Linie [lng, lat] der gewählten Route; null = (noch) keine. */
+  line: [number, number][] | null;
+}
+
+export function adaptPoint(p: MapPoint): PPoint {
+  const kind = (p[4] in KIND_META ? p[4] : 'peak') as DestKind;
+  return { id: p[0], name: p[1], lat: p[2], lng: p[3], kind, type: kind === 'ski' ? 'ski' : 'hike', section: p[5], score: p[6], driveMin: p[7] };
+}
+
+/** Favorit (ohne Suchkontext) → Karten-Form fürs Dashboard. */
+export function adaptFavorite(d: DestinationWithStatus): PCard {
+  const type: PType = d.type === 'ski_resort' ? 'ski' : 'hike';
+  return {
+    id: d.id,
+    name: d.name,
+    type,
+    kind: destKind(d.poiKind, type),
+    objectClass: d.objectClass ?? null,
+    canton: d.canton ?? '',
+    lat: d.location.lat,
+    lng: d.location.lng,
+    score: 0,
+    topM: d.elevationTopM,
+    baseM: d.elevationBaseM,
+    driveMin: null,
+    driveKm: null,
+    airKm: 0,
+    routingStatus: 'ok',
+    section: 'result',
+    over: 0,
+    trailhead: null,
+    hike:
+      d.distanceKm != null && d.ascentM != null
+        ? {
+            routeId: 0, km: d.distanceKm, up: d.ascentM, down: 0, minUp: 0, minDown: 0,
+            sacLabel: d.sacDifficulty ?? 'unbekannt', sacKnown: d.sacDifficulty != null, officialShare: 0, maxElev: null, variants: 0,
+          }
+        : null,
+    liftsTotal: d.live?.liftsTotal ?? null,
+    pisteKm: null,
+    quality: d.qualityScore ?? null,
+    blockedReason: null,
+    ...liveFields(d.live),
+  };
+}
+
+export interface PRoute extends PHike {
+  rank: number;
+  trailhead: Trailhead;
+  /** Autofahrt vom Startort zu diesem Ausgangspunkt; null = ohne Startort geladen. */
+  drive: DriveInfo | null;
+  endGapM: number;
+  line: [number, number][];
+  source: string;
+  computedAt: string;
+}
+
+export interface PDetail extends PCard {
+  altNames: string[];
+  routes: PRoute[];
+  routeStatus: string;
+  liftsByType: Record<string, number>;
+  pisteKmByDifficulty: Record<string, number>;
+  grouping: string | null;
+  access: Trailhead | null;
+  accessDrive: DriveInfo | null;
+  /** Schneeverlauf am Berg (chronologisch) für Skigebiete. */
+  history: { t: number; snow: number }[];
+  sources: DestinationDetail['sources'];
+  updatedAt: string | null;
+  wikipedia: string | null;
+}
+
+function routeOf(r: HikeRouteDetail): PRoute {
+  return {
+    ...(hikeOf(r, 0) as PHike),
+    rank: r.rank,
+    trailhead: r.trailhead,
+    drive: r.drive ?? null,
+    endGapM: r.endGapM,
+    line: r.line,
+    source: r.source,
+    computedAt: r.computedAt,
+  };
 }
 
 export function adaptDetail(d: DestinationDetail): PDetail {
-  const ski = isSkiType(d.type);
-  const live = d.live;
-  const fame = d.trend?.score ?? null;
-  const snowTop = live?.snowDepthTopCm ?? null;
-  const score = displayScore(d.type, live?.liftsTotal, snowTop, d.ascentM, d.distanceKm, d.elevationTopM, d.qualityScore);
+  const type: PType = d.type === 'ski_resort' ? 'ski' : 'hike';
+  const kind = destKind(d.poiKind, type);
+  const routes = d.routes.map(routeOf);
+  const best = routes[0] ?? null;
+  const drive = (type === 'ski' ? d.accessDrive : best?.drive) ?? null;
   return {
     id: d.id,
     name: d.name,
-    type: ski ? 'ski' : 'hike',
-    kind: destKind(d.poiKind, d.name, ski ? 'ski' : 'hike'),
+    type,
+    kind,
+    objectClass: d.objectClass ?? null,
     canton: d.canton ?? '',
     lat: d.location.lat,
     lng: d.location.lng,
-    score,
-    driveMin: 0,
-    km: 0,
-    snowTop,
-    fresh: live?.freshSnowCm != null ? Math.round(live.freshSnowCm) : null,
-    liftsOpen: live?.liftsOpen ?? null,
-    liftsTotal: live?.liftsTotal ?? null,
-    weather: live?.weatherCode ?? null,
-    temp: live?.temperatureC ?? null,
-    wind: live?.windKmh ?? null,
-    avalanche: live?.avalancheLevel ?? null,
-    fame,
-    trendDir: 'flat',
-    sac: d.sacDifficulty ?? null,
-    ascent: d.ascentM ?? null,
-    distance: d.distanceKm ?? null,
-    suggestion: false,
-    over: 0,
-    baseM: d.elevationBaseM,
+    score: 0,
     topM: d.elevationTopM,
-    blurb:
-      (ski ? 'Skigebiet' : 'Wanderziel') +
-      (d.canton ? ` im Kanton ${d.canton}` : '') +
-      '. Live-Bedingungen aus offenen Datenquellen (Wetter, Schnee, Lawinenlage).',
-    displayScore: score,
-    history: historyToSeries(d, ski),
-  };
-}
-
-/** Favorit (DestinationWithStatus) → schlanke Karten-Form fürs Dashboard. */
-export function adaptFavorite(d: DestinationWithStatus): PCard {
-  const ski = isSkiType(d.type);
-  const live = d.live;
-  const fame = d.trend?.score ?? null;
-  const snowTop = live?.snowDepthTopCm ?? null;
-  return {
-    id: d.id,
-    name: d.name,
-    type: ski ? 'ski' : 'hike',
-    kind: destKind(d.poiKind, d.name, ski ? 'ski' : 'hike'),
-    canton: d.canton ?? '',
-    lat: d.location.lat,
-    lng: d.location.lng,
-    score: displayScore(d.type, live?.liftsTotal, snowTop, d.ascentM, d.distanceKm, d.elevationTopM, d.qualityScore),
-    topM: d.elevationTopM ?? null,
-    driveMin: 0,
-    km: 0,
-    snowTop,
-    fresh: live?.freshSnowCm != null ? Math.round(live.freshSnowCm) : null,
-    liftsOpen: live?.liftsOpen ?? null,
-    liftsTotal: live?.liftsTotal ?? null,
-    weather: live?.weatherCode ?? null,
-    temp: live?.temperatureC ?? null,
-    wind: live?.windKmh ?? null,
-    avalanche: live?.avalancheLevel ?? null,
-    fame,
-    trendDir: 'flat',
-    sac: d.sacDifficulty ?? null,
-    ascent: d.ascentM ?? null,
-    distance: d.distanceKm ?? null,
-    suggestion: false,
+    baseM: d.elevationBaseM,
+    driveMin: drive?.minutes ?? null,
+    driveKm: drive?.distanceKm ?? null,
+    airKm: 0,
+    routingStatus: drive?.status ?? 'ok',
+    section: 'result',
     over: 0,
+    trailhead: best?.trailhead ?? d.access,
+    hike: best,
+    liftsTotal: d.ski?.liftsTotal ?? null,
+    pisteKm: d.ski?.pisteKm ?? null,
+    quality: d.qualityScore ?? null,
+    blockedReason: null,
+    ...liveFields(d.live),
+    altNames: [...new Set([...Object.values(d.names ?? {}), ...(d.altNames ?? [])])].filter((n) => n && n !== d.name),
+    routes,
+    routeStatus: d.routeStatus ?? 'unrouted',
+    liftsByType: d.ski?.liftsByType ?? {},
+    pisteKmByDifficulty: d.ski?.pisteKmByDifficulty ?? {},
+    grouping: d.ski?.grouping ?? null,
+    access: d.access,
+    accessDrive: d.accessDrive ?? null,
+    history: [...d.history]
+      .reverse()
+      .filter((h) => h.snowDepthTopCm != null)
+      .map((h) => ({ t: Date.parse(h.capturedAt), snow: h.snowDepthTopCm as number })),
+    sources: d.sources,
+    updatedAt: d.updatedAt,
+    wikipedia: d.wikipediaTitle,
   };
 }
 
-/* ---- 3D-Route: Park-/Zielpunkte + Polyline ------------------------------- */
-export interface RouteGeo {
-  park: [number, number];
-  peak: [number, number];
-  line: [number, number][];
-  parkLabel: string;
-  peakLabel: string;
+/* ---- Wetterprognose direkt von Open-Meteo (Browser) ----------------------- */
+export interface PDay {
+  label: string;
+  date: string;
+  code: number | null;
+  tmax: number | null;
+  tmin: number | null;
+  wind: number | null;
+  pop: number | null;
 }
 
-/** Plausible, deterministische Route Parkplatz→Ziel. Ohne echte Parkdaten wird
- *  der Startpunkt synthetisch leicht unterhalb des Ziels abgeleitet. */
-export function routeGeo(d: { id: string; name: string; lat: number; lng: number }): RouteGeo {
-  const park: [number, number] = [d.lng - 0.012, d.lat - 0.009];
-  const peak: [number, number] = [d.lng, d.lat];
-  const seed = d.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
-  const N = 16;
-  const dx = peak[0] - park[0];
-  const dy = peak[1] - park[1];
-  const len = Math.hypot(dx, dy) || 1;
-  const px = -dy / len;
-  const py = dx / len;
-  const line: [number, number][] = [];
-  for (let i = 0; i <= N; i++) {
-    const t = i / N;
-    const env = Math.sin(t * Math.PI);
-    const wob = Math.sin(seed + t * 6.3) * 0.6 + Math.sin(seed * 0.7 + t * 13) * 0.25;
-    const off = env * wob * len * 0.16;
-    line.push([park[0] + dx * t + px * off, park[1] + dy * t + py * off]);
-  }
-  return {
-    park,
-    peak,
-    line,
-    parkLabel: 'Parkplatz',
-    peakLabel: d.name.split(' – ')[0].split(' (')[0],
-  };
-}
-
-/** Ein Stundenwert für den Temperaturverlauf. */
 export interface HourPt {
-  /** ms-Zeitstempel */
   t: number;
   hour: number;
   temp: number;
   day: string;
 }
 
-/** Stündliche Temperatur (Open-Meteo) ab jetzt für ~30 Stunden. */
-export async function fetchHourlyTemps(lat: number, lng: number): Promise<HourPt[]> {
+const DAY_NAMES = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+const roundOrNull = (v: number | null | undefined): number | null => (v == null ? null : Math.round(v));
+
+/** Stündliche Temperatur ab jetzt für ~30 Stunden, auf der Zielhöhe. */
+export async function fetchHourlyTemps(lat: number, lng: number, elevation: number | null): Promise<HourPt[]> {
   const url =
     `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}` +
+    (elevation != null ? `&elevation=${elevation}` : '') +
     `&hourly=temperature_2m&timezone=Europe%2FZurich&forecast_days=2`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Open-Meteo HTTP ${res.status}`);
   const j = (await res.json()) as { hourly?: { time: string[]; temperature_2m: (number | null)[] } };
   const h = j.hourly;
   if (!h) return [];
-  const names = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
-  const cutoff = Date.now() - 3600_000; // ab letzter voller Stunde
+  const cutoff = Date.now() - 3600_000;
   const out: HourPt[] = [];
   for (let i = 0; i < h.time.length; i++) {
     const dt = new Date(h.time[i]);
     const v = h.temperature_2m[i];
     if (dt.getTime() < cutoff || v == null) continue;
-    out.push({ t: dt.getTime(), hour: dt.getHours(), temp: Math.round(v), day: names[dt.getDay()] });
+    out.push({ t: dt.getTime(), hour: dt.getHours(), temp: Math.round(v), day: DAY_NAMES[dt.getDay()] });
     if (out.length >= 30) break;
   }
   return out;
 }
 
-/** Echte 7-Tage-Prognose von Open-Meteo (kostenlos, kein Key). */
-export async function fetchForecast(lat: number, lng: number): Promise<PDay[]> {
+/** 7-Tage-Prognose auf der Zielhöhe. Fehlende Werte bleiben null. */
+export async function fetchForecast(lat: number, lng: number, elevation: number | null): Promise<PDay[]> {
   const url =
     `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}` +
+    (elevation != null ? `&elevation=${elevation}` : '') +
     `&daily=weather_code,temperature_2m_max,temperature_2m_min,wind_speed_10m_max,precipitation_probability_max` +
     `&timezone=Europe%2FZurich&forecast_days=7`;
   const res = await fetch(url);
@@ -431,17 +519,16 @@ export async function fetchForecast(lat: number, lng: number): Promise<PDay[]> {
   };
   const dly = j.daily;
   if (!dly) return [];
-  const names = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
   return dly.time.map((iso, i) => {
     const dt = new Date(iso + 'T00:00:00');
     return {
-      label: i === 0 ? 'Heute' : i === 1 ? 'Morgen' : names[dt.getDay()],
+      label: i === 0 ? 'Heute' : i === 1 ? 'Morgen' : DAY_NAMES[dt.getDay()],
       date: `${dt.getDate()}.${dt.getMonth() + 1}.`,
       code: dly.weather_code[i] ?? null,
-      tmax: Math.round(dly.temperature_2m_max[i] ?? 0),
-      tmin: Math.round(dly.temperature_2m_min[i] ?? 0),
-      wind: Math.round(dly.wind_speed_10m_max[i] ?? 0),
-      pop: Math.round(dly.precipitation_probability_max[i] ?? 0),
+      tmax: roundOrNull(dly.temperature_2m_max[i]),
+      tmin: roundOrNull(dly.temperature_2m_min[i]),
+      wind: roundOrNull(dly.wind_speed_10m_max[i]),
+      pop: roundOrNull(dly.precipitation_probability_max[i]),
     };
   });
 }

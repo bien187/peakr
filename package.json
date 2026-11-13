@@ -1,20 +1,42 @@
 {
-  "name": "@ch-alpineroute/shared",
-  "version": "0.0.0",
+  "name": "peakr",
+  "version": "1.0.0",
   "private": true,
+  "description": "Peakr – Ski- und Wander-Navigator für die Schweiz (ausschliesslich kostenlose Datenquellen)",
   "type": "module",
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
-  "exports": {
-    ".": {
-      "types": "./src/index.ts",
-      "default": "./src/index.ts"
-    }
+  "packageManager": "pnpm@9.15.9",
+  "engines": {
+    "node": ">=22.13"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "dev": "pnpm --filter @ch-alpineroute/frontend run dev",
+    "build": "pnpm --filter @ch-alpineroute/frontend run build",
+    "start": "pnpm --filter @ch-alpineroute/frontend run start",
+    "typecheck": "pnpm -r run typecheck",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,mjs,cjs,json,md,css,yaml,yml}\"",
+    "test": "pnpm -r --if-present run test",
+    "test:db": "pnpm --filter @ch-alpineroute/backend run test:db",
+    "db:migrate": "pnpm --filter @ch-alpineroute/backend run db:migrate",
+    "pipeline": "pnpm --filter @ch-alpineroute/backend run pipeline",
+    "worker": "pnpm --filter @ch-alpineroute/backend run worker",
+    "report:quality": "pnpm --filter @ch-alpineroute/backend run report:quality"
   },
-  "dependencies": {
-    "zod": "^3.24.1"
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "eslint": "^9.17.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-react-hooks": "^5",
+    "globals": "^15.14.0",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.18.2"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "sharp"
+    ]
   }
 }
