@@ -3,6 +3,7 @@
  * null und werden als «–» bzw. «unbekannt» dargestellt. */
 
 import type {
+  Availability,
   DestinationDetail,
   DestinationWithStatus,
   DriveInfo,
@@ -101,6 +102,8 @@ export interface PCard {
   liveAt: string | null;
   quality: number | null;
   blockedReason: string | null;
+  /** Verfügbarkeit zur geplanten Zeit (Suche); null = nicht geprüft. */
+  availability: Availability | null;
 }
 
 /* ---- Farben / Labels ----------------------------------------------------- */
@@ -291,6 +294,7 @@ export function adaptResult(r: SearchItem): PCard {
     pisteKm: r.ski?.pisteKm ?? null,
     quality: r.qualityScore ?? null,
     blockedReason: r.blockedReason,
+    availability: r.availability ?? null,
     ...liveFields(r.live),
   };
 }
@@ -356,6 +360,7 @@ export function adaptFavorite(d: DestinationWithStatus): PCard {
     pisteKm: null,
     quality: d.qualityScore ?? null,
     blockedReason: null,
+    availability: null,
     ...liveFields(d.live),
   };
 }
@@ -433,6 +438,8 @@ export function adaptDetail(d: DestinationDetail): PDetail {
     pisteKm: d.ski?.pisteKm ?? null,
     quality: d.qualityScore ?? null,
     blockedReason: null,
+    // Ski: Gebiet; Wandern: beste Variante (je Variante unter routes[].src.availability).
+    availability: (type === 'ski' ? d.availability : best?.src.availability) ?? null,
     ...liveFields(d.live),
     altNames: [...new Set([...Object.values(d.names ?? {}), ...(d.altNames ?? [])])].filter((n) => n && n !== d.name),
     routes,
@@ -529,4 +536,42 @@ export async function fetchForecast(lat: number, lng: number, elevation: number 
       pop: roundOrNull(dly.precipitation_probability_max[i]),
     };
   });
+}
+
+/* ---- Verfügbarkeit und Tourplanung ------------------------------------------ */
+
+const zurichDay = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Zurich', year: 'numeric', month: '2-digit', day: '2-digit' });
+
+/** Datum (YYYY-MM-DD) in Schweizer Zeit, heute + `offset` Tage. */
+export function planDate(offset: number, now = new Date()): string {
+  const today = zurichDay.format(now);
+  const t = Date.parse(`${today}T12:00:00Z`) + offset * 86_400_000;
+  return new Date(t).toISOString().slice(0, 10);
+}
+
+const dayFmt = new Intl.DateTimeFormat('de-CH', { timeZone: 'UTC', weekday: 'short', day: 'numeric', month: 'numeric' });
+
+/** «heute ab 10 Uhr», «morgen ab 8 Uhr», «Mo 16.11. ab 8 Uhr». */
+export function planLabel(plan: { date: string; startHour: number } | null | undefined, now = new Date()): string | null {
+  if (!plan) return null;
+  const day = plan.date === planDate(0, now) ? 'heute' : plan.date === planDate(1, now) ? 'morgen' : dayFmt.format(new Date(`${plan.date}T12:00:00Z`));
+  return `${day} ab ${plan.startHour} Uhr`;
+}
+
+/** Kurzform der Gründe für ausgeblendete Ziele, z. B. «Schnee 250 · Tageslicht 78». */
+export const REASON_LABEL: Record<string, string> = {
+  closure: 'Sperrungen',
+  snow: 'Schnee',
+  weather: 'Wetter',
+  avalanche: 'Lawinen',
+  daylight: 'Tageslicht',
+  operation: 'Betrieb unbekannt',
+};
+
+export function reasonSummary(reasons: Record<string, number> | undefined): string {
+  const nf = new Intl.NumberFormat('de-CH');
+  return Object.entries(reasons ?? {})
+    .sort((a, b) => b[1] - a[1])
+    .map(([k, n]) => `${REASON_LABEL[k] ?? k} ${nf.format(n)}`)
+    .join(' · ');
 }

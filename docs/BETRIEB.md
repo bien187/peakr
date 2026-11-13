@@ -6,12 +6,18 @@ Erstmalige Einrichtung: [SETUP_EXTERNAL.md](../SETUP_EXTERNAL.md).
 
 | Was | Workflow | Takt (UTC) | Dauer |
 |---|---|---|---|
-| Skigebiete: Wetter, Schnee, Lawine | Peakr Worker → `ski` | `5 */3 * * *` | 2–10 min (je nach Wiederholungen) |
-| Wetterraster der Wanderziele | Peakr Worker → `weather` | `35 */6 * * *` | 2–10 min (je nach Wiederholungen) |
+| Skigebiete: Wetter, Schnee, Lawine; Schneemessungen (SLF IMIS, MeteoSchweiz) | Peakr Worker → `ski` | `5 */3 * * *` | 2–10 min (je nach Wiederholungen) |
+| Wetterraster mit stündlicher Prognose bis übermorgen; Wegsperrungen (geo.admin.ch) samt Zuordnung zu den Routen; Schneemessungen | Peakr Worker → `weather` | `35 */6 * * *` | 3–10 min (je nach Wiederholungen) |
 | Bekanntheit (Wikipedia) | Peakr Worker → `trend` | montags 04:20 | ~3–4 min |
 | Aufräumen | Peakr Worker → `maintenance` | täglich 03:50 | Sekunden |
 | Datenaufbau + Strassengraph | Peakr Daten | montags 02:15 | ~15–25 min |
 | Typecheck, Tests, Build | CI | jeder Push/PR | ~5 min |
+
+Jeder Worker-Lauf wendet vorher die Datenbank-Migrationen an (`pnpm db:migrate`, idempotent). Neue
+Tabellen stehen damit nach dem nächsten Worker-Lauf bereit, nicht erst nach dem wöchentlichen
+Datenaufbau. Fällt eine Quelle der Verfügbarkeitsprüfung aus, bleiben die bisherigen Daten stehen;
+Suche und Detailseite melden zu alte Daten als «unsicher» (siehe
+[VERFUEGBARKEIT_UND_WETTER.md](VERFUEGBARKEIT_UND_WETTER.md)).
 
 Selbst betrieben (Docker, eigener Server) übernimmt `pnpm worker schedule` denselben Zeitplan
 (Europe/Zurich) in einem Dauerprozess; siehe [docker-compose.yml](../docker-compose.yml).

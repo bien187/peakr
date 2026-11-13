@@ -12,6 +12,7 @@ import { PATHS } from '../paths';
 import { chunks, setMeta } from '../runs';
 import { osmRef, representativePoint } from './destinations';
 import { readSourcesMeta, trailGeoPackage } from './prepare';
+import { matchRouteClosures } from '../../repositories/conditions.repo';
 import { buildRoadGraph } from './roadGraphBuilder';
 
 /**
@@ -284,6 +285,7 @@ export async function buildNetwork(): Promise<Record<string, unknown>> {
   }
 
   // 7) Speichern: alles in einer Transaktion, damit die Suche nie einen halben Stand sieht.
+  let closedRoutes: number | null = null;
   await sql.begin(async (tx) => {
     for (const batch of chunks([...trailheads.values()], 2000)) {
       await tx`
@@ -363,6 +365,10 @@ export async function buildNetwork(): Promise<Record<string, unknown>> {
         AND NOT EXISTS (SELECT 1 FROM ski_resort_details s WHERE s.trailhead_id = t.id)
     `;
 
+    // Neue Routen-IDs: gemeldete Sperrungen sofort wieder zuordnen (sonst erst beim nächsten Wetterlauf).
+    const [{ exists }] = await tx<{ exists: boolean }[]>`SELECT to_regclass('public.trail_closures') IS NOT NULL AS exists`;
+    if (exists) closedRoutes = await matchRouteClosures(tx);
+
     const statusRows = [...status].map(([id, route_status]) => ({ id, route_status }));
     for (const batch of chunks(statusRows, 5000)) {
       await tx`
@@ -401,6 +407,7 @@ export async function buildNetwork(): Promise<Record<string, unknown>> {
     ...counters,
     trailheads: trailheads.size,
     valleyStations: { total: stationNet.length, withRoadAccess: stationNet.filter((s) => s.net !== -1 && s.snapM <= 600).length },
+    routesOnClosedTrails: closedRoutes,
   };
 }
 

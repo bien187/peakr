@@ -29,6 +29,13 @@
       "when": 1794600000000,
       "tag": "0003_route_elevations",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794700000000,
+      "tag": "0004_conditions",
+      "breakpoints": true
     }
   ]
 }

@@ -63,5 +63,9 @@ jobs:
           cache: pnpm
       # tsx ist eine devDependency; NODE_ENV=production würde sie sonst weglassen.
       - run: pnpm install --frozen-lockfile --prod=false --filter @ch-alpineroute/backend...
+      # Neue Tabellen/Spalten sofort anlegen, nicht erst beim wöchentlichen Datenaufbau
+      # (idempotent; bereits angewendete Migrationen werden übersprungen).
+      - name: Migrationen
+        run: pnpm db:migrate
       - name: Worker ${{ steps.job.outputs.name }}
         run: pnpm worker ${{ steps.job.outputs.name }}

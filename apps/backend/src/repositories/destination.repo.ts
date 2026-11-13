@@ -255,7 +255,7 @@ async function routeWaypoints(destinationId: string): Promise<Map<number, RouteW
 /** Detailansicht inkl. aller Routenvarianten, Zufahrt, Verlauf und Datenquellen. */
 export async function getDestinationDetail(
   id: string,
-): Promise<{ detail: DestinationDetail; drivePoints: DrivePoints } | null> {
+): Promise<{ detail: DestinationDetail; drivePoints: DrivePoints; weatherCell: string | null } | null> {
   const rows = await sql<DestRow[]>`
     SELECT ${DEST_COLUMNS} FROM destinations d
     LEFT JOIN trend_scores ts ON ts.destination_id = d.id
@@ -379,5 +379,5 @@ export async function getDestinationDetail(
     sources,
     updatedAt: toIsoOrNull(r.updated_at),
   };
-  return { detail, drivePoints };
+  return { detail, drivePoints, weatherCell: r.weather_cell };
 }

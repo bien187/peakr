@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { availabilitySchema } from './availability';
 import { latLngSchema } from './geo';
 import { destinationTypeSchema, routingStatusSchema, sacDifficultySchema, trailheadKindSchema } from './enums';
 
@@ -140,6 +141,8 @@ export const hikeRouteDetailSchema = hikeRouteSummarySchema.extend({
   elevations: z.array(z.number().nullable()).nullable().optional(),
   /** Benannte Orte höchstens 50 m neben dem Weg, in Gehrichtung sortiert. */
   waypoints: z.array(routeWaypointSchema).optional(),
+  /** Verfügbarkeit dieser Variante zur geplanten Zeit (Sperrungen, Schnee, Wetter, Lawinen, Tageslicht). */
+  availability: availabilitySchema.nullable().optional(),
 });
 export type HikeRouteDetail = z.infer<typeof hikeRouteDetailSchema>;
 
@@ -183,6 +186,8 @@ export const destinationDetailSchema = destinationSchema.extend({
   access: trailheadSchema.nullable(),
   /** Fahrzeit zur Talstation; fehlt ohne Startort. */
   accessDrive: driveInfoSchema.nullable().optional(),
+  /** Skigebiet: Verfügbarkeit (Betrieb, Schnee, Wetter, Lawinen). Wandern: je Route unter `routes`. */
+  availability: availabilitySchema.nullable().optional(),
   sources: z.array(dataSourceSchema),
   updatedAt: z.string().nullable(),
 });

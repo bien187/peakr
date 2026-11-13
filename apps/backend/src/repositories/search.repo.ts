@@ -134,6 +134,7 @@ export interface SkiCandidateRow extends SkiLiveRow, TrendFields {
   road_snap_m: number | null;
   th_elev: number | null;
   th_quality: number | null;
+  weather_cell: string | null;
 }
 
 export interface WeatherCellRow {
@@ -410,7 +411,7 @@ function skiRow(s: IndexSki, live: SkiLiveRow | undefined, trend: TrendRow | und
     grouping: s.grouping,
     th_id: t?.id ?? null, th_name: t?.name ?? null, th_lat: t?.lat ?? null, th_lng: t?.lng ?? null,
     drive_lat: t?.driveLat ?? null, drive_lng: t?.driveLng ?? null, road_snap_m: t?.roadSnapM ?? null,
-    th_elev: t?.elevationM ?? null, th_quality: t?.quality ?? null,
+    th_elev: t?.elevationM ?? null, th_quality: t?.quality ?? null, weather_cell: d.weatherCell,
     ...(live ?? NO_LIVE),
     ...trendFields(trend),
   };

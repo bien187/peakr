@@ -33,7 +33,28 @@ export interface WeatherSnapshot {
   freshSnowCm: number | null;
   /** Höhe des Modellpunkts in m. */
   modelElevationM: number | null;
+  /** Stündliche Prognose (nur mit `hourly: true`). */
+  forecast?: HourlyForecast | null;
 }
+
+/** Stündliche Prognose ab `start` (UTC), Werte je Stunde; null = fehlt. */
+export interface HourlyForecast {
+  start: string;
+  precip: (number | null)[];
+  /** Neuschnee je Stunde in cm. */
+  snowfall: (number | null)[];
+  code: (number | null)[];
+  /** Böenspitzen in km/h. */
+  gust: (number | null)[];
+  temp: (number | null)[];
+  /** Bewölkung in %. */
+  cloud: (number | null)[];
+}
+
+/** 6 stündliche Grössen; zusammen mit current/daily 12 Variablen = 1,2 Abrufe je Ort. */
+const HOURLY_VARS = 'precipitation,snowfall,weather_code,wind_gusts_10m,temperature_2m,cloud_cover';
+/** Heute bis übermorgen – so weit reicht die Tourplanung. */
+export const FORECAST_DAYS = 3;
 
 export interface OpenMeteoResponse {
   elevation?: number;
@@ -45,6 +66,15 @@ export interface OpenMeteoResponse {
     snow_depth?: number | null;
   };
   daily?: { snowfall_sum?: (number | null)[] };
+  hourly?: {
+    time?: number[];
+    precipitation?: (number | null)[];
+    snowfall?: (number | null)[];
+    weather_code?: (number | null)[];
+    wind_gusts_10m?: (number | null)[];
+    temperature_2m?: (number | null)[];
+    cloud_cover?: (number | null)[];
+  };
 }
 
 const num = (v: number | null | undefined): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
@@ -52,6 +82,30 @@ const int = (v: number | null | undefined): number | null => {
   const n = num(v);
   return n === null ? null : Math.round(n);
 };
+
+/**
+ * Stündliche Reihe (Zeit als Unix-Sekunden, UTC). Nur gleichmässige Stundenschritte
+ * werden übernommen; sonst null statt verschobener Werte.
+ */
+export function parseHourly(h: OpenMeteoResponse['hourly']): HourlyForecast | null {
+  const t = h?.time;
+  if (!t || t.length < 2) return null;
+  for (let i = 1; i < t.length; i++) if (t[i] - t[i - 1] !== 3600) return null;
+  const col = (xs: (number | null)[] | undefined, round = false): (number | null)[] =>
+    t.map((_, i) => {
+      const v = num(xs?.[i]);
+      return v === null ? null : round ? Math.round(v) : Math.round(v * 10) / 10;
+    });
+  return {
+    start: new Date(t[0] * 1000).toISOString(),
+    precip: col(h.precipitation),
+    snowfall: col(h.snowfall),
+    code: col(h.weather_code, true),
+    gust: col(h.wind_gusts_10m, true),
+    temp: col(h.temperature_2m),
+    cloud: col(h.cloud_cover, true),
+  };
+}
 
 export function parseWeather(data: OpenMeteoResponse): WeatherSnapshot {
   const c = data.current;
@@ -64,6 +118,7 @@ export function parseWeather(data: OpenMeteoResponse): WeatherSnapshot {
     snowDepthCm: depthM === null ? null : Math.round(depthM * 100),
     freshSnowCm: num(data.daily?.snowfall_sum?.[0]),
     modelElevationM: int(data.elevation),
+    ...(data.hourly ? { forecast: parseHourly(data.hourly) } : {}),
   };
 }
 
@@ -80,6 +135,8 @@ export interface BatchOptions {
   rateLimitWaitMs?: number;
   /** Pause vor dem zweiten Durchgang über die fehlgeschlagenen Blöcke. */
   secondPassDelayMs?: number;
+  /** Zusätzlich die stündliche Prognose für heute bis übermorgen abrufen. */
+  hourly?: boolean;
 }
 
 const MAX_ATTEMPTS = 4;
@@ -115,6 +172,12 @@ export async function fetchWeatherBatch(points: WeatherPoint[], opts: BatchOptio
       timezone: 'Europe/Zurich',
       forecast_days: '1',
     });
+    if (opts.hourly) {
+      params.set('hourly', HOURLY_VARS);
+      params.set('forecast_days', String(FORECAST_DAYS));
+      // Zeitangaben als Unix-Sekunden: eindeutig UTC, auch über die Zeitumstellung.
+      params.set('timeformat', 'unixtime');
+    }
     if (chunk.every((c) => typeof c.elevation === 'number')) {
       params.set('elevation', chunk.map((c) => Math.round(c.elevation as number)).join(','));
     }

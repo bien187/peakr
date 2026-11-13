@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { availabilitySchema, tourPlanSchema } from './availability';
 import { latLngSchema } from './geo';
 import { hikeKindSchema, modeSchema, routingStatusSchema, sacDifficultySchema } from './enums';
 import {
@@ -38,6 +39,12 @@ export const searchInputSchema = z.object({
   // ── Ski ──
   /** Mindestschneehöhe am Berg in cm; Gebiete ohne Messwert fallen dann weg. */
   minSnowCm: z.number().int().min(0).max(500).optional(),
+
+  // ── Verfügbarkeit ──
+  /** Geplante Tour (Datum heute bis übermorgen, Startstunde); ohne Angabe wählt der Server. */
+  plan: tourPlanSchema.optional(),
+  /** Auch Ziele mit unsicherer Verfügbarkeit zeigen. Nicht verfügbare bleiben immer ausgeblendet. */
+  includeUncertain: z.boolean().default(false),
 
   // ── Ausgabe ──
   /** Sortierung innerhalb jedes Abschnitts. */
@@ -98,6 +105,8 @@ export const searchResultSchema = destinationSchema.extend({
   blockedReason: z.string().nullable(),
   /** Nur bei Vorschlägen gesetzt: wie viele Minuten über dem Limit (für "+X Min"). */
   overBudgetMinutes: z.number().int().nullable(),
+  /** Verfügbarkeit der gewählten Route bzw. des Skigebiets zur geplanten Zeit. */
+  availability: availabilitySchema.nullable().optional(),
 });
 export type SearchResult = z.infer<typeof searchResultSchema>;
 
@@ -139,6 +148,12 @@ export const searchResponseSchema = z.object({
     suggestions: z.number().int(),
     sacUnknown: z.number().int(),
     unrouted: z.number().int(),
+    /** In Reichweite, aber wegen unsicherer Verfügbarkeit ausgeblendet (ohne includeUncertain). */
+    hiddenUncertain: z.number().int().default(0),
+    /** In Reichweite, aber nicht verfügbar (gesperrt, Schnee, Sturm …) – immer ausgeblendet. */
+    excludedUnavailable: z.number().int().default(0),
+    /** Häufigste Gründe der Ausblendung: Prüfung → Anzahl Ziele. */
+    hiddenReasons: z.record(z.number().int()).default({}),
   }),
   /** ALLE Treffer als Kartenpunkte (nur auf der ersten Seite mitgeliefert). */
   points: z.array(mapPointSchema).default([]),
@@ -157,6 +172,18 @@ export const searchResponseSchema = z.object({
     excludedUnknownSnow: z.number().int().default(0),
     /** 'unavailable': Datenbank nicht erreichbar – Treffer und Fahrzeiten stimmen, Wetter/Schnee/Lawine fehlen. */
     liveData: z.enum(['ok', 'unavailable']).default('ok'),
+    /** Planung, für die die Verfügbarkeit bewertet wurde. */
+    plan: tourPlanSchema.nullable().default(null),
+    /** Stand der Grundlagen der Verfügbarkeitsprüfung (null = nicht vorhanden). */
+    conditions: z
+      .object({
+        closuresAt: z.string().nullable(),
+        snowAt: z.string().nullable(),
+        forecastAt: z.string().nullable(),
+        avalancheAt: z.string().nullable(),
+      })
+      .nullable()
+      .default(null),
     dataVersion: z.string().nullable(),
     cached: z.boolean().default(false),
     tookMs: z.number().int().default(0),

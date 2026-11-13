@@ -185,7 +185,7 @@ Alle Befehle dazu (ohne Kopieren von Geheimnissen): [SETUP_EXTERNAL.md](../SETUP
 - **Fahrzeiten** ohne Verkehr, Baustellen und tageszeitliche Sperren; Saisonsperren mit Stand des wöchentlichen Graph-Builds; Startort muss höchstens 3 km von einer Strasse liegen.
 - **Routen** werden berechnet, nicht begangen. 34 % der Ziele (vor allem hochalpine Gipfel über Gletscher, z. B. Titlis, Wildhorn, Mont Fort) haben keinen durchgehenden Weg im Netz und erscheinen nur unter «ohne Route». 16,8 % der Routen haben keine bekannte SAC-Schwierigkeit.
 - **Parkplätze** stammen aus OSM; 92 % sind ohne Namen (Anzeige «Parkplatz auf … m»), 802 Ausgangspunkte sind nur Strassenzugänge ohne bestätigten Parkplatz (gekennzeichnet).
-- **Schneehöhen** sind Modellwerte (Open-Meteo) an Tal- und Bergstation, keine Messungen der Bergbahnen.
+- **Schneehöhen** der Skigebiete sind Modellwerte (Open-Meteo) an Tal- und Bergstation. Gemessene Werte stammen von nahen Stationen (SLF IMIS, MeteoSchweiz), nicht von den Bergbahnen. Die technische Beschneiung ist nicht erfasst (siehe Abschnitt 14).
 - **Pistenkilometer** summieren die OSM-Pistenlinien inkl. Freeride/Skirouten und können von Angaben der Bergbahnen abweichen.
 - **Gruppierung der Skigebiete** ist automatisch; zusammenhängende Grossgebiete können anders geschnitten sein als im Marketing (z. B. «4 Vallées – Verbier/La Tzoumaz/Nendaz/Veysonnaz/Thyon» als ein Gebiet, im Oberengadin dagegen «Corviglia» und «St. Moritz – Zuoz» getrennt).
 - **Wanderwege-Overlay, Grundkarte, Feuerstellen** kommen live von swisstopo bzw. Overpass; bei deren Ausfall fehlen sie in der Karte (die Suche funktioniert weiter).
@@ -248,6 +248,53 @@ starten, Worker füllen, neu deployen – siehe [SETUP_EXTERNAL.md](../SETUP_EXT
 `apps/frontend/scripts/fetch-road-graph.mjs`, `apps/frontend/next.config.mjs`,
 `.github/workflows/{data,workers}.yml`, `.env.example`, `SETUP_EXTERNAL.md`, `README.md`,
 `docs/{ARCHITEKTUR,BETRIEB,ABSCHLUSSBERICHT}.md`.
+
+## 14. Nachtrag: GPX/swisstopo, Verfügbarkeit und Wetterkarte (14.11.2026)
+
+Zwei Aufträge, je ein Pull Request (#9 GPX/swisstopo, #10 Verfügbarkeit und Wetterkarte; #10 enthält
+#9). Ausführlich: [GPX_UND_SWISSTOPO.md](GPX_UND_SWISSTOPO.md) und
+[VERFUEGBARKEIT_UND_WETTER.md](VERFUEGBARKEIT_UND_WETTER.md).
+
+**Neu**
+
+- **Wanderroute exportieren:**
+  - «In Swisstopo öffnen» übergibt die Route als GPX-Ebene an map.geo.admin.ch, über `layers=GPX|<URL>` im Format des offiziellen Viewers.
+  - «GPX herunterladen» liefert GPX 1.1 mit Track inkl. Höhen, Start, Ziel und benannten Orten am Weg.
+  - Die Pipeline speichert dafür die Höhe je Stützpunkt.
+- **Verfügbarkeit** (verfügbar / unsicher / nicht verfügbar) je Route bzw. Skigebiet für die geplante Tour:
+  - geprüft werden Sperrungen, Schnee entlang der Route, Wetter zur Tourzeit, Lawinenbulletin nach Höhenlage, Tageslicht bzw. der Betrieb;
+  - standardmässig erscheinen nur verfügbare Ziele;
+  - jede Prüfung nennt Belegart, Quelle und Stand.
+- **Live-Wetterkarte:**
+  - Schalter «Wetter» auf der Karte;
+  - Radar MeteoSchweiz (gemessen), Prognose bis 48 h für Niederschlag, Bewölkung, Neuschnee, Temperatur, Böen;
+  - Zeitleiste und Legende.
+
+**Neue Quellen** (alle gratis, offene Lizenzen):
+- Sperrungen Wanderwege (geo.admin.ch, ASTRA/Schweizer Wanderwege/Kantone);
+- SLF Measurement API (IMIS-Schneehöhen);
+- MeteoSchweiz Schneemessnetz und Radar (PRECIP);
+- stündliche Prognose von Open-Meteo im bestehenden Abruf.
+
+**Vollständigkeit gegenüber den Aufträgen:**
+- Umgesetzt ist alles ausser der optionalen Warnebene der Wetterkarte. Für MeteoSchweiz-Warnungen gibt es keine offene, maschinenlesbare Quelle.
+- Nicht beurteilt werden die Exposition (Schnee, Lawinen), die Schneehöhe an Mittelstationen und die technische Beschneiung. Dazu fehlen offene Daten.
+
+**Tests** (alle grün):
+- 189 Unit-Tests und 36 Datenbanktests;
+- GPX gegen das offizielle Schema geprüft und mit OpenLayers gelesen (Parser des swisstopo-Viewers);
+- Radar an echten Dateien und an Regenmessern geprüft;
+- Browsertests Desktop und Mobil;
+- swisstopo-Viewer mit übergebener Route geprüft.
+
+**Laufende Kosten:** keine.
+- Open-Meteo rund 7'800 von 10'000 Gratisabrufen pro Tag.
+- Die Wetterkarte liest nur die Datenbank bzw. das CDN.
+- Prognosen werden nur bei neuem Stand aus Neon geladen.
+
+**Nach dem Merge** (Reihenfolge #8 → #9 → #10):
+1. `gh workflow run "Peakr Worker" -f job=weather`: wendet die Migrationen an und füllt Prognosen, Sperrungen und Schneemessungen (~5 min). Bis dahin gelten alle Ziele als «unsicher».
+2. `gh workflow run "Peakr Daten"` (~20 min): berechnet die Routen mit Höhen je Stützpunkt für die GPX-Dateien. Ohne diesen Lauf kommen die Höhen erst mit dem Lauf am Montag.
 
 ---
 

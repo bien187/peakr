@@ -12,10 +12,13 @@ import {
   registerInputSchema,
   routeGpx,
   searchInputSchema,
+  tourPlanSchema,
   updateMeSchema,
   type AuthResponse,
   type DestinationDetail,
   type DestinationWithStatus,
+  type ForecastGridResponse,
+  type RadarFramesResponse,
   type GeocodeResult,
   type HealthResponse,
   type LatLng,
@@ -25,7 +28,9 @@ import {
 import { z } from 'zod';
 import { AppError, validate } from '../lib/errors';
 import { logger } from '../lib/logger';
+import { getForecastGrid } from '../repositories/conditions.repo';
 import { getDestinationDetail } from '../repositories/destination.repo';
+import { listRadarFrames, parseStamp, radarCoordinates, radarPng, stampOf } from '../services/radar.service';
 import { addFavorite, listFavorites, removeFavorite } from '../repositories/favorites.repo';
 import { getPublicUser, updateProfile } from '../repositories/user.repo';
 import { login, rateLimit, register, requireUser } from '../services/auth.service';
@@ -64,10 +69,18 @@ export async function apiSearch(body: unknown, clientIp: string): Promise<Search
 
 /**
  * Detailansicht. `from` («lat,lng») ist optional: mit Startort wird je
- * Ausgangspunkt die Autofahrzeit ergänzt.
+ * Ausgangspunkt die Autofahrzeit ergänzt. `date` (YYYY-MM-DD) und `start`
+ * (Stunde) bestimmen die Planung für die Verfügbarkeit; ungültige Werte →
+ * Standardplanung.
  */
-export async function apiDestination(id: string, from?: string | null, clientIp = 'local'): Promise<DestinationDetail> {
+export async function apiDestination(
+  id: string,
+  from?: string | null,
+  clientIp = 'local',
+  plan?: { date?: string | null; start?: string | null },
+): Promise<DestinationDetail> {
   const destinationId = validate(uuid, id);
+  const parsedPlan = tourPlanSchema.safeParse({ date: plan?.date ?? undefined, startHour: plan?.start ? Number(plan.start) : undefined });
   let origin: LatLng | undefined;
   if (from) {
     const [lat, lng] = from.split(',').map(Number);
@@ -77,9 +90,39 @@ export async function apiDestination(id: string, from?: string | null, clientIp 
       await rateLimit('detail', clientIp, 120, 60);
     }
   }
-  const detail = await destinationDetail(destinationId, origin);
+  const detail = await destinationDetail(destinationId, origin, parsedPlan.success ? parsedPlan.data : undefined);
   if (!detail) throw new AppError(404, 'NOT_FOUND', 'Ziel nicht gefunden.');
   return detail;
+}
+
+// ── Wetterkarte ──────────────────────────────────────────────────────────────
+
+const weatherVar = z.enum(['precip', 'snowfall', 'gust', 'temp', 'cloud']);
+
+/** Prognoseraster einer Grösse (aus der Datenbank; keine Abrufe bei Open-Meteo). */
+export async function apiWeatherForecast(variable: string | null): Promise<ForecastGridResponse> {
+  return getForecastGrid(validate(weatherVar, variable ?? 'precip'), new Date());
+}
+
+/** Die jüngsten Radarbilder von MeteoSchweiz (5-Minuten-Takt, letzte Stunde). */
+export async function apiRadarFrames(): Promise<RadarFramesResponse> {
+  const frames = await listRadarFrames(new Date(), 12);
+  return {
+    evidence: 'measured',
+    source: 'MeteoSchweiz, Niederschlagsradar (PRECIP)',
+    frames: frames.map((t) => ({ time: t.toISOString(), stamp: stampOf(t) })),
+    coordinates: radarCoordinates(),
+  };
+}
+
+/** Radarbild als PNG; null = für diesen Zeitpunkt nicht (mehr) vorhanden. */
+export async function apiRadarImage(stamp: string): Promise<Buffer | null> {
+  const at = parseStamp(stamp);
+  if (!at) throw new AppError(400, 'VALIDATION', 'Ungültiger Zeitstempel.');
+  const age = Date.now() - at.getTime();
+  // MeteoSchweiz hält die Bilder 14 Tage bereit; Zukunft gibt es nicht.
+  if (age < 0 || age > 14 * 86_400_000) return null;
+  return radarPng(at);
 }
 
 const routeRank = z.coerce.number().int().min(1).max(20);

@@ -73,3 +73,27 @@ describe('Adapter', () => {
     expect(adaptPoint(['id', 'X', 46, 9, 'ski', 'result', 50, null]).type).toBe('ski');
   });
 });
+
+describe('Planung und Verfügbarkeit', () => {
+  it('Datum in Schweizer Zeit, auch kurz vor Mitternacht UTC', async () => {
+    const { planDate } = await import('./peakr');
+    const now = new Date('2026-11-13T23:30:00Z'); // 00:30 am 14.11. in der Schweiz
+    expect(planDate(0, now)).toBe('2026-11-14');
+    expect(planDate(2, now)).toBe('2026-11-16');
+  });
+
+  it('beschreibt die Planung in Worten', async () => {
+    const { planLabel } = await import('./peakr');
+    const now = new Date('2026-11-13T10:00:00Z');
+    expect(planLabel({ date: '2026-11-13', startHour: 12 }, now)).toBe('heute ab 12 Uhr');
+    expect(planLabel({ date: '2026-11-14', startHour: 8 }, now)).toBe('morgen ab 8 Uhr');
+    expect(planLabel({ date: '2026-11-15', startHour: 8 }, now)).toMatch(/15\.11\. ab 8 Uhr$/);
+    expect(planLabel(null, now)).toBeNull();
+  });
+
+  it('fasst die Gründe ausgeblendeter Ziele zusammen, häufigster zuerst', async () => {
+    const { reasonSummary } = await import('./peakr');
+    expect(reasonSummary({ snow: 250, closure: 16, daylight: 78 })).toBe('Schnee 250 · Tageslicht 78 · Sperrungen 16');
+    expect(reasonSummary({})).toBe('');
+  });
+});
