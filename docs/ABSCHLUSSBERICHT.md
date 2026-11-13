@@ -111,27 +111,33 @@ mehr verwendet. Platzbedarf lokal 109 MB.
 
 ## 7. Worker-Status
 
-| Job | Lokal ausgeführt | Ergebnis |
-|---|---|---|
-| `ski` | ja | 317/317 Gebiete, 0 Fehler; Lawinenstufe für 140 (Bulletin deckt im November nur einen Teil der Regionen ab) |
-| `weather` | ja | 584/584 Rasterzellen |
-| `trend` | ja | Status `partial`: 724 von 725 Zielen mit Wert, 1 Abruf nach Wikimedia-Drosselung (HTTP 429) offen – holt der nächste Lauf nach; der alte User-Agent wurde komplett abgewiesen |
-| `maintenance` | ja, auch im Docker-Container | erfolgreich |
+Stand 13.11.2026, 14:35 Uhr – alle Läufe auf **GitHub Actions gegen die Produktionsdatenbank (Neon)**:
 
-**Produktion:** nicht aktiv – es gibt keine Datenbank. Der Workflow «Peakr Worker» ist neu geschrieben
-und muss auf GitHub wieder aktiviert werden (Abschnitt 10). Er wurde **nicht** auf GitHub ausgeführt.
+| Job | Ergebnis | Hinweis |
+|---|---|---|
+| Peakr Daten (Pipeline) | erfolgreich in 8½ min | 19'225 Wanderziele, 317 Skigebiete, 22'404 Routen, 149 Lawinenregionen; Release `data-latest` mit Strassengraph (39,7 MB) und Suchindex (1,9 MB); 0 Warnungen |
+| `trend` | 725/725 | Wikipedia-Seitenaufrufe für alle Ziele mit eigenem Artikel |
+| `ski` | 317/317, 0 Fehler | erster Versuch mit dem alten Code scheiterte vollständig (s. u.); mit Wiederholungen alle Gebiete; Lawinenstufe für die 94 Regionen des aktuellen Bulletins |
+| `weather` | 564/564 Rasterzellen, 0 Fehler | mit Wiederholungen |
+| `maintenance` | läuft täglich nach Zeitplan | lokal und im Docker-Container geprüft |
+
+**Open-Meteo von GitHub aus:** Der Verbindungsaufbau von den GitHub-Runnern zu `api.open-meteo.com`
+(nur IPv4, 157.90.83.168) kommt zeitweise nicht zustande (`UND_ERR_CONNECT_TIMEOUT`). Belegt: ein Lauf
+mit 100 % Ausfall, Folgeläufe mit 10–12 gescheiterten von ~20 Versuchen. Ursache auf der Gegenseite
+nicht überprüfbar (Vermutung: Drosselung stark genutzter Cloud-Adressen). Behebung: bis zu 4 Versuche
+je Block mit wachsender Pause und ein zweiter Durchgang; Laufzeit dadurch bis ~10 min statt 1–2 min.
+Die Fehlermeldungen nennen jetzt die Ursache statt nur «fetch failed».
 
 ## 8. Deployment-Status
 
 | Teil | Status |
 |---|---|
-| Code | fertig, nicht committet/gepusht (Entscheidung des Besitzers) |
-| Vercel `peakr-ch.vercel.app` | läuft mit dem **alten** Stand; Suche liefert HTTP 500 (keine DB) |
-| Produktions-Build | lokal erfolgreich; Strassengraph wird in die Funktionen gepackt |
+| Code | auf `main` (PR #6); Fix für Open-Meteo-Wiederholungen in PR #7 |
+| Vercel `peakr-ch.vercel.app` | neue Version live; Datenbank erreichbar, Anmeldung eingerichtet. Strassengraph und Suchindex kommen mit dem nächsten Deployment (Release war beim letzten Build noch leer) |
+| Datenbank | Neon (Free, Frankfurt), über die Vercel-Integration; Schema und Daten aufgebaut |
+| GitHub Actions | «CI», «Peakr Daten», «Peakr Worker» aktiv und erfolgreich gelaufen |
+| Release `data-latest` | vorhanden, öffentlich ladbar |
 | Docker (`app`, `worker`) | Images gebaut, Container gegen lokale DB getestet |
-| Datenbank | Neon über die Vercel-Integration anzulegen (Supabase entfällt) |
-| GitHub Actions | Workflows geschrieben, nicht auf GitHub gelaufen |
-| Release `data-latest` | entsteht beim ersten Lauf von «Peakr Daten» (Strassengraph + Suchindex) |
 
 ## 9. Testergebnisse (13.11.2026, lokal)
 

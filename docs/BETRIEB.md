@@ -6,8 +6,8 @@ Erstmalige Einrichtung: [SETUP_EXTERNAL.md](../SETUP_EXTERNAL.md).
 
 | Was | Workflow | Takt (UTC) | Dauer |
 |---|---|---|---|
-| Skigebiete: Wetter, Schnee, Lawine | Peakr Worker → `ski` | `5 */3 * * *` | ~1–2 min |
-| Wetterraster der Wanderziele | Peakr Worker → `weather` | `35 */6 * * *` | ~1 min |
+| Skigebiete: Wetter, Schnee, Lawine | Peakr Worker → `ski` | `5 */3 * * *` | 2–10 min (je nach Wiederholungen) |
+| Wetterraster der Wanderziele | Peakr Worker → `weather` | `35 */6 * * *` | 2–10 min (je nach Wiederholungen) |
 | Bekanntheit (Wikipedia) | Peakr Worker → `trend` | montags 04:20 | ~3–4 min |
 | Aufräumen | Peakr Worker → `maintenance` | täglich 03:50 | Sekunden |
 | Datenaufbau + Strassengraph | Peakr Daten | montags 02:15 | ~15–25 min |
@@ -87,6 +87,7 @@ Gegen Produktion: `DATABASE_URL=<direkte Neon-URL> pnpm …` voranstellen (Wert 
 | Suche zeigt «Live-Daten gerade nicht abrufbar» | Datenbank kurz nicht erreichbar oder Neon-Kontingent erschöpft (Neon-Konsole → *Usage*). Treffer und Fahrzeiten bleiben korrekt. |
 | `degraded`, Job `worker:*` `stale` | *Actions → Peakr Worker*: Workflow deaktiviert? (*Enable workflow*). Letzten Lauf ansehen; Secret `DATABASE_URL` gesetzt? |
 | Job-Status `partial` | Ein Teil der Abrufe scheiterte (Open-Meteo-Kontingent, Netzwerk). Wird beim nächsten Lauf nachgeholt; dauerhaft? Log des Laufs prüfen. |
+| Log zeigt `fetch failed (UND_ERR_CONNECT_TIMEOUT)` bei Open-Meteo | Von GitHub-Runnern aus kommt der Verbindungsaufbau zu `api.open-meteo.com` zeitweise nicht zustande (beobachtet am 13.11.2026: in einem Lauf jeder Versuch, in anderen 10–60 % der Versuche). Der Worker wiederholt je Block bis zu viermal mit wachsender Pause und macht am Ende einen zweiten Durchgang; der Lauf dauert dann bis ~10 min. Scheitern dauerhaft alle Versuche, ist Open-Meteo von GitHub aus nicht erreichbar – der Worker kann dann nur noch lokal bzw. auf einem eigenen Server (`pnpm worker schedule`) laufen. |
 | Worker-Lauf meldet «Lauf übersprungen: derselbe Job läuft bereits» | Ein anderer Lauf desselben Jobs läuft noch oder ist abgestürzt; die Sperre läuft nach 30 min (Trend 120 min) ab. |
 | «Vom Startort aus ist im Umkreis von 3 km keine Strasse erreichbar» | Startpunkt mitten im Gelände bzw. See. Anderen Startort wählen. |
 | Bekanntes Ziel fehlt | Amtliche Schreibweise prüfen (z. B. «Gross Mythen», «Harderkulm»). Hat es keine Route, erscheint es nur mit «Ziele ohne bekannte Route zeigen». `SELECT name, route_status FROM destinations WHERE name ILIKE '%…%'`. |
