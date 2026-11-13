@@ -1,4 +1,4 @@
-import { fetchJson, HttpError } from '../lib/http';
+import { describeError, fetchJson, HttpError } from '../lib/http';
 import { logger } from '../lib/logger';
 
 /**
@@ -115,7 +115,7 @@ export async function fetchWeatherBatch(points: WeatherPoint[], opts: BatchOptio
       } catch (err) {
         rateLimited = err instanceof HttpError && err.status === 429;
         logger.warn(
-          { chunkStart: start, attempt, status: err instanceof HttpError ? err.status : undefined, error: err instanceof Error ? err.message.slice(0, 120) : String(err) },
+          { chunkStart: start, attempt, status: err instanceof HttpError ? err.status : undefined, error: describeError(err).slice(0, 400) },
           'Open-Meteo-Anfrage fehlgeschlagen',
         );
         if (!rateLimited || attempt === 3) break;
