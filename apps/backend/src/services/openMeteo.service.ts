@@ -1,137 +1,132 @@
-import { fetchJson } from '../lib/http';
+import { fetchJson, HttpError } from '../lib/http';
+import { logger } from '../lib/logger';
+
+/**
+ * Open-Meteo (kostenlos für nicht-kommerzielle Nutzung, CC BY 4.0).
+ *
+ * Kontingent des Gratiszugangs: 600 Abrufe/Minute, 5'000/Stunde, 10'000/Tag;
+ * jeder Ort in einer Sammelanfrage zählt als ein Abruf. Der frühere Worker
+ * fragte jedes Ziel einzeln ab (57'000 Abrufe/Tag) und lief ins Limit. Jetzt
+ * werden nur Skigebiete und Rasterzellen abgefragt, gedrosselt auf ≤ 500/Minute.
+ */
+
+const FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
+const CHUNK = 100;
+/** Pause zwischen Sammelanfragen: 100 Orte alle 12 s = 500 Abrufe/Minute. */
+const CHUNK_PAUSE_MS = 12_000;
+
+export interface WeatherPoint {
+  lat: number;
+  lng: number;
+  /** Höhe in m, für die Open-Meteo die Temperatur herunterrechnet (optional). */
+  elevation?: number | null;
+}
 
 export interface WeatherSnapshot {
   temperatureC: number | null;
   weatherCode: number | null;
   visibilityM: number | null;
   windKmh: number | null;
-  /** Aktuelle Schneehöhe in cm (Open-Meteo liefert m). */
+  /** Schneehöhe in cm (Open-Meteo liefert Meter). */
   snowDepthCm: number | null;
   /** Neuschnee heute (Tagessumme) in cm. */
   freshSnowCm: number | null;
-  fetchedAt: string;
-  raw: unknown;
+  /** Höhe des Modellpunkts in m. */
+  modelElevationM: number | null;
 }
 
 export interface OpenMeteoResponse {
-  hourly?: {
-    time: string[];
-    temperature_2m?: (number | null)[];
-    snow_depth?: (number | null)[];
-    snowfall?: (number | null)[];
-    visibility?: (number | null)[];
-    wind_speed_10m?: (number | null)[];
-    weather_code?: (number | null)[];
+  elevation?: number;
+  current?: {
+    temperature_2m?: number | null;
+    weather_code?: number | null;
+    visibility?: number | null;
+    wind_speed_10m?: number | null;
+    snow_depth?: number | null;
   };
-  daily?: {
-    time: string[];
-    snowfall_sum?: (number | null)[];
-    weather_code?: (number | null)[];
-  };
+  daily?: { snowfall_sum?: (number | null)[] };
 }
 
-const num = (v: number | null | undefined): number | null =>
-  typeof v === 'number' && Number.isFinite(v) ? v : null;
+const num = (v: number | null | undefined): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 const int = (v: number | null | undefined): number | null => {
   const n = num(v);
   return n === null ? null : Math.round(n);
 };
 
-/** Index der Stunde, die "jetzt" am nächsten ist. */
-export function currentHourIndex(times: string[] | undefined): number {
-  if (!times || times.length === 0) return 0;
-  const now = Date.now();
-  let best = 0;
-  let bestDiff = Infinity;
-  for (let i = 0; i < times.length; i++) {
-    const diff = Math.abs(new Date(times[i]).getTime() - now);
-    if (diff < bestDiff) {
-      bestDiff = diff;
-      best = i;
-    }
-  }
-  return best;
-}
-
 export function parseWeather(data: OpenMeteoResponse): WeatherSnapshot {
-  const h = data.hourly;
-  const i = currentHourIndex(h?.time);
-  const depthM = num(h?.snow_depth?.[i]);
+  const c = data.current;
+  const depthM = num(c?.snow_depth);
   return {
-    temperatureC: num(h?.temperature_2m?.[i]),
-    weatherCode: int(h?.weather_code?.[i] ?? data.daily?.weather_code?.[0]),
-    visibilityM: int(h?.visibility?.[i]),
-    windKmh: num(h?.wind_speed_10m?.[i]),
+    temperatureC: num(c?.temperature_2m),
+    weatherCode: int(c?.weather_code),
+    visibilityM: int(c?.visibility),
+    windKmh: num(c?.wind_speed_10m),
     snowDepthCm: depthM === null ? null : Math.round(depthM * 100),
     freshSnowCm: num(data.daily?.snowfall_sum?.[0]),
-    fetchedAt: new Date().toISOString(),
-    raw: data,
+    modelElevationM: int(data.elevation),
   };
 }
 
-export async function fetchWeather(lat: number, lng: number): Promise<WeatherSnapshot> {
-  const params = new URLSearchParams({
-    latitude: String(lat),
-    longitude: String(lng),
-    hourly: 'temperature_2m,snow_depth,snowfall,visibility,wind_speed_10m,weather_code',
-    daily: 'snowfall_sum,weather_code',
-    timezone: 'Europe/Zurich',
-    forecast_days: '1',
-  });
-  const data = await fetchJson<OpenMeteoResponse>(
-    `https://api.open-meteo.com/v1/forecast?${params.toString()}`,
-    { timeoutMs: 8000, retries: 1 },
-  );
-  return parseWeather(data);
-}
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-export interface Coord {
-  lat: number;
-  lng: number;
+export interface BatchOptions {
+  /** Wird zwischen den Anfragen geprüft; true bricht sauber ab. */
+  shouldStop?: () => boolean;
+  pauseMs?: number;
 }
 
 /**
- * Holt Wetter für viele Koordinaten in wenigen Requests. Open-Meteo akzeptiert
- * kommagetrennte `latitude`/`longitude`-Listen und liefert dann ein Array (ein
- * Objekt pro Koordinate, gleiche Reihenfolge). So werden aus tausenden
- * Einzel-Calls ~Dutzende — entscheidend gegen das Free-Tier-Stundenlimit.
- *
- * Liefert ein Array gleicher Länge wie `coords`; fehlgeschlagene Chunks ergeben
- * `null`-Einträge (kein Lauf-Abbruch).
+ * Wetter für viele Orte in gedrosselten Sammelanfragen. Liefert ein Array
+ * gleicher Länge; fehlgeschlagene Blöcke ergeben null-Einträge. Bei HTTP 429
+ * wird bis zu dreimal nach einer Minute wiederholt; hält das Limit an, bricht
+ * der Lauf ab, statt weiter gegen das Kontingent zu laufen.
  */
-export async function fetchWeatherBatch(
-  coords: Coord[],
-  chunkSize = 100,
-): Promise<(WeatherSnapshot | null)[]> {
-  const out: (WeatherSnapshot | null)[] = new Array(coords.length).fill(null);
+export async function fetchWeatherBatch(points: WeatherPoint[], opts: BatchOptions = {}): Promise<(WeatherSnapshot | null)[]> {
+  const out: (WeatherSnapshot | null)[] = new Array(points.length).fill(null);
+  const pause = opts.pauseMs ?? CHUNK_PAUSE_MS;
 
-  for (let start = 0; start < coords.length; start += chunkSize) {
-    const chunk = coords.slice(start, start + chunkSize);
+  for (let start = 0; start < points.length; start += CHUNK) {
+    if (opts.shouldStop?.()) break;
+    const chunk = points.slice(start, start + CHUNK);
     const params = new URLSearchParams({
       latitude: chunk.map((c) => c.lat.toFixed(5)).join(','),
       longitude: chunk.map((c) => c.lng.toFixed(5)).join(','),
-      hourly: 'temperature_2m,snow_depth,snowfall,visibility,wind_speed_10m,weather_code',
-      daily: 'snowfall_sum,weather_code',
+      current: 'temperature_2m,weather_code,visibility,wind_speed_10m,snow_depth',
+      daily: 'snowfall_sum',
       timezone: 'Europe/Zurich',
       forecast_days: '1',
     });
-    try {
-      const data = await fetchJson<OpenMeteoResponse | OpenMeteoResponse[]>(
-        `https://api.open-meteo.com/v1/forecast?${params.toString()}`,
-        { timeoutMs: 15000, retries: 2 },
-      );
-      // Ein einzelnes Element → Objekt, mehrere → Array. Einheitlich behandeln.
-      const arr = Array.isArray(data) ? data : [data];
-      for (let i = 0; i < chunk.length; i++) {
-        const item = arr[i];
-        out[start + i] = item ? parseWeather(item) : null;
-      }
-    } catch {
-      // Chunk bleibt null — der Aufrufer zählt das als "failed" und macht weiter.
+    if (chunk.every((c) => typeof c.elevation === 'number')) {
+      params.set('elevation', chunk.map((c) => Math.round(c.elevation as number)).join(','));
     }
-    // Sanftes Throttling zwischen Chunks (deutlich unter 600 Calls/min).
-    await new Promise((r) => setTimeout(r, 200));
-  }
 
+    let rateLimited = false;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const data = await fetchJson<OpenMeteoResponse | OpenMeteoResponse[]>(`${FORECAST_URL}?${params.toString()}`, {
+          timeoutMs: 20_000,
+          retries: 1,
+          retryDelayMs: 2000,
+        });
+        const arr = Array.isArray(data) ? data : [data];
+        for (let i = 0; i < chunk.length; i++) out[start + i] = arr[i] ? parseWeather(arr[i]) : null;
+        rateLimited = false;
+        break;
+      } catch (err) {
+        rateLimited = err instanceof HttpError && err.status === 429;
+        logger.warn(
+          { chunkStart: start, attempt, status: err instanceof HttpError ? err.status : undefined, error: err instanceof Error ? err.message.slice(0, 120) : String(err) },
+          'Open-Meteo-Anfrage fehlgeschlagen',
+        );
+        if (!rateLimited || attempt === 3) break;
+        await sleep(65_000);
+      }
+    }
+    if (rateLimited) {
+      logger.error({ fetched: start }, 'Open-Meteo-Kontingent erschöpft – Lauf wird beendet');
+      break;
+    }
+    if (start + CHUNK < points.length) await sleep(pause);
+  }
   return out;
 }

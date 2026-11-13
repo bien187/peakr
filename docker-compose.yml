@@ -1,26 +1,31 @@
-# CH-AlpineRoute — komplette App lokal via Docker.
-#   docker compose up -d --build     # DB + Migration + Backend + Frontend + Worker
-#   docker compose ps                # Status
-#   docker compose logs -f backend   # Logs
-#   docker compose down              # alles stoppen (Daten bleiben im Volume)
+# Peakr – kompletter Betrieb lokal oder auf einem eigenen Server.
 #
-# Daten laden (einmalig, nachdem alles läuft):
-#   docker compose run --rm migrate pnpm import:slf-regions
-#   docker compose run --rm migrate pnpm import:destinations
+#   docker compose up -d db                                  # Datenbank
+#   docker compose run --rm pipeline                         # Daten aufbauen (einmalig, ~10–20 min)
+#   docker compose up -d --build app worker                  # Web-App + Worker
+#   docker compose logs -f worker
+#   docker compose down                                      # stoppen (Daten bleiben in den Volumes)
+#
+# Daten neu aufbauen (z. B. wöchentlich): docker compose run --rm pipeline
 
-x-backend-env: &backend-env
+x-env: &env
   NODE_ENV: production
-  DATABASE_URL: postgresql://${POSTGRES_USER:-alpine}:${POSTGRES_PASSWORD:-alpine}@db:5432/${POSTGRES_DB:-ch_alpineroute}
-  CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
+  DATABASE_URL: postgresql://${POSTGRES_USER:-alpine}:${POSTGRES_PASSWORD:-alpine}@db:5432/${POSTGRES_DB:-peakr}
+  JWT_SECRET: ${JWT_SECRET:?JWT_SECRET in .env setzen (openssl rand -base64 48)}
+  DATA_DIR: /data
+  ROAD_GRAPH_PATH: /data/artifacts/road-graph.bin
 
-# Gemeinsame Build-/Image-/Env-Definition für API, Migration und Worker.
 x-backend: &backend
   build:
     context: .
     dockerfile: apps/backend/Dockerfile
-  image: ch-alpineroute-backend
-  env_file: .env
-  environment: *backend-env
+  image: peakr-backend
+  environment: *env
+  volumes:
+    - peakrdata:/data
+  depends_on:
+    db:
+      condition: service_healthy
 
 services:
   db:
@@ -30,74 +35,45 @@ services:
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-alpine}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-alpine}
-      POSTGRES_DB: ${POSTGRES_DB:-ch_alpineroute}
+      POSTGRES_DB: ${POSTGRES_DB:-peakr}
     ports:
       - '${POSTGRES_PORT:-5432}:5432'
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test:
-        ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-alpine} -d ${POSTGRES_DB:-ch_alpineroute}']
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-alpine} -d ${POSTGRES_DB:-peakr}']
       interval: 5s
       timeout: 5s
       retries: 10
 
-  # Einmaliger Migrations-Lauf (stellt PostGIS + Schema sicher), dann Ende.
-  migrate:
+  # Migrationen + kompletter Datenaufbau; endet danach.
+  pipeline:
     <<: *backend
-    command: ['pnpm', 'db:migrate']
-    depends_on:
-      db:
-        condition: service_healthy
+    command: ['sh', '-c', 'pnpm db:migrate && pnpm pipeline all']
     restart: 'no'
+    profiles: ['tools']
 
-  backend:
+  # Live-Daten nach eingebautem Zeitplan (Wetter, Schnee, Lawine, Trend, Aufräumen).
+  worker:
     <<: *backend
-    ports:
-      - '${BACKEND_PORT:-4000}:4000'
-    depends_on:
-      db:
-        condition: service_healthy
-      migrate:
-        condition: service_completed_successfully
+    command: ['sh', '-c', 'pnpm db:migrate && pnpm worker schedule']
     restart: unless-stopped
 
-  worker-live:
-    <<: *backend
-    command: ['pnpm', 'worker:live']
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-    restart: unless-stopped
-
-  worker-trend:
-    <<: *backend
-    command: ['pnpm', 'worker:trend']
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-    restart: unless-stopped
-
-  frontend:
+  app:
     build:
       context: .
       dockerfile: apps/frontend/Dockerfile
-    image: ch-alpineroute-frontend
-    environment:
-      NODE_ENV: production
+    image: peakr-app
+    environment: *env
+    volumes:
+      - peakrdata:/data:ro
     ports:
       - '3000:3000'
     depends_on:
-      - backend
+      db:
+        condition: service_healthy
     restart: unless-stopped
-
-  redis:
-    image: redis:7-alpine
-    container_name: ch_alpineroute_redis
-    restart: unless-stopped
-    ports:
-      - '${REDIS_PORT:-6379}:6379'
-    profiles: ['with-redis']
 
 volumes:
   pgdata:
+  peakrdata:

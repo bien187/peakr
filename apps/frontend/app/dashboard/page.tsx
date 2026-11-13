@@ -4,7 +4,7 @@ import type { DestinationWithStatus, GeocodeResult, LatLng } from '@ch-alpinerou
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { Icon } from '@/components/Icon';
-import { ScoreDot } from '@/components/PeakrUI';
+import { TypeChip, WeatherChip } from '@/components/PeakrUI';
 import { TopBar } from '@/components/PeakrChrome';
 import { api } from '@/lib/api';
 import { adaptFavorite } from '@/lib/peakr';
@@ -69,7 +69,6 @@ export default function DashboardPage() {
   const [mounted, setMounted] = useState(false);
   const [list, setList] = useState<DestinationWithStatus[]>([]);
   const [msg, setMsg] = useState<string | null>(null);
-  const [openAiKey, setOpenAiKey] = useState('');
 
   useEffect(() => setMounted(true), []);
   useEffect(() => {
@@ -129,7 +128,7 @@ export default function DashboardPage() {
               return (
                 <article key={d.id} className="fav-card" onClick={() => router.push(`/destinations/${d.id}`)}>
                   <div className="fav-card-top">
-                    <ScoreDot score={d.score} />
+                    <TypeChip kind={d.kind} />
                     <button
                       type="button"
                       className="icon-btn"
@@ -144,23 +143,25 @@ export default function DashboardPage() {
                   </div>
                   <h3 className="fav-name">{d.name}</h3>
                   <p className="fav-meta">
-                    {isSki ? 'Skigebiet' : 'Wanderziel'}
-                    {d.canton ? ` · ${d.canton}` : ''}
+                    {d.canton ? `Kanton ${d.canton}` : 'Schweiz'}
+                    {d.topM != null ? ` · ${d.topM} m` : ''}
                   </p>
                   <div className="fav-stats">
                     {isSki ? (
                       <>
-                        <span className="mono">{d.snowTop ?? '–'} cm</span>
+                        <span className="mono">Schnee {d.snowTop != null ? `${d.snowTop} cm` : '–'}</span>
                         <span className="dot-sep" />
                         <span>
-                          {d.liftsTotal != null ? `${d.liftsOpen ?? 0}/${d.liftsTotal}` : '–'} Lifte
+                          {d.liftsTotal == null
+                            ? 'Anlagen –'
+                            : d.liftsOpen != null
+                              ? `${d.liftsOpen}/${d.liftsTotal} Lifte offen`
+                              : `${d.liftsTotal} Anlagen`}
                         </span>
                       </>
                     ) : (
                       <>
-                        <span>{d.sac ?? '–'}</span>
-                        <span className="dot-sep" />
-                        <span className="mono">{d.distance ?? '–'} km</span>
+                        <WeatherChip code={d.weather} temp={d.temp} approx={d.tempAdjusted} />
                       </>
                     )}
                   </div>
@@ -183,37 +184,6 @@ export default function DashboardPage() {
           )}
         </section>
 
-        <section className="detail-card" style={{ marginTop: 'var(--gap)' }}>
-          <h2 className="detail-h2">OpenAI-Key (optional)</h2>
-          <p className="detail-note" style={{ marginTop: 0 }}>
-            Status: {user?.hasOpenAiKey ? 'hinterlegt ✓' : 'nicht hinterlegt'}. Wird verschlüsselt
-            gespeichert und nie angezeigt.
-          </p>
-          <div className="auth-form" style={{ flexDirection: 'row', gap: 8 }}>
-            <input
-              className="input"
-              type="password"
-              placeholder="sk-…"
-              value={openAiKey}
-              onChange={(e) => setOpenAiKey(e.target.value)}
-              style={{ flex: 1 }}
-            />
-            <button
-              type="button"
-              className="btn"
-              disabled={openAiKey.trim().length < 20}
-              onClick={async () => {
-                await api.setOpenAiKey(openAiKey);
-                setOpenAiKey('');
-                const me = await api.me();
-                setUser(me);
-                setMsg('OpenAI-Key gespeichert.');
-              }}
-            >
-              Speichern
-            </button>
-          </div>
-        </section>
       </div>
     </>
   );

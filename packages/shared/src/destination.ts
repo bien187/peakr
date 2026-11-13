@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import { latLngSchema } from './geo';
-import { destinationTypeSchema, sacDifficultySchema } from './enums';
+import { destinationTypeSchema, routingStatusSchema, sacDifficultySchema, trailheadKindSchema } from './enums';
 
-/** Ein Live-Snapshot (Wetter/Schnee/Lawine/Lift) zu einem Ziel. */
+/** Aktuelle Bedingungen (Wetter/Schnee/Lawine/Lift) zu einem Ziel. Unbekanntes ist null. */
 export const liveStatusSchema = z.object({
   capturedAt: z.string(),
   temperatureC: z.number().nullable(),
@@ -17,6 +17,10 @@ export const liveStatusSchema = z.object({
   liftsTotal: z.number().int().nullable(),
   slopesOpenKm: z.number().nullable(),
   trailStatus: z.string().nullable(),
+  /** true = Temperatur aus dem Wetterraster auf die Zielhöhe umgerechnet (Näherung). */
+  temperatureAdjusted: z.boolean().optional(),
+  /** Quelle des Liftstatus; null = keine Live-Quelle vorhanden. */
+  liftSource: z.string().nullable().optional(),
 });
 export type LiveStatus = z.infer<typeof liveStatusSchema>;
 
@@ -44,11 +48,88 @@ export const destinationSchema = z.object({
   distanceKm: z.number().nullable(),
   wikipediaTitle: z.string().nullable(),
   slfRegionId: z.string().nullable(),
-  // v2: Qualitäts-/Klassifikationsfelder
-  poiKind: z.string().nullable().optional(),       // 'peak'|'lake'|'hut'|'viewpoint'
-  qualityScore: z.number().int().nullable().optional(), // 0–100
+  /** 'peak' | 'lake' | 'hut' | 'viewpoint' | 'pass' bei Wanderzielen. */
+  poiKind: z.string().nullable().optional(),
+  /** Objektart der Quelle, z. B. «Hauptgipfel», «Schutzhütte», «Kleinskigebiet». */
+  objectClass: z.string().nullable().optional(),
+  /** Metadaten-Qualität 0–100 (sagt nichts über Existenz oder Wanderbarkeit). */
+  qualityScore: z.number().int().nullable().optional(),
+  /** 'routed' | 'no_route' | 'unrouted' | 'not_applicable'. */
+  routeStatus: z.string().optional(),
+  /** Herkunft der Stammdaten: 'swissnames3d' | 'osm'. */
+  sourceLayer: z.string().nullable().optional(),
 });
 export type Destination = z.infer<typeof destinationSchema>;
+
+/** Ausgangspunkt: Parkplatz, Strassenzugang oder Talstation. */
+export const trailheadSchema = z.object({
+  id: z.string().uuid(),
+  kind: trailheadKindSchema,
+  name: z.string().nullable(),
+  location: latLngSchema,
+  elevationM: z.number().int().nullable(),
+  /** 3 = öffentlicher Parkplatz, 2 = Parkplatz ohne Zugangsangabe, 1 = Strassenzugang ohne bestätigten Parkplatz. */
+  quality: z.number().int().min(1).max(3),
+  /** Abstand Strassenende → Ausgangspunkt in Metern (relevant bei autofreien Orten). */
+  roadGapM: z.number().nullable(),
+  fee: z.string().nullable().optional(),
+  capacity: z.string().nullable().optional(),
+});
+export type Trailhead = z.infer<typeof trailheadSchema>;
+
+/** Kennzahlen einer berechneten Wanderroute Ausgangspunkt → Ziel. */
+export const hikeRouteSummarySchema = z.object({
+  routeId: z.number().int(),
+  rank: z.number().int(),
+  distanceKm: z.number(),
+  ascentM: z.number().int(),
+  descentM: z.number().int(),
+  /** Geschätzte Gehzeit hin (DIN 33466), Minuten. */
+  durationUpMin: z.number().int(),
+  durationDownMin: z.number().int(),
+  minElevM: z.number().int().nullable(),
+  maxElevM: z.number().int().nullable(),
+  /** null = Schwierigkeit unbekannt. sacMin < sacMax bedeutet «T2–T3» (amtliche Wegkategorie). */
+  sacMin: sacDifficultySchema.nullable(),
+  sacMax: sacDifficultySchema.nullable(),
+  /** Anteil der Strecke mit bekannter Schwierigkeit, 0–1. */
+  sacKnownShare: z.number(),
+  /** Anteil der Strecke auf amtlich signalisierten Wanderwegen, 0–1. */
+  officialShare: z.number(),
+  /** Abstand zwischen Routenende und Zielpunkt in Metern. */
+  endGapM: z.number().int(),
+  source: z.string(),
+  computedAt: z.string(),
+});
+export type HikeRouteSummary = z.infer<typeof hikeRouteSummarySchema>;
+
+/** Autofahrt vom angefragten Startort zu einem Ausgangspunkt (nur mit Startort in der Anfrage). */
+export const driveInfoSchema = z.object({
+  /** Minuten; null = nicht berechenbar (siehe status). */
+  minutes: z.number().nullable(),
+  distanceKm: z.number().nullable(),
+  status: routingStatusSchema,
+});
+export type DriveInfo = z.infer<typeof driveInfoSchema>;
+
+export const hikeRouteDetailSchema = hikeRouteSummarySchema.extend({
+  trailhead: trailheadSchema,
+  /** Fahrzeit zum Ausgangspunkt dieser Variante; fehlt ohne Startort. */
+  drive: driveInfoSchema.nullable().optional(),
+  /** GeoJSON-Linie [lng, lat] vom Ausgangspunkt zum Ziel. */
+  line: z.array(z.tuple([z.number(), z.number()])),
+});
+export type HikeRouteDetail = z.infer<typeof hikeRouteDetailSchema>;
+
+/** Statische Angaben zu einem Skigebiet (aus OpenStreetMap). */
+export const skiInfoSchema = z.object({
+  liftsTotal: z.number().int(),
+  liftsByType: z.record(z.number()),
+  pisteKm: z.number().nullable(),
+  pisteKmByDifficulty: z.record(z.number()),
+  grouping: z.string(),
+});
+export type SkiInfo = z.infer<typeof skiInfoSchema>;
 
 /** Ziel inkl. aktuellem Status & Trend (ohne Verlauf) — z.B. für Favoriten. */
 export const destinationWithStatusSchema = destinationSchema.extend({
@@ -57,10 +138,30 @@ export const destinationWithStatusSchema = destinationSchema.extend({
 });
 export type DestinationWithStatus = z.infer<typeof destinationWithStatusSchema>;
 
-/** Detailansicht inkl. aktuellem Status, Trend und Verlauf für Charts. */
+export const dataSourceSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  attribution: z.string().nullable(),
+  license: z.string().nullable(),
+  version: z.string().nullable(),
+  fetchedAt: z.string().nullable(),
+});
+export type DataSourceInfo = z.infer<typeof dataSourceSchema>;
+
+/** Detailansicht inkl. Routen, Zufahrt, Status, Trend und Verlauf. */
 export const destinationDetailSchema = destinationSchema.extend({
+  names: z.record(z.string()).optional(),
+  altNames: z.array(z.string()).optional(),
   live: liveStatusSchema.nullable(),
   trend: trendScoreSchema.nullable(),
   history: z.array(liveStatusSchema),
+  routes: z.array(hikeRouteDetailSchema),
+  ski: skiInfoSchema.nullable(),
+  /** Zufahrtspunkt eines Skigebiets (Talstation). */
+  access: trailheadSchema.nullable(),
+  /** Fahrzeit zur Talstation; fehlt ohne Startort. */
+  accessDrive: driveInfoSchema.nullable().optional(),
+  sources: z.array(dataSourceSchema),
+  updatedAt: z.string().nullable(),
 });
 export type DestinationDetail = z.infer<typeof destinationDetailSchema>;

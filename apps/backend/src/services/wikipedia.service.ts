@@ -3,8 +3,10 @@ import { fetchJson, HttpError } from '../lib/http';
 const PAGEVIEWS_BASE =
   'https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article/de.wikipedia/all-access/all-agents';
 
-// Wikimedia verlangt einen aussagekräftigen User-Agent.
-const USER_AGENT = 'CH-AlpineRoute/0.1 (privates Tool; kontakt via lokale Instanz)';
+// Wikimedia verlangt einen User-Agent mit Kontaktmöglichkeit (URL oder E-Mail);
+// generische Kennungen werden mit HTTP 429 abgewiesen.
+// https://foundation.wikimedia.org/wiki/Policy:Wikimedia_Foundation_User-Agent_Policy
+const USER_AGENT = 'Peakr/1.0 (+https://github.com/bien187/peakr) trend-worker';
 
 function yyyymmdd(d: Date): string {
   return d.toISOString().slice(0, 10).replace(/-/g, '');
@@ -26,7 +28,8 @@ export async function fetchPageviewsSum(article: string, days = 30): Promise<num
   try {
     const data = await fetchJson<{ items?: { views?: number }[] }>(url, {
       timeoutMs: 8000,
-      retries: 1,
+      retries: 2,
+      retryDelayMs: 2000,
       headers: { 'User-Agent': USER_AGENT },
     });
     return (data.items ?? []).reduce((sum, item) => sum + (item.views ?? 0), 0);

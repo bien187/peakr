@@ -5,5 +5,7 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['src/**/*.test.ts'],
+    // Datenbanktests brauchen eine befüllte DB: separat mit `pnpm test:db`.
+    exclude: ['src/**/*.db.test.ts', 'node_modules/**'],
   },
 });

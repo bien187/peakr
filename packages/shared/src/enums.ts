@@ -22,14 +22,25 @@ export const SAC_ORDER: Record<SacDifficulty, number> = {
 export const modeSchema = z.enum(['ski', 'hike']);
 export type Mode = z.infer<typeof modeSchema>;
 
-/** Optionaler Wanderziel-Filter. */
-export const hikeKindSchema = z.enum(['any', 'peak', 'lake', 'hut', 'viewpoint', 'route']);
+/** Zielarten beim Wandern (mehrere gleichzeitig wählbar). */
+export const hikeKindSchema = z.enum(['peak', 'lake', 'hut', 'viewpoint', 'pass']);
 export type HikeKind = z.infer<typeof hikeKindSchema>;
+export const HIKE_KINDS: HikeKind[] = ['peak', 'lake', 'hut', 'viewpoint', 'pass'];
 
 /** Benutzerrolle. */
 export const userRoleSchema = z.enum(['user', 'admin']);
 export type UserRole = z.infer<typeof userRoleSchema>;
 
-/** Status eines Wanderwegs / einer Piste. */
-export const trailStatusSchema = z.enum(['open', 'partial', 'closed', 'unknown']);
-export type TrailStatus = z.infer<typeof trailStatusSchema>;
+/**
+ * Stand der Fahrzeitberechnung für ein Ergebnis.
+ *  ok          – Strassenroute bis zum Ausgangspunkt berechnet
+ *  partial     – Strasse endet vor dem Ausgangspunkt (z. B. autofreier Ort); Zeit bis zum Strassenende
+ *  no_route    – kein Strassenweg innerhalb der Suchgrenze gefunden
+ *  unavailable – Fahrzeitberechnung steht nicht zur Verfügung
+ */
+export const routingStatusSchema = z.enum(['ok', 'partial', 'no_route', 'unavailable']);
+export type RoutingStatus = z.infer<typeof routingStatusSchema>;
+
+/** Art des Ausgangspunkts. */
+export const trailheadKindSchema = z.enum(['parking', 'road_access', 'valley_station']);
+export type TrailheadKind = z.infer<typeof trailheadKindSchema>;

@@ -1,58 +1,56 @@
 import type {
-  Destination,
+  DataSourceInfo,
   DestinationDetail,
+  DestinationWithStatus,
+  HikeRouteDetail,
   LiveStatus,
-  SearchInput,
-  TrendScore,
+  SacDifficulty,
+  Trailhead,
 } from '@ch-alpineroute/shared';
 import { queryClient as sql } from '../db';
 import { toIso, toIsoOrNull } from '../lib/dates';
+import { hikeLive } from '../services/search.service';
+import { getAvalancheLevels, getWeatherCells } from './search.repo';
 
-/** Roh-Zeile aus dem Kandidaten-Query (destination + neuester live + trend). */
-interface CandidateRow {
+interface DestRow {
   id: string;
   name: string;
-  type: Destination['type'];
+  type: DestinationDetail['type'];
   canton: string | null;
   lat: number;
   lng: number;
   elevation_base_m: number | null;
   elevation_top_m: number | null;
-  sac_difficulty: Destination['sacDifficulty'];
+  sac_difficulty: SacDifficulty | null;
   ascent_m: number | null;
   distance_km: number | null;
   wikipedia_title: string | null;
   slf_region_id: string | null;
   poi_kind: string | null;
+  object_class: string | null;
   quality_score: number | null;
-  captured_at: Date | null;
-  temperature_c: number | null;
-  weather_code: number | null;
-  visibility_m: number | null;
-  wind_kmh: number | null;
-  snow_depth_valley_cm: number | null;
-  snow_depth_top_cm: number | null;
-  fresh_snow_cm: number | null;
-  avalanche_level: number | null;
-  lifts_open: number | null;
-  lifts_total: number | null;
-  slopes_open_km: number | null;
-  trail_status: string | null;
+  route_status: string;
+  source_layer: string | null;
+  weather_cell: string | null;
+  names: Record<string, unknown> | null;
+  updated_at: Date | string | null;
   trend_score: number | null;
   trend_rationale: string | null;
   trend_source: string | null;
   trend_is_estimate: boolean | null;
-  trend_updated_at: Date | null;
+  trend_updated_at: Date | string | null;
 }
 
-export interface Candidate {
-  destination: Destination;
-  airKm: number;
-  live: LiveStatus | null;
-  trend: TrendScore | null;
-}
+const DEST_COLUMNS = sql`
+  d.id, d.name, d.type, d.canton, d.lat::float8 AS lat, d.lng::float8 AS lng,
+  d.elevation_base_m, d.elevation_top_m, d.sac_difficulty, d.ascent_m, d.distance_km,
+  d.wikipedia_title, d.slf_region_id, d.poi_kind, d.object_class, d.quality_score, d.route_status,
+  d.source_layer, d.weather_cell, d.names, d.updated_at,
+  ts.score AS trend_score, ts.rationale AS trend_rationale, ts.source AS trend_source,
+  ts.is_estimate AS trend_is_estimate, ts.updated_at AS trend_updated_at
+`;
 
-function rowToDestination(r: CandidateRow): Destination {
+function base(r: DestRow): DestinationWithStatus {
   return {
     id: r.id,
     name: r.name,
@@ -67,180 +65,253 @@ function rowToDestination(r: CandidateRow): Destination {
     wikipediaTitle: r.wikipedia_title,
     slfRegionId: r.slf_region_id,
     poiKind: r.poi_kind,
+    objectClass: r.object_class,
     qualityScore: r.quality_score,
+    routeStatus: r.route_status,
+    sourceLayer: r.source_layer,
+    live: null,
+    trend:
+      r.trend_score == null
+        ? null
+        : {
+            score: r.trend_score,
+            rationale: r.trend_rationale,
+            source: r.trend_source,
+            isEstimate: r.trend_is_estimate ?? true,
+            updatedAt: toIsoOrNull(r.trend_updated_at),
+          },
   };
 }
 
-function rowToLive(r: CandidateRow): LiveStatus | null {
-  if (!r.captured_at) return null;
+interface LiveRow {
+  captured_at: Date | string;
+  temperature_c: number | null;
+  weather_code: number | null;
+  visibility_m: number | null;
+  wind_kmh: number | null;
+  snow_depth_valley_cm: number | null;
+  snow_depth_top_cm: number | null;
+  fresh_snow_cm: number | null;
+  avalanche_level: number | null;
+  lifts_open: number | null;
+  lifts_total: number | null;
+  slopes_open_km: number | null;
+  trail_status: string | null;
+  lift_source: string | null;
+}
+
+function liveFromRow(h: LiveRow, liftsTotal: number | null): LiveStatus {
   return {
-    capturedAt: toIso(r.captured_at),
-    temperatureC: r.temperature_c,
-    weatherCode: r.weather_code,
-    visibilityM: r.visibility_m,
-    windKmh: r.wind_kmh,
-    snowDepthValleyCm: r.snow_depth_valley_cm,
-    snowDepthTopCm: r.snow_depth_top_cm,
-    freshSnowCm: r.fresh_snow_cm,
-    avalancheLevel: r.avalanche_level,
-    liftsOpen: r.lifts_open,
-    liftsTotal: r.lifts_total,
-    slopesOpenKm: r.slopes_open_km,
-    trailStatus: r.trail_status,
+    capturedAt: toIso(h.captured_at),
+    temperatureC: h.temperature_c,
+    weatherCode: h.weather_code,
+    visibilityM: h.visibility_m,
+    windKmh: h.wind_kmh,
+    snowDepthValleyCm: h.snow_depth_valley_cm,
+    snowDepthTopCm: h.snow_depth_top_cm,
+    freshSnowCm: h.fresh_snow_cm,
+    avalancheLevel: h.avalanche_level,
+    liftsOpen: h.lifts_open,
+    liftsTotal: liftsTotal ?? h.lifts_total,
+    slopesOpenKm: h.slopes_open_km,
+    trailStatus: h.trail_status,
+    liftSource: h.lift_source,
   };
 }
 
-function rowToTrend(r: CandidateRow): TrendScore | null {
-  if (r.trend_score == null) return null;
-  return {
-    score: r.trend_score,
-    rationale: r.trend_rationale,
-    source: r.trend_source,
-    isEstimate: r.trend_is_estimate ?? true,
-    updatedAt: toIsoOrNull(r.trend_updated_at),
-  };
+/** Aktuelle Bedingungen: Skigebiete aus live_status, Wanderziele aus dem Wetterraster. */
+async function attachLive(rows: DestRow[]): Promise<Map<string, LiveStatus | null>> {
+  const out = new Map<string, LiveStatus | null>();
+  const skiIds = rows.filter((r) => r.type === 'ski_resort').map((r) => r.id);
+  const [weather, avalanche] = await Promise.all([getWeatherCells(), getAvalancheLevels()]);
+  if (skiIds.length > 0) {
+    const live = await sql<(LiveRow & { destination_id: string; resort_lifts: number | null })[]>`
+      SELECT DISTINCT ON (l.destination_id) l.destination_id, l.captured_at, l.temperature_c, l.weather_code,
+             l.visibility_m, l.wind_kmh, l.snow_depth_valley_cm, l.snow_depth_top_cm, l.fresh_snow_cm, l.avalanche_level,
+             l.lifts_open, l.lifts_total, l.slopes_open_km, l.trail_status, l.lift_source, s.lifts_total AS resort_lifts
+      FROM live_status l
+      LEFT JOIN ski_resort_details s ON s.destination_id = l.destination_id
+      WHERE l.destination_id = ANY(${skiIds})
+      ORDER BY l.destination_id, l.captured_at DESC
+    `;
+    for (const l of live) out.set(l.destination_id, liveFromRow(l, l.resort_lifts));
+  }
+  for (const r of rows) {
+    if (r.type === 'ski_resort') {
+      if (!out.has(r.id)) out.set(r.id, null);
+      continue;
+    }
+    const level = r.slf_region_id ? (avalanche.get(r.slf_region_id)?.level ?? null) : null;
+    out.set(r.id, hikeLive(r.weather_cell ? weather.get(r.weather_cell) : undefined, r.elevation_top_m, level));
+  }
+  return out;
 }
 
-// Gemeinsame Spaltenliste (destination + neuester live-Snapshot + trend).
-const CANDIDATE_COLUMNS = sql`
-  d.id, d.name, d.type, d.canton,
-  d.lat::float8 AS lat,
-  d.lng::float8 AS lng,
-  d.elevation_base_m, d.elevation_top_m, d.sac_difficulty, d.ascent_m, d.distance_km,
-  d.wikipedia_title, d.slf_region_id, d.poi_kind, d.quality_score,
-  ls.captured_at, ls.temperature_c, ls.weather_code, ls.visibility_m, ls.wind_kmh,
-  ls.snow_depth_valley_cm, ls.snow_depth_top_cm, ls.fresh_snow_cm, ls.avalanche_level,
-  ls.lifts_open, ls.lifts_total, ls.slopes_open_km, ls.trail_status,
-  ts.score AS trend_score, ts.rationale AS trend_rationale, ts.source AS trend_source,
-  ts.is_estimate AS trend_is_estimate, ts.updated_at AS trend_updated_at
-`;
-
-const LATEST_LIVE_JOIN = sql`
-  LEFT JOIN LATERAL (
-    SELECT * FROM live_status l WHERE l.destination_id = d.id ORDER BY l.captured_at DESC LIMIT 1
-  ) ls ON true
-  LEFT JOIN trend_scores ts ON ts.destination_id = d.id
-`;
-
-/**
- * Obergrenze der Kandidaten (mit Live-/Trend-Daten) für Liste UND Karte. Hoch
- * genug, dass praktisch ALLE im Fahrzeit-Budget erreichbaren Ziele zurückkommen
- * – sonst entsteht durch den nächste-N-Cutoff ein künstlicher Ring am Kreisrand
- * statt echter, schweizweiter Streuung. Der Live-Join läuft ohnehin über alle
- * erreichbaren Zeilen; das LIMIT begrenzt nur die Ausgabe. Liste ist virtualisiert.
- */
-const CANDIDATE_LIMIT = 8000;
-
-/**
- * Schritt 1 der Suche: PostGIS-Grobfilter per ST_DWithin, ein einziger Query
- * (kein N+1) mit neuestem Live-Snapshot via LATERAL und Trend.
- * Sortiert nach Luftlinie, LIMIT {@link CANDIDATE_LIMIT}.
- */
-const POI_KINDS = ['peak', 'lake', 'hut', 'viewpoint'] as const;
-
-/** Typ- und SAC-Filter (für Kandidaten- und Kartenpunkt-Query identisch). */
-function buildFilters(input: SearchInput) {
-  const kind = input.hikeKind;
-  const typeCond =
-    input.mode === 'ski'
-      ? sql`d.type = 'ski_resort'`
-      : kind === 'route'
-        ? sql`d.type = 'hike_route'`
-        : kind && (POI_KINDS as readonly string[]).includes(kind)
-          ? // Nach Zielart filtern (Gipfel/Bergsee/Hütte/Aussicht) – sonst kämen
-            // bei der nächstgelegenen-N-Auswahl fast nur Gipfel zurück.
-            sql`d.type = 'hike_destination' AND d.poi_kind = ${kind}`
-          : sql`d.type IN ('hike_route', 'hike_destination')`;
-
-  const sacCond = input.maxSacDifficulty
-    ? sql`AND (d.sac_difficulty IS NULL OR d.sac_difficulty <= ${input.maxSacDifficulty}::sac_difficulty)`
-    : sql``;
-
-  return { typeCond, sacCond };
-}
-
-/** Luftlinie in km (Haversine) – günstig in JS statt teurer PostGIS-Geography. */
-function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const R = 6371;
-  const toR = (d: number) => (d * Math.PI) / 180;
-  const dLat = toR(lat2 - lat1);
-  const dLng = toR(lng2 - lng1);
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toR(lat1)) * Math.cos(toR(lat2)) * Math.sin(dLng / 2) ** 2;
-  return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)) * 10) / 10;
-}
-
-export async function findCandidates(input: SearchInput, radiusM: number): Promise<Candidate[]> {
-  const { lat, lng } = input.origin;
-  const { typeCond, sacCond } = buildFilters(input);
-
-  // Bounding-Box-Vorfilter auf lat/lng + planarer Abstand zum Sortieren – um
-  // Größenordnungen schneller als ST_DWithin/ST_Distance auf einer berechneten
-  // Geography (kein Index). Die echte Fahrzeit-Filterung passiert ohnehin später.
-  const latDelta = radiusM / 111_000;
-  const lngDelta = radiusM / 75_000;
-
-  const rows = await sql<CandidateRow[]>`
-    SELECT ${CANDIDATE_COLUMNS}
-    FROM destinations d
-    ${LATEST_LIVE_JOIN}
-    WHERE d.lat BETWEEN ${lat - latDelta} AND ${lat + latDelta}
-      AND d.lng BETWEEN ${lng - lngDelta} AND ${lng + lngDelta}
-      AND ${typeCond}
-      ${sacCond}
-    ORDER BY (d.lat - ${lat}) * (d.lat - ${lat}) + (d.lng - ${lng}) * (d.lng - ${lng}) * 0.46 ASC
-    LIMIT ${CANDIDATE_LIMIT}
+export async function listDestinationsByIds(ids: string[]): Promise<DestinationWithStatus[]> {
+  if (ids.length === 0) return [];
+  const rows = await sql<DestRow[]>`
+    SELECT ${DEST_COLUMNS} FROM destinations d
+    LEFT JOIN trend_scores ts ON ts.destination_id = d.id
+    WHERE d.id = ANY(${ids})
   `;
-
-  return rows.map((r) => ({
-    destination: rowToDestination(r),
-    airKm: haversineKm(lat, lng, r.lat, r.lng),
-    live: rowToLive(r),
-    trend: rowToTrend(r),
-  }));
+  const live = await attachLive(rows);
+  const byId = new Map(rows.map((r) => [r.id, { ...base(r), live: live.get(r.id) ?? null }]));
+  return ids.map((id) => byId.get(id)).filter((d): d is DestinationWithStatus => d !== undefined);
 }
 
-/** Detailansicht inkl. Live-Historie für Charts. */
-export async function getDestinationDetail(id: string): Promise<DestinationDetail | null> {
-  const rows = await sql<CandidateRow[]>`
-    SELECT ${CANDIDATE_COLUMNS}
-    FROM destinations d
-    ${LATEST_LIVE_JOIN}
-    WHERE d.id = ${id}
-    LIMIT 1
+interface RouteRow {
+  id: number;
+  rank: number;
+  distance_m: number;
+  ascent_m: number;
+  descent_m: number;
+  duration_up_min: number;
+  duration_down_min: number;
+  min_elev_m: number | null;
+  max_elev_m: number | null;
+  sac_min: SacDifficulty | null;
+  sac_max: SacDifficulty | null;
+  sac_known_share: number;
+  official_share: number;
+  end_gap_m: number;
+  source: string;
+  computed_at: Date | string;
+  geojson: string;
+  th_id: string;
+  th_kind: Trailhead['kind'];
+  th_name: string | null;
+  th_lat: number;
+  th_lng: number;
+  th_elev: number | null;
+  th_quality: number;
+  road_snap_m: number | null;
+  th_fee: string | null;
+  th_capacity: string | null;
+  drive_lat: number | null;
+  drive_lng: number | null;
+}
+
+/** Punkt auf dem Strassennetz je Ausgangspunkt (für die Fahrzeit in der Detailansicht). */
+export type DrivePoints = Map<string, { lat: number; lng: number }>;
+
+/** Detailansicht inkl. aller Routenvarianten, Zufahrt, Verlauf und Datenquellen. */
+export async function getDestinationDetail(
+  id: string,
+): Promise<{ detail: DestinationDetail; drivePoints: DrivePoints } | null> {
+  const rows = await sql<DestRow[]>`
+    SELECT ${DEST_COLUMNS} FROM destinations d
+    LEFT JOIN trend_scores ts ON ts.destination_id = d.id
+    WHERE d.id = ${id} LIMIT 1
   `;
   const r = rows[0];
   if (!r) return null;
+  const isSki = r.type === 'ski_resort';
 
-  const history = await sql<Record<string, unknown>[]>`
-    SELECT captured_at, temperature_c, weather_code, visibility_m, wind_kmh,
-           snow_depth_valley_cm, snow_depth_top_cm, fresh_snow_cm, avalanche_level,
-           lifts_open, lifts_total, slopes_open_km, trail_status
-    FROM live_status
-    WHERE destination_id = ${id}
-    ORDER BY captured_at DESC
-    LIMIT 60
-  `;
+  const [live, routeRows, skiRows, historyRows, sourceRows] = await Promise.all([
+    attachLive([r]),
+    sql<RouteRow[]>`
+      SELECT hr.id, hr.rank, hr.distance_m, hr.ascent_m, hr.descent_m, hr.duration_up_min, hr.duration_down_min,
+             hr.min_elev_m, hr.max_elev_m, hr.sac_min, hr.sac_max, hr.sac_known_share, hr.official_share, hr.end_gap_m,
+             hr.source, hr.computed_at, ST_AsGeoJSON(hr.geom, 6) AS geojson,
+             t.id AS th_id, t.kind AS th_kind, t.name AS th_name, t.lat::float8 AS th_lat, t.lng::float8 AS th_lng,
+             t.elevation_m AS th_elev, t.quality AS th_quality, t.road_snap_m,
+             t.tags->>'fee' AS th_fee, t.tags->>'capacity' AS th_capacity,
+             t.drive_lat::float8 AS drive_lat, t.drive_lng::float8 AS drive_lng
+      FROM hike_routes hr JOIN trailheads t ON t.id = hr.trailhead_id
+      WHERE hr.destination_id = ${id} ORDER BY hr.rank
+    `,
+    sql<{
+      lifts_total: number; lifts_by_type: Record<string, number>; piste_km: number | null;
+      piste_km_by_difficulty: Record<string, number>; grouping: string;
+      th_id: string | null; th_name: string | null; th_lat: number | null; th_lng: number | null;
+      th_elev: number | null; th_quality: number | null; road_snap_m: number | null;
+      drive_lat: number | null; drive_lng: number | null;
+    }[]>`
+      SELECT s.lifts_total, s.lifts_by_type, s.piste_km, s.piste_km_by_difficulty, s.grouping,
+             t.id AS th_id, t.name AS th_name, t.lat::float8 AS th_lat, t.lng::float8 AS th_lng,
+             t.elevation_m AS th_elev, t.quality AS th_quality, t.road_snap_m,
+             t.drive_lat::float8 AS drive_lat, t.drive_lng::float8 AS drive_lng
+      FROM ski_resort_details s LEFT JOIN trailheads t ON t.id = s.trailhead_id
+      WHERE s.destination_id = ${id}
+    `,
+    isSki
+      ? sql<LiveRow[]>`
+          SELECT captured_at, temperature_c, weather_code, visibility_m, wind_kmh, snow_depth_valley_cm,
+                 snow_depth_top_cm, fresh_snow_cm, avalanche_level, lifts_open, lifts_total, slopes_open_km,
+                 trail_status, lift_source
+          FROM live_status WHERE destination_id = ${id} ORDER BY captured_at DESC LIMIT 120
+        `
+      : Promise.resolve([] as LiveRow[]),
+    sql<{ id: string; name: string; attribution: string | null; license: string | null; version: string | null; fetched_at: Date | string | null }[]>`
+      SELECT id, name, attribution, license, version, fetched_at FROM data_sources ORDER BY id
+    `,
+  ]);
 
-  return {
-    ...rowToDestination(r),
-    live: rowToLive(r),
-    trend: rowToTrend(r),
-    history: history.map((h) => ({
-      capturedAt: toIso(h.captured_at as string),
-      temperatureC: h.temperature_c as number | null,
-      weatherCode: h.weather_code as number | null,
-      visibilityM: h.visibility_m as number | null,
-      windKmh: h.wind_kmh as number | null,
-      snowDepthValleyCm: h.snow_depth_valley_cm as number | null,
-      snowDepthTopCm: h.snow_depth_top_cm as number | null,
-      freshSnowCm: h.fresh_snow_cm as number | null,
-      avalancheLevel: h.avalanche_level as number | null,
-      liftsOpen: h.lifts_open as number | null,
-      liftsTotal: h.lifts_total as number | null,
-      slopesOpenKm: h.slopes_open_km as number | null,
-      trailStatus: h.trail_status as string | null,
-    })),
+  const ski = skiRows[0];
+  const usedSources = new Set<string>(
+    isSki ? ['osm', 'open_meteo', 'slf'] : [r.source_layer ?? 'osm', 'open_meteo', ...(routeRows.length > 0 ? ['osm', 'swisstlm3d_wanderwege', 'terrain_tiles'] : [])],
+  );
+  const sources: DataSourceInfo[] = sourceRows
+    .filter((s) => usedSources.has(s.id))
+    .map((s) => ({ id: s.id, name: s.name, attribution: s.attribution, license: s.license, version: s.version, fetchedAt: toIsoOrNull(s.fetched_at) }));
+
+  const routes: HikeRouteDetail[] = routeRows.map((x) => ({
+    routeId: Number(x.id),
+    rank: x.rank,
+    distanceKm: Math.round(x.distance_m / 100) / 10,
+    ascentM: x.ascent_m,
+    descentM: x.descent_m,
+    durationUpMin: x.duration_up_min,
+    durationDownMin: x.duration_down_min,
+    minElevM: x.min_elev_m,
+    maxElevM: x.max_elev_m,
+    sacMin: x.sac_min,
+    sacMax: x.sac_max,
+    sacKnownShare: x.sac_known_share,
+    officialShare: x.official_share,
+    endGapM: x.end_gap_m,
+    source: x.source,
+    computedAt: toIso(x.computed_at),
+    trailhead: {
+      id: x.th_id, kind: x.th_kind, name: x.th_name, location: { lat: x.th_lat, lng: x.th_lng },
+      elevationM: x.th_elev, quality: x.th_quality, roadGapM: x.road_snap_m, fee: x.th_fee, capacity: x.th_capacity,
+    },
+    line: (JSON.parse(x.geojson) as { coordinates: [number, number][] }).coordinates,
+  }));
+
+  const names = r.names ?? {};
+  const { alt, ...languages } = names as { alt?: string[] } & Record<string, string>;
+
+  const drivePoints: DrivePoints = new Map();
+  for (const x of routeRows) {
+    if (x.drive_lat !== null && x.drive_lng !== null) drivePoints.set(x.th_id, { lat: x.drive_lat, lng: x.drive_lng });
+  }
+  if (ski?.th_id && ski.drive_lat !== null && ski.drive_lng !== null) {
+    drivePoints.set(ski.th_id, { lat: ski.drive_lat, lng: ski.drive_lng });
+  }
+
+  const detail: DestinationDetail = {
+    ...base(r),
+    names: languages,
+    altNames: Array.isArray(alt) ? alt : [],
+    live: live.get(r.id) ?? null,
+    history: historyRows.map((h) => liveFromRow(h, ski?.lifts_total ?? null)),
+    routes,
+    ski: ski
+      ? {
+          liftsTotal: ski.lifts_total, liftsByType: ski.lifts_by_type ?? {}, pisteKm: ski.piste_km,
+          pisteKmByDifficulty: ski.piste_km_by_difficulty ?? {}, grouping: ski.grouping,
+        }
+      : null,
+    access:
+      ski && ski.th_id && ski.th_lat !== null && ski.th_lng !== null
+        ? {
+            id: ski.th_id, kind: 'valley_station', name: ski.th_name, location: { lat: ski.th_lat, lng: ski.th_lng },
+            elevationM: ski.th_elev, quality: ski.th_quality ?? 1, roadGapM: ski.road_snap_m,
+          }
+        : null,
+    sources,
+    updatedAt: toIsoOrNull(r.updated_at),
   };
+  return { detail, drivePoints };
 }
