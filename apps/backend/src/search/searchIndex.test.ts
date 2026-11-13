@@ -149,5 +149,6 @@ describe('Suche ohne erreichbare Datenbank', () => {
 
     setRoadGraphForTests(null);
     setSearchIndexForTests(null);
-  });
+    // Erstes Laden aller Server-Module dauert auf CI-Maschinen mehrere Sekunden.
+  }, 30_000);
 });
