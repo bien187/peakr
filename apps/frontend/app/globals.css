@@ -1,6 +1,9 @@
-/* Nur die Schrift-Variablen auf die lokal optimierten next/font-Familien zeigen.
+/* Nur die Schrift-Variablen auf die mitgelieferten Schriften zeigen (Fontsource, siehe layout.tsx).
    Alles Visuelle (Hintergrund, Farben, Komponenten) kommt aus peakr.css. */
 :root {
+  --font-hanken: 'Hanken Grotesk';
+  --font-spectral: 'Spectral';
+  --font-jetbrains: 'JetBrains Mono';
   --font-sans: var(--font-hanken), ui-sans-serif, system-ui, -apple-system, sans-serif;
   --font-serif: var(--font-spectral), Georgia, 'Times New Roman', serif;
   --font-mono: var(--font-jetbrains), ui-monospace, 'SF Mono', Menlo, monospace;

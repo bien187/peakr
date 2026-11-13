@@ -1,28 +1,22 @@
 import type { Metadata, Viewport } from 'next';
-import { Hanken_Grotesk, JetBrains_Mono, Spectral } from 'next/font/google';
 import { ThemeProvider } from '@/lib/theme';
+// Schriften aus npm (Fontsource, SIL Open Font License) statt next/font/google:
+// Der Build lädt damit nichts von Google Fonts nach – der Vercel-Build war beim
+// Abruf der Schriftdateien abgebrochen. Jede Datei bringt alle Zeichenbereiche mit
+// unicode-range mit; der Browser lädt nur die tatsächlich benötigten.
+import '@fontsource/spectral/400.css';
+import '@fontsource/spectral/500.css';
+import '@fontsource/spectral/600.css';
+import '@fontsource/hanken-grotesk/400.css';
+import '@fontsource/hanken-grotesk/500.css';
+import '@fontsource/hanken-grotesk/600.css';
+import '@fontsource/hanken-grotesk/700.css';
+import '@fontsource/jetbrains-mono/400.css';
+import '@fontsource/jetbrains-mono/500.css';
+import '@fontsource/jetbrains-mono/600.css';
 // Reihenfolge wichtig: erst das komplette Design-System, dann nur die Font-Variablen.
 import './peakr.css';
 import './globals.css';
-
-const spectral = Spectral({
-  subsets: ['latin'],
-  weight: ['400', '500', '600'],
-  variable: '--font-spectral',
-  display: 'swap',
-});
-const hanken = Hanken_Grotesk({
-  subsets: ['latin'],
-  weight: ['400', '500', '600', '700'],
-  variable: '--font-hanken',
-  display: 'swap',
-});
-const jetbrains = JetBrains_Mono({
-  subsets: ['latin'],
-  weight: ['400', '500', '600'],
-  variable: '--font-jetbrains',
-  display: 'swap',
-});
 
 export const metadata: Metadata = {
   title: 'Peakr',
@@ -37,11 +31,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html
-      lang="de"
-      className={`${spectral.variable} ${hanken.variable} ${jetbrains.variable}`}
-      suppressHydrationWarning
-    >
+    <html lang="de" suppressHydrationWarning>
       <body>
         <ThemeProvider>{children}</ThemeProvider>
       </body>

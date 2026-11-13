@@ -93,7 +93,7 @@ Gegen Produktion: `DATABASE_URL=<direkte Neon-URL> pnpm …` voranstellen (Wert 
 | Pipeline: «Programm osmium fehlt» | `brew install osmium-tool` bzw. `apt-get install osmium-tool unzip`. |
 | Pipeline bricht mit «heap out of memory» ab | Mehr RAM bzw. `--max-old-space-size` (Standard 8192) – der Schritt `network` braucht ~6–7 GB. |
 | Karte zeigt nur OSM-Raster statt swisstopo, Konsole «Worker failed to load» | `public/maplibre-gl-worker.mjs` fehlt. Wird von `prebuild`/`predev` kopiert; bei eigenem Build-Befehl `node scripts/copy-map-worker.mjs` vorher ausführen. |
-| Vercel-Build: Google-Fonts-Fehler | Vorübergehender Netzwerkfehler beim Laden der Schriften; erneut deployen. |
+| Vercel-Build bricht in `next/font` ab («Cannot read properties of null (reading '1')») | Betraf frühere Versionen, die Schriften beim Build von Google Fonts luden. Seit 13.11.2026 kommen sie aus npm (Fontsource) – kein Abruf mehr beim Build. |
 | Trend-Werte fehlen | Wikimedia drosselt bei unpassendem User-Agent (HTTP 429). Der Worker sendet `Peakr/1.0 (+https://github.com/bien187/peakr)`; bei Fork die URL anpassen (`services/wikipedia.service.ts`). |
 
 ## Datenschutz und Backups
