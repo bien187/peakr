@@ -28,7 +28,7 @@ Bedingungen. Alles läuft mit kostenlosen, offenen Daten; es gibt keine kostenpf
 | **Ski** | 317 Skigebiete aus OpenStreetMap, gruppiert · Fahrzeit bis zur Talstation · Schnee Tal/Berg, Neuschnee, Wetter, Lawinenstufe · Mindestschneehöhe |
 | **Ergebnisse** | Abschnitte «in Reichweite», «knapp ausserhalb», «Schwierigkeit unbekannt», «ohne Route» · Sortierung nach Bewertung, Fahrzeit, Gehzeit, Höhe, Schnee · seitenweise, ohne Obergrenze |
 | **Karte** | swisstopo-Karte · Zähler fassen nahe Ziele zusammen · gewählte Route und Parkplatz eingezeichnet · Wanderwege-Overlay · Feuerstellen |
-| **Detail** | 3D-Gelände, Karte, Luftbild · alle Routenvarianten mit eigener Fahrzeit · Navigation zum Parkplatz · Anlagen und Pisten · 7-Tage-Prognose · Datenquellen |
+| **Detail** | 3D-Gelände, Karte, Luftbild · alle Routenvarianten mit eigener Fahrzeit · Route in swisstopo öffnen · GPX-Download (Track mit Höhen, Start, Ziel, Orte am Weg) · Navigation zum Parkplatz · Anlagen und Pisten · 7-Tage-Prognose · Datenquellen |
 | **Konto** | Registrierung, Favoriten, Standard-Startort; ohne Konto Favoriten im Browser |
 
 Fehlende Angaben bleiben sichtbar fehlend: unbekannte Schwierigkeit heisst «unbekannt», ohne

@@ -12,9 +12,19 @@
     }
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p test",
+    "test": "vitest run"
   },
   "dependencies": {
     "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@tmcw/togeojson": "^7",
+    "@types/jsdom": "^21",
+    "@types/node": "^22.10.2",
+    "@xmldom/xmldom": "^0.9",
+    "jsdom": "^25",
+    "ol": "^10.8.0",
+    "vitest": "^2.1.8"
   }
 }

@@ -30,13 +30,8 @@ export const KIND_META: Record<DestKind, { icon: string; label: string; plural: 
   ski: { icon: 'Snowflake', label: 'Skigebiet', plural: 'Skigebiete' },
 };
 
-/** Objektart der Quelle in Anzeigeform (swissNAMES3D schreibt Umlaute aus). */
-export function classLabel(objectClass: string | null | undefined): string | null {
-  if (!objectClass) return null;
-  // Reine OSM-Tag-Angaben («OSM natural=peak») sagen nicht mehr als die Zielart selbst.
-  if (objectClass.startsWith('OSM ') && objectClass.includes('=')) return null;
-  return objectClass.replace(/uegel/g, 'ügel').replace(/^OSM /, '').replace(/ \(OSM[^)]*\)$/, '');
-}
+/** Objektart der Quelle in Anzeigeform – gemeinsam mit dem GPX-Export. */
+export { classLabel } from '@ch-alpineroute/shared';
 
 export const PISTE_LABEL: Record<string, { label: string; color: string }> = {
   novice: { label: 'sehr leicht', color: '#4caf50' },
@@ -374,6 +369,8 @@ export interface PRoute extends PHike {
   line: [number, number][];
   source: string;
   computedAt: string;
+  /** Originaldaten der Route (Höhen je Punkt, Orte am Weg) – Grundlage des GPX-Exports. */
+  src: HikeRouteDetail;
 }
 
 export interface PDetail extends PCard {
@@ -402,6 +399,7 @@ function routeOf(r: HikeRouteDetail): PRoute {
     line: r.line,
     source: r.source,
     computedAt: r.computedAt,
+    src: r,
   };
 }
 

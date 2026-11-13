@@ -9,3 +9,6 @@ export * from './destination';
 export * from './search';
 export * from './geocode';
 export * from './api';
+export * from './lv95';
+export * from './labels';
+export * from './gpx';

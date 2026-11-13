@@ -25,7 +25,7 @@ import {
   type PDetail,
   type PRoute,
 } from '@/lib/peakr';
-import type { DriveInfo, Trailhead } from '@ch-alpineroute/shared';
+import { routeGpx, routeGpxPath, swisstopoLink, type DriveInfo, type Trailhead } from '@ch-alpineroute/shared';
 
 type MediaVariant = '3d' | 'map' | 'aerial';
 
@@ -503,6 +503,81 @@ function driveText(drive: DriveInfo | null, hasOrigin: boolean): { main: string;
   };
 }
 
+/**
+ * «In Swisstopo öffnen» und «GPX herunterladen» für die gewählte Variante. Die
+ * GPX-Datei entsteht im Browser aus den geladenen Routendaten; swisstopo lädt
+ * dieselbe Datei über die öffentliche Peakr-URL (nur ab einer HTTPS-Adresse).
+ */
+function RouteExport({ d, route }: { d: PDetail; route: PRoute }) {
+  const [env, setEnv] = useState<{ origin: string; width: number; height: number } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    setEnv({ origin: window.location.origin, width: window.innerWidth, height: window.innerHeight });
+  }, []);
+  useEffect(() => setError(null), [route.routeId]);
+
+  if (route.line.length < 2) return null;
+  const link = swisstopoLink({
+    line: route.line,
+    gpxUrl: env ? `${env.origin}${routeGpxPath(d.id, route.rank)}` : null,
+    viewport: env ?? undefined,
+  });
+  const withElevation = route.src.elevations?.some((z) => z != null) ?? false;
+  const places = route.src.waypoints?.length ?? 0;
+
+  const download = () => {
+    setError(null);
+    try {
+      const gpx = routeGpx({
+        destination: {
+          name: d.name, location: { lat: d.lat, lng: d.lng }, elevationTopM: d.topM,
+          poiKind: d.kind, objectClass: d.objectClass,
+        },
+        route: route.src,
+        variantCount: d.routes.length,
+        appUrl: env ? `${env.origin}/destinations/${d.id}` : null,
+      });
+      const url = URL.createObjectURL(new Blob([gpx.xml], { type: 'application/gpx+xml' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = gpx.fileName;
+      a.rel = 'noopener';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      // Erst später freigeben: manche Browser starten den Download verzögert.
+      setTimeout(() => URL.revokeObjectURL(url), 30_000);
+    } catch {
+      setError('Die GPX-Datei konnte nicht erstellt werden – die Routendaten sind unvollständig.');
+    }
+  };
+
+  return (
+    <div className="route-export">
+      <div className="route-export-btns">
+        <a className="btn btn-soft" href={link.url} target="_blank" rel="noopener noreferrer">
+          <Icon name="Map" size={16} stroke={2} /> In Swisstopo öffnen
+        </a>
+        <button type="button" className="btn btn-soft" onClick={download}>
+          <Icon name="Download" size={16} stroke={2} /> GPX herunterladen
+        </button>
+      </div>
+      <p className="route-export-hint">
+        {link.withRoute
+          ? 'Swisstopo zeigt die Route auf der Landeskarte mit dem Wanderwegnetz.'
+          : 'Swisstopo öffnet den Kartenausschnitt der Route. Die Route selbst lädt swisstopo nur von der veröffentlichten Peakr-Adresse – hier die GPX-Datei im Viewer über «Import» hinzufügen.'}{' '}
+        GPX 1.1 mit Track, Start, Ziel{places > 0 ? ` und ${places} ${places === 1 ? 'Ort' : 'Orten'} am Weg` : ''}
+        {withElevation ? ', mit Höhen.' : ' – ohne Höhenangaben (werden mit dem nächsten Datenaufbau ergänzt).'}
+      </p>
+      {error && (
+        <p className="detail-note is-plain route-export-err" role="alert">
+          <Icon name="CircleAlert" size={13} stroke={2} /> {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function RouteOption({ r, active, onPick, hasOrigin }: { r: PRoute; active: boolean; onPick: () => void; hasOrigin: boolean }) {
   return (
     <button type="button" className={'route-opt' + (active ? ' is-on' : '')} onClick={onPick} aria-pressed={active}>
@@ -775,6 +850,7 @@ export function DetailView({
                     <dd>{fmtDate(route.computedAt)}</dd>
                   </div>
                 </dl>
+                <RouteExport d={d} route={route} />
                 {route.endGapM > 60 && (
                   <p className="detail-note">
                     <Icon name="Info" size={13} stroke={2} />

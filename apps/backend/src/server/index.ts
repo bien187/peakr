@@ -10,6 +10,7 @@ import {
   latLngSchema,
   loginInputSchema,
   registerInputSchema,
+  routeGpx,
   searchInputSchema,
   updateMeSchema,
   type AuthResponse,
@@ -24,6 +25,7 @@ import {
 import { z } from 'zod';
 import { AppError, validate } from '../lib/errors';
 import { logger } from '../lib/logger';
+import { getDestinationDetail } from '../repositories/destination.repo';
 import { addFavorite, listFavorites, removeFavorite } from '../repositories/favorites.repo';
 import { getPublicUser, updateProfile } from '../repositories/user.repo';
 import { login, rateLimit, register, requireUser } from '../services/auth.service';
@@ -78,6 +80,33 @@ export async function apiDestination(id: string, from?: string | null, clientIp 
   const detail = await destinationDetail(destinationId, origin);
   if (!detail) throw new AppError(404, 'NOT_FOUND', 'Ziel nicht gefunden.');
   return detail;
+}
+
+const routeRank = z.coerce.number().int().min(1).max(20);
+
+/**
+ * GPX-Datei einer Routenvariante. Dieselbe Erzeugung wie der Download im Browser;
+ * die URL dient dem swisstopo-Kartenviewer, der die Route selbst laden muss.
+ * `appOrigin` (z. B. https://peakr-ch.vercel.app) ergibt den Link zur Detailseite in den Metadaten.
+ */
+export async function apiRouteGpx(id: string, rank: string, appOrigin: string | null): Promise<{ fileName: string; xml: string }> {
+  const destinationId = validate(uuid, id);
+  const wanted = validate(routeRank, rank);
+  const found = await getDestinationDetail(destinationId);
+  if (!found) throw new AppError(404, 'NOT_FOUND', 'Ziel nicht gefunden.');
+  const { detail } = found;
+  const route = detail.routes.find((r) => r.rank === wanted);
+  if (!route) throw new AppError(404, 'NOT_FOUND', 'Für dieses Ziel gibt es diese Routenvariante nicht.');
+  const gpx = routeGpx({
+    destination: {
+      name: detail.name, location: detail.location, elevationTopM: detail.elevationTopM,
+      poiKind: detail.poiKind, objectClass: detail.objectClass,
+    },
+    route,
+    variantCount: detail.routes.length,
+    appUrl: appOrigin ? `${appOrigin}/destinations/${destinationId}` : null,
+  });
+  return { fileName: gpx.fileName, xml: gpx.xml };
 }
 
 export async function apiGeocode(q: string | null): Promise<{ results: GeocodeResult[] }> {

@@ -112,12 +112,34 @@ export const driveInfoSchema = z.object({
 });
 export type DriveInfo = z.infer<typeof driveInfoSchema>;
 
+/** Benannter Ort, an dem die Route vorbeiführt (Hütte, Pass, See …), aus den Zieldaten. */
+export const routeWaypointSchema = z.object({
+  name: z.string(),
+  /** Art des Ortes wie `poiKind` der Ziele: 'peak' | 'hut' | 'lake' | 'viewpoint' | 'pass' … */
+  kind: z.string().nullable(),
+  /** Objektart der Quelle, z. B. «Berggasthaus», «Schutzhütte». */
+  objectClass: z.string().nullable().optional(),
+  location: latLngSchema,
+  /** Amtliche bzw. erfasste Höhe des Ortes; null = unbekannt. */
+  elevationM: z.number().int().nullable(),
+  /** Wegstrecke ab Ausgangspunkt bis zur Stelle, an der der Weg dem Ort am nächsten kommt (m). */
+  alongM: z.number().int(),
+});
+export type RouteWaypoint = z.infer<typeof routeWaypointSchema>;
+
 export const hikeRouteDetailSchema = hikeRouteSummarySchema.extend({
   trailhead: trailheadSchema,
   /** Fahrzeit zum Ausgangspunkt dieser Variante; fehlt ohne Startort. */
   drive: driveInfoSchema.nullable().optional(),
   /** GeoJSON-Linie [lng, lat] vom Ausgangspunkt zum Ziel. */
   line: z.array(z.tuple([z.number(), z.number()])),
+  /**
+   * Höhe je Stützpunkt von `line` in Metern (gleiche Länge). null = für diese Route
+   * nicht gespeichert; einzelne Einträge null = an diesem Punkt unbekannt.
+   */
+  elevations: z.array(z.number().nullable()).nullable().optional(),
+  /** Benannte Orte höchstens 50 m neben dem Weg, in Gehrichtung sortiert. */
+  waypoints: z.array(routeWaypointSchema).optional(),
 });
 export type HikeRouteDetail = z.infer<typeof hikeRouteDetailSchema>;
 
