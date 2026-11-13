@@ -22,6 +22,9 @@ export const metadata: Metadata = {
   title: 'Peakr',
   description:
     'Finde das beste Ski- oder Wanderziel der Schweiz nach Fahrzeit, Schnee, Lawinenlage und Bekanntheit. Privates Tool, 100% kostenlose Datenquellen.',
+  // Name unter dem Icon auf dem iPhone-Home-Bildschirm (sonst der Seitentitel).
+  // capable: false – vom Home-Bildschirm weiter im Browser öffnen (Next setzt sonst «capable»).
+  appleWebApp: { title: 'Peakr', capable: false },
 };
 
 export const viewport: Viewport = {
