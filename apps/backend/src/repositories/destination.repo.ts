@@ -4,6 +4,7 @@ import type {
   DestinationWithStatus,
   HikeRouteDetail,
   LiveStatus,
+  RouteWaypoint,
   SacDifficulty,
   Trailhead,
 } from '@ch-alpineroute/shared';
@@ -177,6 +178,7 @@ interface RouteRow {
   source: string;
   computed_at: Date | string;
   geojson: string;
+  elevations: (number | null)[] | null;
   th_id: string;
   th_kind: Trailhead['kind'];
   th_name: string | null;
@@ -194,6 +196,62 @@ interface RouteRow {
 /** Punkt auf dem Strassennetz je Ausgangspunkt (für die Fahrzeit in der Detailansicht). */
 export type DrivePoints = Map<string, { lat: number; lng: number }>;
 
+/**
+ * Die Spalte hike_routes.elevations (Migration 0003) entsteht erst beim nächsten
+ * Datenaufbau. Bis dahin liefert die Detailansicht Routen ohne Höhen statt eines
+ * Fehlers. «Fehlt» wird nur 10 Minuten zwischengespeichert.
+ */
+let elevationsColumn: { exists: boolean; checkedAt: number } | null = null;
+async function hasElevationsColumn(): Promise<boolean> {
+  if (elevationsColumn && (elevationsColumn.exists || Date.now() - elevationsColumn.checkedAt < 600_000)) {
+    return elevationsColumn.exists;
+  }
+  const rows = await sql`
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = current_schema() AND table_name = 'hike_routes' AND column_name = 'elevations'
+  `;
+  elevationsColumn = { exists: rows.length > 0, checkedAt: Date.now() };
+  return elevationsColumn.exists;
+}
+
+/** Höchstabstand eines benannten Ortes vom Weg, damit er als Wegpunkt gilt. */
+const WAYPOINT_MAX_OFFSET_M = 50;
+
+/**
+ * Benannte Ziele (Hütten, Pässe, Seen, Gipfel …), an denen die Routen eines Ziels
+ * höchstens 50 m vorbeiführen – in Gehrichtung, je Route und Name einmal.
+ */
+async function routeWaypoints(destinationId: string): Promise<Map<number, RouteWaypoint[]>> {
+  const rows = await sql<{
+    route_id: number | string; name: string; poi_kind: string | null; object_class: string | null; lat: number; lng: number;
+    elevation_top_m: number | null; along_m: number;
+  }[]>`
+    SELECT hr.id AS route_id, d.name, d.poi_kind, d.object_class, d.lat::float8 AS lat, d.lng::float8 AS lng, d.elevation_top_m,
+           round(ST_LineLocatePoint(ST_Transform(hr.geom, 2056), ST_Transform(d.geom, 2056)) * hr.distance_m)::int AS along_m
+    FROM hike_routes hr
+    JOIN destinations d
+      ON d.geom && ST_Expand(hr.geom, 0.001)
+     AND ST_DWithin(d.geom::geography, hr.geom::geography, ${WAYPOINT_MAX_OFFSET_M})
+    WHERE hr.destination_id = ${destinationId}
+      AND d.id <> hr.destination_id
+      AND d.retired_at IS NULL
+      AND d.type <> 'ski_resort'
+    ORDER BY hr.id, along_m
+  `;
+  const out = new Map<number, RouteWaypoint[]>();
+  for (const w of rows) {
+    const id = Number(w.route_id);
+    const list = out.get(id) ?? [];
+    if (list.some((x) => x.name === w.name)) continue;
+    list.push({
+      name: w.name, kind: w.poi_kind, objectClass: w.object_class, location: { lat: w.lat, lng: w.lng },
+      elevationM: w.elevation_top_m, alongM: w.along_m,
+    });
+    out.set(id, list);
+  }
+  return out;
+}
+
 /** Detailansicht inkl. aller Routenvarianten, Zufahrt, Verlauf und Datenquellen. */
 export async function getDestinationDetail(
   id: string,
@@ -206,13 +264,14 @@ export async function getDestinationDetail(
   const r = rows[0];
   if (!r) return null;
   const isSki = r.type === 'ski_resort';
+  const elevations = !isSki && (await hasElevationsColumn()) ? sql`hr.elevations` : sql`NULL::smallint[] AS elevations`;
 
-  const [live, routeRows, skiRows, historyRows, sourceRows] = await Promise.all([
+  const [live, routeRows, skiRows, historyRows, sourceRows, waypoints] = await Promise.all([
     attachLive([r]),
     sql<RouteRow[]>`
       SELECT hr.id, hr.rank, hr.distance_m, hr.ascent_m, hr.descent_m, hr.duration_up_min, hr.duration_down_min,
              hr.min_elev_m, hr.max_elev_m, hr.sac_min, hr.sac_max, hr.sac_known_share, hr.official_share, hr.end_gap_m,
-             hr.source, hr.computed_at, ST_AsGeoJSON(hr.geom, 6) AS geojson,
+             hr.source, hr.computed_at, ST_AsGeoJSON(hr.geom, 6) AS geojson, ${elevations},
              t.id AS th_id, t.kind AS th_kind, t.name AS th_name, t.lat::float8 AS th_lat, t.lng::float8 AS th_lng,
              t.elevation_m AS th_elev, t.quality AS th_quality, t.road_snap_m,
              t.tags->>'fee' AS th_fee, t.tags->>'capacity' AS th_capacity,
@@ -245,6 +304,7 @@ export async function getDestinationDetail(
     sql<{ id: string; name: string; attribution: string | null; license: string | null; version: string | null; fetched_at: Date | string | null }[]>`
       SELECT id, name, attribution, license, version, fetched_at FROM data_sources ORDER BY id
     `,
+    isSki ? Promise.resolve(new Map<number, RouteWaypoint[]>()) : routeWaypoints(id),
   ]);
 
   const ski = skiRows[0];
@@ -255,7 +315,9 @@ export async function getDestinationDetail(
     .filter((s) => usedSources.has(s.id))
     .map((s) => ({ id: s.id, name: s.name, attribution: s.attribution, license: s.license, version: s.version, fetchedAt: toIsoOrNull(s.fetched_at) }));
 
-  const routes: HikeRouteDetail[] = routeRows.map((x) => ({
+  const routes: HikeRouteDetail[] = routeRows.map((x) => {
+    const line = (JSON.parse(x.geojson) as { coordinates: [number, number][] }).coordinates;
+    return {
     routeId: Number(x.id),
     rank: x.rank,
     distanceKm: Math.round(x.distance_m / 100) / 10,
@@ -276,8 +338,12 @@ export async function getDestinationDetail(
       id: x.th_id, kind: x.th_kind, name: x.th_name, location: { lat: x.th_lat, lng: x.th_lng },
       elevationM: x.th_elev, quality: x.th_quality, roadGapM: x.road_snap_m, fee: x.th_fee, capacity: x.th_capacity,
     },
-    line: (JSON.parse(x.geojson) as { coordinates: [number, number][] }).coordinates,
-  }));
+    line,
+    // Nur verwenden, wenn die Höhen exakt zu den Stützpunkten passen.
+    elevations: x.elevations && x.elevations.length === line.length ? x.elevations.map((z) => (z == null ? null : Number(z))) : null,
+    waypoints: waypoints.get(Number(x.id)) ?? [],
+    };
+  });
 
   const names = r.names ?? {};
   const { alt, ...languages } = names as { alt?: string[] } & Record<string, string>;

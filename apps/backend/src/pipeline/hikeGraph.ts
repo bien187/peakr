@@ -3,7 +3,8 @@ import { MinHeap } from '../lib/heap';
 import { logger } from '../lib/logger';
 import type { TerrainModel } from './dem';
 import type { Network } from './network';
-import { TRAIL_NONE, type OfficialTrailGrid } from './officialTrails';
+import type { OfficialTrailGrid } from './officialTrails';
+import { TRAIL_NONE } from './trailCategories';
 import { hikingMinutes, SAC_COST } from './profiles/hike';
 
 /**
@@ -281,6 +282,8 @@ export interface RouteMetrics {
   officialShare: number;
   /** Stützpunkte Ausgangspunkt → Ziel als [lng, lat]. */
   line: [number, number][];
+  /** Höhe je Stützpunkt in m (gleiche Länge wie `line`); null = unbekannt. */
+  lineElev: (number | null)[];
 }
 
 export interface FoundStart {
@@ -501,6 +504,8 @@ export class HikeRouter {
     const knownShare = distance > 0 ? knownLen / distance : 0;
     // Ein unbekanntes Teilstück macht die Gesamtschwierigkeit unbekannt (kurze Lücken bis 3 % toleriert).
     const sacKnown = !unknownPresent || knownShare >= 0.97 || unknownLen <= 100;
+    // 10 m Lage- und 5 m Höhentoleranz: das gespeicherte Profil behält Kuppen und Senken.
+    const kept = simplifyIndices(lngs, lats, 10, elevs, 5);
 
     return {
       distanceM: Math.round(distance),
@@ -514,21 +519,43 @@ export class HikeRouter {
       sacMax: sacKnown ? sacMax : 0,
       sacKnownShare: Math.round(knownShare * 1000) / 1000,
       officialShare: distance > 0 ? Math.round((officialLen / distance) * 1000) / 1000 : 0,
-      line: simplifyLine(lngs, lats, 10),
+      line: kept.map((i): [number, number] => [round6(lngs[i]), round6(lats[i])]),
+      lineElev: kept.map((i) => (Number.isNaN(elevs[i]) ? null : Math.round(elevs[i]))),
     };
   }
 }
 
-/** Douglas-Peucker in lokaler Meter-Näherung; liefert [lng, lat] mit 6 Nachkommastellen. */
-export function simplifyLine(lngs: number[], lats: number[], toleranceM: number): [number, number][] {
+/**
+ * Douglas-Peucker in lokaler Meter-Näherung; liefert die Indizes der behaltenen
+ * Punkte. Mit `elevs` bleibt zusätzlich jeder Punkt erhalten, dessen Höhe um mehr
+ * als `elevToleranceM` von der Geraden (nach Wegstrecke interpoliert) abweicht –
+ * sonst gingen Kuppen und Senken im Höhenprofil verloren. NaN-Höhen zählen nicht.
+ */
+export function simplifyIndices(
+  lngs: number[],
+  lats: number[],
+  toleranceM: number,
+  elevs?: ArrayLike<number>,
+  elevToleranceM = 5,
+): number[] {
   const n = lngs.length;
-  if (n <= 2) return lngs.map((x, i) => [round6(x), round6(lats[i])]);
+  if (n <= 2) return Array.from({ length: n }, (_, i) => i);
   const kx = M_PER_DEG * Math.cos((lats[0] * Math.PI) / 180);
+  let cum: Float64Array | null = null;
+  if (elevs) {
+    cum = new Float64Array(n);
+    for (let i = 1; i < n; i++) {
+      const ddx = (lngs[i] - lngs[i - 1]) * kx;
+      const ddy = (lats[i] - lats[i - 1]) * M_PER_DEG;
+      cum[i] = cum[i - 1] + Math.sqrt(ddx * ddx + ddy * ddy);
+    }
+  }
   const keep = new Uint8Array(n);
   keep[0] = 1;
   keep[n - 1] = 1;
   const stack: [number, number][] = [[0, n - 1]];
   const tol2 = toleranceM * toleranceM;
+  const ztol2 = elevToleranceM * elevToleranceM;
   while (stack.length > 0) {
     const [i0, i1] = stack.pop()!;
     const x0 = lngs[i0] * kx;
@@ -536,8 +563,12 @@ export function simplifyLine(lngs: number[], lats: number[], toleranceM: number)
     const dx = lngs[i1] * kx - x0;
     const dy = lats[i1] * M_PER_DEG - y0;
     const len2 = dx * dx + dy * dy;
+    const z0 = elevs ? elevs[i0] : NaN;
+    const z1 = elevs ? elevs[i1] : NaN;
+    const span = cum ? cum[i1] - cum[i0] : 0;
     let worst = -1;
-    let worstD = tol2;
+    // Abweichung relativ zur Toleranz (quadriert); > 1 = Punkt muss bleiben.
+    let worstScore = 1;
     for (let i = i0 + 1; i < i1; i++) {
       const px = lngs[i] * kx - x0;
       const py = lats[i] * M_PER_DEG - y0;
@@ -547,8 +578,14 @@ export function simplifyLine(lngs: number[], lats: number[], toleranceM: number)
         const t = Math.max(0, Math.min(1, (px * dx + py * dy) / len2));
         d2 = (px - t * dx) ** 2 + (py - t * dy) ** 2;
       }
-      if (d2 > worstD) {
-        worstD = d2;
+      let score = d2 / tol2;
+      if (cum && elevs && !Number.isNaN(z0) && !Number.isNaN(z1) && !Number.isNaN(elevs[i])) {
+        const t = span > 0 ? (cum[i] - cum[i0]) / span : 0;
+        const dz = elevs[i] - (z0 + t * (z1 - z0));
+        score = Math.max(score, (dz * dz) / ztol2);
+      }
+      if (score > worstScore) {
+        worstScore = score;
         worst = i;
       }
     }
@@ -557,9 +594,14 @@ export function simplifyLine(lngs: number[], lats: number[], toleranceM: number)
       stack.push([i0, worst], [worst, i1]);
     }
   }
-  const out: [number, number][] = [];
-  for (let i = 0; i < n; i++) if (keep[i]) out.push([round6(lngs[i]), round6(lats[i])]);
+  const out: number[] = [];
+  for (let i = 0; i < n; i++) if (keep[i]) out.push(i);
   return out;
+}
+
+/** Douglas-Peucker ohne Höhen; liefert [lng, lat] mit 6 Nachkommastellen. */
+export function simplifyLine(lngs: number[], lats: number[], toleranceM: number): [number, number][] {
+  return simplifyIndices(lngs, lats, toleranceM).map((i): [number, number] => [round6(lngs[i]), round6(lats[i])]);
 }
 
 const round6 = (v: number): number => Math.round(v * 1e6) / 1e6;

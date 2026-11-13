@@ -32,7 +32,7 @@ zweite Implementierung (Fastify) ist entfernt.
 | `destinations` | Ziele (Wandern und Ski). Getrennt gehalten: Existenz (Zeile), Metadaten-Qualität (`quality_score`), Wanderbarkeit (`route_status`), Herkunft (`source_layer`, `destination_sources`). Stillgelegt statt gelöscht (`retired_at`). |
 | `destination_sources` | Eindeutige Quellenreferenz → Ziel (swissNAMES3D-UUID, OSM-ID). Damit bleiben IDs und Favoriten über Importe stabil. |
 | `trailheads` | Parkplätze, Strassenzugänge, Talstationen; `drive_lat/lng` = Punkt auf dem Strassengraphen, `road_snap_m` = Abstand dorthin, `quality` 1–3. |
-| `hike_routes` | Bis zu 3 Routen je Ziel: Linie (LineString 4326), Distanz, Auf-/Abstieg, Gehzeit hin/zurück, SAC min/max, Anteil amtlich signalisiert, Abstand Wegende–Ziel. |
+| `hike_routes` | Bis zu 3 Routen je Ziel: Linie (LineString 4326), Höhe je Stützpunkt (`elevations`), Distanz, Auf-/Abstieg, Gehzeit hin/zurück, SAC min/max, Anteil amtlich signalisiert, Abstand Wegende–Ziel. |
 | `ski_resort_details`, `ski_lifts` | Gruppierte Skigebiete, Anlagen nach Typ, Pistenkilometer nach Schwierigkeit, Talstation. |
 | `live_status` | Verlauf der Bedingungen je Skigebiet (120 Tage). |
 | `weather_cells` | Wetterraster 0,1° für Wanderziele, überschrieben statt angehängt. |
@@ -165,9 +165,13 @@ PostGIS über postgres.js), der Wechsel betrifft nur die Verbindung:
   (67'000 km) als Raster; ein OSM-Abschnitt auf einem amtlichen Weg übernimmt dessen Kategorie.
 - **Schwierigkeit:** OSM `sac_scale` ist führend (T1–T6); sonst amtliche Kategorie als Bereich;
   sonst unbekannt.
-- **Höhen:** 3D-Koordinaten der amtlichen Wege, sonst Terrain Tiles (EU-DEM/SRTM, ~30 m). Auf- und
-  Abstieg werden mit 3 m Hysterese summiert, damit das Rauschen des Modells keine Höhenmeter erfindet;
-  am Routenende gilt die amtliche Gipfelhöhe.
+- **Höhen:** 3D-Koordinaten der amtlichen Wege, sonst Terrain Tiles (EU-DEM/SRTM, ~30 m, über ±50 m
+  Weg geglättet). Auf- und Abstieg werden mit 6 m Hysterese summiert, damit das Rauschen des Modells
+  keine Höhenmeter erfindet; am Routenende gilt die amtliche Gipfelhöhe. Gespeichert wird die Höhe je
+  Stützpunkt (`hike_routes.elevations`); die Vereinfachung der Linie behält Punkte, die mehr als 5 m
+  vom Höhenprofil abweichen.
+- **Export:** GPX 1.1 und Übergabe an den swisstopo-Kartenviewer, siehe
+  [GPX_UND_SWISSTOPO.md](GPX_UND_SWISSTOPO.md).
 - **Gehzeit:** DIN 33466 (4 km/h horizontal, 300 Hm/h auf, 500 Hm/h ab).
 - **Kein Erfinden:** Es gibt nur Routen, die im Wegnetz durchgehend existieren. Liegt kein Weg näher als
   150 m am Gipfel bzw. Pass (Hütten 120 m, Seen 150 m vom Ufer), erhält das Ziel keine Route

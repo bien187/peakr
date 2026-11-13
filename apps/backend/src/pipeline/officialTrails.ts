@@ -1,5 +1,6 @@
 import { logger } from '../lib/logger';
 import { readTrailSegments } from './io/gpkg';
+import { TRAIL_ALPINWANDERWEG, TRAIL_BERGWANDERWEG, TRAIL_WANDERWEG } from './trailCategories';
 
 /**
  * Raster der amtlichen Wanderwege (swisstopo swissTLM3D).
@@ -10,10 +11,7 @@ import { readTrailSegments } from './io/gpkg';
  * Höhen – ohne dass zwei Wegnetze topologisch verschmolzen werden müssen.
  */
 
-export const TRAIL_NONE = 0;
-export const TRAIL_WANDERWEG = 1;
-export const TRAIL_BERGWANDERWEG = 2;
-export const TRAIL_ALPINWANDERWEG = 3;
+export { TRAIL_ALPINWANDERWEG, TRAIL_BERGWANDERWEG, TRAIL_NONE, TRAIL_WANDERWEG } from './trailCategories';
 
 const CATEGORY: Record<string, number> = {
   Wanderweg: TRAIL_WANDERWEG,

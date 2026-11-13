@@ -329,20 +329,27 @@ export async function buildNetwork(): Promise<Record<string, unknown>> {
       official_share: r.officialShare,
       end_gap_m: r.endGapM,
       geom: JSON.stringify({ type: 'LineString', coordinates: r.line }),
+      // Höhe je Stützpunkt; ganz ohne Höhen bleibt die Spalte leer statt voller NULLs.
+      elevations: r.lineElev.length === r.line.length && r.lineElev.some((z) => z !== null) ? r.lineElev : null,
     }));
     for (const batch of chunks(payload, 1000)) {
       await tx`
         INSERT INTO hike_routes (
           destination_id, trailhead_id, rank, distance_m, ascent_m, descent_m, duration_up_min, duration_down_min,
-          min_elev_m, max_elev_m, sac_min, sac_max, sac_known_share, official_share, end_gap_m, geom, source, computed_at
+          min_elev_m, max_elev_m, sac_min, sac_max, sac_known_share, official_share, end_gap_m, geom, elevations,
+          source, computed_at
         )
         SELECT x.destination_id, t.id, x.rank, x.distance_m, x.ascent_m, x.descent_m, x.duration_up_min, x.duration_down_min,
                x.min_elev_m, x.max_elev_m, x.sac_min::sac_difficulty, x.sac_max::sac_difficulty, x.sac_known_share,
-               x.official_share, x.end_gap_m, ST_SetSRID(ST_GeomFromGeoJSON(x.geom), 4326), 'osm+swisstlm3d', now()
+               x.official_share, x.end_gap_m, ST_SetSRID(ST_GeomFromGeoJSON(x.geom), 4326),
+               CASE WHEN jsonb_typeof(x.elevations) = 'array' THEN
+                 ARRAY(SELECT e.v::smallint FROM jsonb_array_elements_text(x.elevations) WITH ORDINALITY AS e(v, i) ORDER BY e.i)
+               END,
+               'osm+swisstlm3d', now()
         FROM jsonb_to_recordset(${tx.json(batch as never)}) AS x(
           destination_id uuid, trailhead_ref text, rank smallint, distance_m int, ascent_m int, descent_m int,
           duration_up_min int, duration_down_min int, min_elev_m int, max_elev_m int, sac_min text, sac_max text,
-          sac_known_share real, official_share real, end_gap_m int, geom text
+          sac_known_share real, official_share real, end_gap_m int, geom text, elevations jsonb
         )
         JOIN trailheads t ON t.ref = x.trailhead_ref
       `;

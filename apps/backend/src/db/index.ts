@@ -37,7 +37,8 @@ export function sanitizeDatabaseUrl(raw: string): string {
  * eignet sich nicht für lange Importtransaktionen.
  */
 export function connectionUrl(): string {
-  const raw = process.env.VERCEL ? env.DATABASE_URL : (env.DATABASE_URL_UNPOOLED ?? env.DATABASE_URL);
+  // `||` statt `??`: ein leer gesetztes DATABASE_URL_UNPOOLED (z. B. fehlendes Secret) gilt als nicht gesetzt.
+  const raw = process.env.VERCEL ? env.DATABASE_URL : env.DATABASE_URL_UNPOOLED || env.DATABASE_URL;
   return sanitizeDatabaseUrl(raw);
 }
 

@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Peakr" xmlns="http://www.topografix.com/GPX/1/1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">
+  <metadata>
+    <name>Rigi Kulm ab Überlaufparkplatz Seeboden</name>
+    <desc>Wanderroute zu Rigi Kulm (1797 m) ab Überlaufparkplatz Seeboden. 4.4 km, Aufstieg 792 m, Abstieg 20 m, Gehzeit hin 3 h 14 min (DIN 33466, ohne Pausen), Schwierigkeit T2, 100 % auf signalisierten Wanderwegen. Höhen: amtliche Wegdaten swissTLM3D bzw. Geländemodell, am Ziel die amtliche Höhe. Aus dem Wegnetz berechnet (swisstopo-Wanderwege und OpenStreetMap), nicht begangen. Verhältnisse, Sperrungen und Ausrüstung vor der Tour selbst prüfen. Berechnet am 2026-11-13. Daten: © swisstopo, © OpenStreetMap-Mitwirkende (ODbL).</desc>
+    <copyright author="swisstopo, OpenStreetMap-Mitwirkende">
+      <license>https://www.openstreetmap.org/copyright</license>
+    </copyright>
+    <link href="https://peakr-ch.vercel.app">
+      <text>Peakr</text>
+    </link>
+    <time>2026-11-13T10:00:00Z</time>
+    <keywords>Wanderung, Peakr, Schweiz</keywords>
+    <bounds minlat="47.053601" minlon="8.467616" maxlat="47.068894" maxlon="8.485478"/>
+  </metadata>
+  <wpt lat="47.068894" lon="8.467959">
+    <ele>1025</ele>
+    <name>Start: Überlaufparkplatz Seeboden</name>
+    <desc>Parkplatz (Ausgangspunkt)</desc>
+    <sym>Parking Area</sym>
+    <type>Start</type>
+  </wpt>
+  <wpt lat="47.053649" lon="8.474466">
+    <ele>1608</ele>
+    <name>Restaurant Bahnhöfli</name>
+    <desc>Berggasthaus am Weg, nach 3.2 km</desc>
+    <sym>Lodge</sym>
+    <type>Berggasthaus</type>
+  </wpt>
+  <wpt lat="47.055226" lon="8.481223">
+    <ele>1719</ele>
+    <name>Restaurant Kessiboden</name>
+    <desc>Berggasthaus am Weg, nach 3.9 km</desc>
+    <sym>Lodge</sym>
+    <type>Berggasthaus</type>
+  </wpt>
+  <wpt lat="47.055848" lon="8.484039">
+    <ele>1766</ele>
+    <name>Rigi Kulm Hotel</name>
+    <desc>Berggasthaus am Weg, nach 4.2 km</desc>
+    <sym>Lodge</sym>
+    <type>Berggasthaus</type>
+  </wpt>
+  <wpt lat="47.056781" lon="8.485294">
+    <ele>1797</ele>
+    <name>Ziel: Rigi Kulm</name>
+    <desc>Hauptgipfel</desc>
+    <sym>Summit</sym>
+    <type>Ziel</type>
+  </wpt>
+  <trk>
+    <name>Rigi Kulm ab Überlaufparkplatz Seeboden</name>
+    <desc>Wanderroute zu Rigi Kulm (1797 m) ab Überlaufparkplatz Seeboden. 4.4 km, Aufstieg 792 m, Abstieg 20 m, Gehzeit hin 3 h 14 min (DIN 33466, ohne Pausen), Schwierigkeit T2, 100 % auf signalisierten Wanderwegen. Höhen: amtliche Wegdaten swissTLM3D bzw. Geländemodell, am Ziel die amtliche Höhe. Aus dem Wegnetz berechnet (swisstopo-Wanderwege und OpenStreetMap), nicht begangen. Verhältnisse, Sperrungen und Ausrüstung vor der Tour selbst prüfen. Berechnet am 2026-11-13. Daten: © swisstopo, © OpenStreetMap-Mitwirkende (ODbL).</desc>
+    <type>hiking</type>
+    <trkseg>
+      <trkpt lat="47.068578" lon="8.467616"><ele>1025</ele></trkpt>
+      <trkpt lat="47.067788" lon="8.468569"><ele>1031</ele></trkpt>
+      <trkpt lat="47.065953" lon="8.469368"><ele>1040</ele></trkpt>
+      <trkpt lat="47.066109" lon="8.469897"><ele>1044</ele></trkpt>
+      <trkpt lat="47.065917" lon="8.469893"><ele>1047</ele></trkpt>
+      <trkpt lat="47.065729" lon="8.469786"><ele>1054</ele></trkpt>
+      <trkpt lat="47.065669" lon="8.470246"><ele>1062</ele></trkpt>
+      <trkpt lat="47.065548" lon="8.470044"><ele>1066</ele></trkpt>
+      <trkpt lat="47.065410" lon="8.470203"><ele>1070</ele></trkpt>
+      <trkpt lat="47.065218" lon="8.470056"><ele>1076</ele></trkpt>
+      <trkpt lat="47.064249" lon="8.471253"><ele>1103</ele></trkpt>
+      <trkpt lat="47.063226" lon="8.472228"><ele>1118</ele></trkpt>
+      <trkpt lat="47.061864" lon="8.472829"><ele>1139</ele></trkpt>
+      <trkpt lat="47.061758" lon="8.473071"><ele>1142</ele></trkpt>
+      <trkpt lat="47.061847" lon="8.473312"><ele>1144</ele></trkpt>
+      <trkpt lat="47.061296" lon="8.473224"><ele>1157</ele></trkpt>
+      <trkpt lat="47.060753" lon="8.472795"><ele>1173</ele></trkpt>
+      <trkpt lat="47.060403" lon="8.473622"><ele>1189</ele></trkpt>
+      <trkpt lat="47.060112" lon="8.473206"><ele>1199</ele></trkpt>
+      <trkpt lat="47.060022" lon="8.473793"><ele>1209</ele></trkpt>
+      <trkpt lat="47.059773" lon="8.473358"><ele>1215</ele></trkpt>
+      <trkpt lat="47.059697" lon="8.473906"><ele>1224</ele></trkpt>
+      <trkpt lat="47.059416" lon="8.473512"><ele>1235</ele></trkpt>
+      <trkpt lat="47.058963" lon="8.474610"><ele>1263</ele></trkpt>
+      <trkpt lat="47.058707" lon="8.474338"><ele>1272</ele></trkpt>
+      <trkpt lat="47.058591" lon="8.474691"><ele>1281</ele></trkpt>
+      <trkpt lat="47.058432" lon="8.474421"><ele>1286</ele></trkpt>
+      <trkpt lat="47.058230" lon="8.474669"><ele>1296</ele></trkpt>
+      <trkpt lat="47.058210" lon="8.474722"><ele>1304</ele></trkpt>
+      <trkpt lat="47.058076" lon="8.474529"><ele>1306</ele></trkpt>
+      <trkpt lat="47.057785" lon="8.472075"><ele>1338</ele></trkpt>
+      <trkpt lat="47.057979" lon="8.470514"><ele>1362</ele></trkpt>
+      <trkpt lat="47.057818" lon="8.470387"><ele>1366</ele></trkpt>
+      <trkpt lat="47.056836" lon="8.470835"><ele>1395</ele></trkpt>
+      <trkpt lat="47.057089" lon="8.471128"><ele>1403</ele></trkpt>
+      <trkpt lat="47.056700" lon="8.471236"><ele>1412</ele></trkpt>
+      <trkpt lat="47.056930" lon="8.471477"><ele>1419</ele></trkpt>
+      <trkpt lat="47.056903" lon="8.471845"><ele>1427</ele></trkpt>
+      <trkpt lat="47.056805" lon="8.471614"><ele>1431</ele></trkpt>
+      <trkpt lat="47.056063" lon="8.471591"><ele>1438</ele></trkpt>
+      <trkpt lat="47.055314" lon="8.471903"><ele>1452</ele></trkpt>
+      <trkpt lat="47.055280" lon="8.472091"><ele>1458</ele></trkpt>
+      <trkpt lat="47.054681" lon="8.472083"><ele>1474</ele></trkpt>
+      <trkpt lat="47.054937" lon="8.472463"><ele>1488</ele></trkpt>
+      <trkpt lat="47.055666" lon="8.472721"><ele>1511</ele></trkpt>
+      <trkpt lat="47.055528" lon="8.472878"><ele>1516</ele></trkpt>
+      <trkpt lat="47.055448" lon="8.472888"><ele>1504</ele></trkpt>
+      <trkpt lat="47.055314" lon="8.472969"><ele>1522</ele></trkpt>
+      <trkpt lat="47.055109" lon="8.473049"><ele>1530</ele></trkpt>
+      <trkpt lat="47.054795" lon="8.473170"><ele>1537</ele></trkpt>
+      <trkpt lat="47.054243" lon="8.472780"><ele>1540</ele></trkpt>
+      <trkpt lat="47.053601" lon="8.473064"><ele>1556</ele></trkpt>
+      <trkpt lat="47.053890" lon="8.473162"><ele>1561</ele></trkpt>
+      <trkpt lat="47.054006" lon="8.473134"><ele>1544</ele></trkpt>
+      <trkpt lat="47.054077" lon="8.473142"><ele>1566</ele></trkpt>
+      <trkpt lat="47.054190" lon="8.473171"><ele>1570</ele></trkpt>
+      <trkpt lat="47.054134" lon="8.473352"><ele>1573</ele></trkpt>
+      <trkpt lat="47.054365" lon="8.473591"><ele>1581</ele></trkpt>
+      <trkpt lat="47.053676" lon="8.473939"><ele>1601</ele></trkpt>
+      <trkpt lat="47.053992" lon="8.474100"><ele>1610</ele></trkpt>
+      <trkpt lat="47.055085" lon="8.475805"><ele>1637</ele></trkpt>
+      <trkpt lat="47.054904" lon="8.476241"><ele>1644</ele></trkpt>
+      <trkpt lat="47.054694" lon="8.478015"><ele>1671</ele></trkpt>
+      <trkpt lat="47.054972" lon="8.478107"><ele>1679</ele></trkpt>
+      <trkpt lat="47.055055" lon="8.478447"><ele>1682</ele></trkpt>
+      <trkpt lat="47.054953" lon="8.478671"><ele>1685</ele></trkpt>
+      <trkpt lat="47.054984" lon="8.478845"><ele>1697</ele></trkpt>
+      <trkpt lat="47.055090" lon="8.479099"><ele>1700</ele></trkpt>
+      <trkpt lat="47.054876" lon="8.479589"><ele>1707</ele></trkpt>
+      <trkpt lat="47.054892" lon="8.480483"><ele>1716</ele></trkpt>
+      <trkpt lat="47.055327" lon="8.481205"><ele>1720</ele></trkpt>
+      <trkpt lat="47.055102" lon="8.482364"><ele>1734</ele></trkpt>
+      <trkpt lat="47.055158" lon="8.483202"><ele>1746</ele></trkpt>
+      <trkpt lat="47.055680" lon="8.484105"><ele>1764</ele></trkpt>
+      <trkpt lat="47.055688" lon="8.484955"><ele>1769</ele></trkpt>
+      <trkpt lat="47.055898" lon="8.485478"><ele>1779</ele></trkpt>
+      <trkpt lat="47.056756" lon="8.485269"><ele>1797</ele></trkpt>
+    </trkseg>
+  </trk>
+</gpx>
