@@ -223,11 +223,15 @@ Supabase-spezifischen Funktionen; geändert hat sich nur die Verbindung.
 | Daten-Workflow veröffentlicht beide Artefakte; `prebuild` lädt beide | Index und Graph gehören zum selben Datenstand | Build lokal: beide Dateien im Funktions-Bundle (`route.js.nft.json`) |
 | `apps/frontend/vercel.json`: Region `fra1` | Datenbank in Frankfurt; Standardregion wäre Washington | – (greift beim Deploy) |
 | Ungeeignetes `JWT_SECRET` schaltet nur die Anmeldung ab (503) statt die ganze API | Vercel gibt die Werte nicht heraus, die Länge des alten Geheimnisses ist unbekannt; vorher hätte ein zu kurzes Geheimnis auch Suche und Statusseite lahmgelegt. Die Workflows lesen das GitHub-Secret nicht mehr | Unit-Test; `/api/health` meldet `auth.configured` |
+| Schriften aus npm (Fontsource) statt `next/font/google` | Der Vercel-Build brach beim Laden der Google-Schriften ab (Adressen ohne Dateiendung) – unabhängig vom eigenen Code | Vercel-Vorschau von PR #6 grün; 49 `@font-face`-Regeln, Schriften als `font/woff2` ausgeliefert |
 | iCloud-Konfliktkopien entfernt | leere `app/api/* 2/`-Ordner, doppelte Screenshots und `.next/* 2.ts` brachen den Typecheck | Typecheck grün |
 
-**Nicht ausgeführt (Freigabe nötig):** Variablen in Vercel ändern, GitHub-Secrets setzen, pushen,
-deployen. Das Ändern von Vercel-Variablen hat die Sitzungsrichtlinie blockiert (Schreibzugriff auf
-Geheimnis-Speicher); alle Schritte stehen mit fertigen Befehlen in [SETUP_EXTERNAL.md](../SETUP_EXTERNAL.md).
+**Stand der Einrichtung (13.11.2026, Nachmittag):** Neon ist über Vercel angelegt, die alten
+Variablen sind entfernt, das GitHub-Secret `DATABASE_URL` ist gesetzt. Der Code liegt in Pull
+Request #6 (CI grün, Vercel-Vorschau grün; dort `auth.configured: true`, also ist das vorhandene
+`JWT_SECRET` lang genug). Den Merge nach `main` und das Ändern von Vercel-Variablen hat die
+Sitzungsrichtlinie für Claude blockiert; beides erledigt der Besitzer. Danach: «Peakr Daten»
+starten, Worker füllen, neu deployen – siehe [SETUP_EXTERNAL.md](../SETUP_EXTERNAL.md).
 
 **Neue Dateien:** `apps/backend/src/search/indexFormat.ts`, `apps/backend/src/search/searchIndex.ts`,
 `apps/backend/src/search/searchIndex.test.ts`, `apps/backend/src/pipeline/steps/searchIndex.ts`,

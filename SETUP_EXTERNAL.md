@@ -168,6 +168,13 @@ gh secret set VERCEL_DEPLOY_HOOK_URL     # fragt den Wert verdeckt ab
 Ohne Hook nutzt die Suche die Daten des letzten Deploys weiter – Fahrzeiten bleiben korrekt, nur
 neue Strassen, Parkplätze und Saisonsperren kommen erst mit dem nächsten Push an.
 
+### 4.5 Alte Netlify-Seite trennen
+
+Die frühere Netlify-Seite («peakrr») ist noch mit dem Repository verbunden und baut bei jedem Push
+mit (sichtbar als Netlify-Prüfungen im Pull Request). Peakr läuft nur noch auf Vercel: in Netlify
+*Site configuration → Build & deploy → Continuous deployment → Unlink repository* oder die Seite
+löschen. Das spart Build-Minuten und verhindert eine zweite, veraltete Kopie der App.
+
 ## 5. Abnahme
 
 1. `https://peakr-ch.vercel.app/api/health` → `"status": "ok"`, `"database": true`,
