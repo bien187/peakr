@@ -9,6 +9,6 @@ export const maxDuration = 30;
 export async function GET(req: Request) {
   const variable = new URL(req.url).searchParams.get('var');
   return handle(() => apiWeatherForecast(variable), {
-    headers: { 'cache-control': 'public, s-maxage=900, stale-while-revalidate=3600' },
+    headers: { 'cache-control': 'public, s-maxage=1800, stale-while-revalidate=3600' },
   });
 }

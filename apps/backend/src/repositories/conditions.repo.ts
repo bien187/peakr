@@ -177,19 +177,10 @@ export async function getConditions(): Promise<ConditionsLoad> {
       c.snowAt = meta[0]?.value?.fetchedAt ?? null;
     }, undefined),
     safe('weather_cells', async () => {
-      const rows = await sql<{ cell: string; model_elev_m: number | null; captured_at: Date | string; snow_depth_cm: number | null; forecast: HourlyForecast | null; forecast_at: Date | string | null }[]>`
-        SELECT cell, model_elev_m, captured_at, snow_depth_cm, forecast, forecast_at FROM weather_cells
-      `;
-      let newest: string | null = null;
-      for (const r of rows) {
-        c.modelSnow.set(r.cell, { snowCm: r.snow_depth_cm, elevationM: r.model_elev_m, at: toIso(r.captured_at) } satisfies ModelSnow);
-        const at = toIsoOrNull(r.forecast_at);
-        if (r.forecast && at) {
-          c.forecasts.set(r.cell, { ...r.forecast, fetchedAt: at, elevationM: r.model_elev_m } satisfies CellForecast);
-          if (!newest || at > newest) newest = at;
-        }
-      }
-      c.forecastAt = newest;
+      const cells = await loadCellForecasts();
+      c.modelSnow = cells.modelSnow;
+      c.forecasts = cells.forecasts;
+      c.forecastAt = cells.forecastAt;
     }, undefined),
     safe('avalanche', async () => {
       const rows = await sql<MetaRow[]>`SELECT value FROM app_meta WHERE key = 'avalanche_levels'`;
@@ -201,6 +192,43 @@ export async function getConditions(): Promise<ConditionsLoad> {
 
   const value = { conditions: c, ok };
   globalThis.__peakrConditions = { at: Date.now(), value };
+  return value;
+}
+
+declare global {
+  var __peakrCellForecasts: { stamp: string; value: CellForecasts } | undefined;
+}
+
+interface CellForecasts {
+  modelSnow: Map<string, ModelSnow>;
+  forecasts: Map<string, CellForecast>;
+  forecastAt: string | null;
+}
+
+/**
+ * Prognosen aller Wetterzellen (~1 MB). Neu geladen wird nur, wenn ein Worker
+ * neue Werte geschrieben hat – erkannt an einem winzigen Stand-Abruf. So bleibt
+ * der Datenverkehr der Gratis-Datenbank klein, auch wenn die Suche oft läuft.
+ */
+async function loadCellForecasts(): Promise<CellForecasts> {
+  const [{ stamp }] = await sql<{ stamp: string }[]>`
+    SELECT concat(count(*), '|', max(captured_at), '|', max(forecast_at)) AS stamp FROM weather_cells
+  `;
+  const hit = globalThis.__peakrCellForecasts;
+  if (hit && hit.stamp === stamp) return hit.value;
+  const rows = await sql<{ cell: string; model_elev_m: number | null; captured_at: Date | string; snow_depth_cm: number | null; forecast: HourlyForecast | null; forecast_at: Date | string | null }[]>`
+    SELECT cell, model_elev_m, captured_at, snow_depth_cm, forecast, forecast_at FROM weather_cells
+  `;
+  const value: CellForecasts = { modelSnow: new Map(), forecasts: new Map(), forecastAt: null };
+  for (const r of rows) {
+    value.modelSnow.set(r.cell, { snowCm: r.snow_depth_cm, elevationM: r.model_elev_m, at: toIso(r.captured_at) });
+    const at = toIsoOrNull(r.forecast_at);
+    if (r.forecast && at) {
+      value.forecasts.set(r.cell, { ...r.forecast, fetchedAt: at, elevationM: r.model_elev_m });
+      if (!value.forecastAt || at > value.forecastAt) value.forecastAt = at;
+    }
+  }
+  globalThis.__peakrCellForecasts = { stamp, value };
   return value;
 }
 
@@ -221,19 +249,20 @@ const FIELD: Record<WeatherLayerKey, keyof HourlyForecast> = {
  * Open-Meteo aus.
  */
 export async function getForecastGrid(variable: WeatherLayerKey, now: Date, maxHours = 48): Promise<ForecastGridResponse> {
-  const rows = await sql<{ cell: string; model_elev_m: number | null; forecast: HourlyForecast | null; forecast_at: Date | string | null }[]>`
-    SELECT cell, model_elev_m, forecast, forecast_at FROM weather_cells
+  // Nur die gewünschte Grösse aus dem JSON holen (ein Sechstel der Daten).
+  const rows = await sql<{ cell: string; model_elev_m: number | null; start: string | null; series: (number | null)[] | null; forecast_at: Date | string | null }[]>`
+    SELECT cell, model_elev_m, forecast->>'start' AS start, forecast->${FIELD[variable]} AS series, forecast_at
+    FROM weather_cells
     WHERE forecast IS NOT NULL AND forecast_at > now() - interval '36 hours'
     ORDER BY cell
   `;
   const start = Math.floor(now.getTime() / 3_600_000) * 3_600_000;
+  const offsetOf = (r: { start: string | null }) => (r.start ? Math.round((start - Date.parse(r.start)) / 3_600_000) : 0);
   let hours = 0;
   let fetchedAt: string | null = null;
   for (const r of rows) {
-    const series = r.forecast?.[FIELD[variable]];
-    if (!r.forecast || !Array.isArray(series)) continue;
-    const offset = Math.round((start - Date.parse(r.forecast.start)) / 3_600_000);
-    hours = Math.max(hours, Math.min(maxHours, series.length - offset));
+    if (!r.start || !Array.isArray(r.series)) continue;
+    hours = Math.max(hours, Math.min(maxHours, r.series.length - offsetOf(r)));
     const at = toIsoOrNull(r.forecast_at);
     if (at && (!fetchedAt || at > fetchedAt)) fetchedAt = at;
   }
@@ -246,10 +275,9 @@ export async function getForecastGrid(variable: WeatherLayerKey, now: Date, maxH
     if (!Number.isFinite(a) || !Number.isFinite(b)) continue;
     cells.push([Math.round(a) / 10, Math.round(b) / 10]);
     elevations.push(r.model_elev_m);
-    const series = r.forecast?.[FIELD[variable]];
-    const offset = r.forecast ? Math.round((start - Date.parse(r.forecast.start)) / 3_600_000) : 0;
+    const offset = offsetOf(r);
     for (let h = 0; h < hours; h++) {
-      const v = Array.isArray(series) ? series[offset + h] : null;
+      const v = Array.isArray(r.series) ? r.series[offset + h] : null;
       values[h].push(typeof v === 'number' ? v : null);
     }
   }
