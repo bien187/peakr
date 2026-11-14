@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { inflateSync } from 'node:zlib';
-import { scaleClass, WEATHER_SCALES } from '@ch-alpineroute/shared';
+import { encodeRate, scaleClass, WEATHER_SCALES } from '@ch-alpineroute/shared';
 import { describe, expect, it } from 'vitest';
 import {
   decodeRadar,
@@ -14,6 +14,7 @@ import {
   radarCoordinates,
   radarFileName,
   renderRadar,
+  renderRadarBytes,
   sampleGrid,
   stampOf,
   timeFromFileName,
@@ -146,5 +147,36 @@ describe('Farbklassen der Wetterkarte', () => {
       expect(s.labels).toHaveLength(s.colors.length);
       expect(s.from).toHaveLength(s.colors.length);
     }
+  });
+});
+
+describe('Radar: Datenbild für die fliessende Darstellung im Browser', () => {
+  const halves: RadarGrid = {
+    rows: GRID.rows, cols: GRID.cols,
+    data: Float64Array.from({ length: GRID.rows * GRID.cols }, (_, i) => (Math.floor(i / GRID.cols) < GRID.rows / 2 ? 5 : 0)),
+  };
+
+  it('speichert je Pixel die Intensität als Byte (logarithmisch), trocken = 0', () => {
+    const img = renderRadarBytes(halves);
+    const { width, height } = outputSize();
+    expect(img.width).toBe(width);
+    expect(img.height).toBe(height);
+    const at = (lng: number, lat: number) => {
+      const px = Math.floor(((lng - 5) / 6.5) * width);
+      const y = (l: number) => Math.log(Math.tan(Math.PI / 4 + (l * Math.PI) / 360));
+      const py = Math.floor(((y(48.4) - y(lat)) / (y(48.4) - y(45.2))) * height);
+      return img.bytes[py * width + px];
+    };
+    expect(at(7.59, 47.56)).toBe(encodeRate(5)); // Basel nass
+    expect(at(8.95, 46.0)).toBe(0); // Lugano trocken
+  });
+
+  it('Graustufen-PNG: Farbtyp 0, ein Byte je Pixel', () => {
+    const png = encodePng(3, 2, Uint8Array.from([0, 1, 2, 3, 4, 5]), 1);
+    expect(png[24]).toBe(8); // Bittiefe
+    expect(png[25]).toBe(0); // Graustufen
+    const idatLen = png.readUInt32BE(33);
+    const raw = inflateSync(png.subarray(41, 41 + idatLen));
+    expect([...raw]).toEqual([0, 0, 1, 2, 0, 3, 4, 5]);
   });
 });

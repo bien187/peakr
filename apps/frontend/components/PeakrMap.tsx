@@ -56,7 +56,25 @@ const POINT_COLOR: ExpressionSpecification = [
   SKI_BLUE,
   HIKE_GREEN,
 ];
+const CASING_COLOR = 'rgba(255,255,255,0.9)';
 const IS_CLUSTER: ExpressionSpecification = ['has', 'point_count'];
+
+/** Farbe entlang der Route bis zum Anteil p (0–1); dahinter durchsichtig – zum Nachzeichnen. */
+function routeGradient(color: string, p: number): ExpressionSpecification {
+  if (p >= 0.995) return ['interpolate', ['linear'], ['line-progress'], 0, color, 1, color];
+  const head = Math.max(0.002, p);
+  // Stützstellen streng aufsteigend (sonst verwirft MapLibre den Ausdruck).
+  return ['interpolate', ['linear'], ['line-progress'], 0, color, head, color, head + 0.002, 'rgba(0,0,0,0)', 1, 'rgba(0,0,0,0)'];
+}
+
+/** Radius des Auswahlrings je Zoom, um `extra` Pixel vergrössert (Zoom-Ausdruck muss zuoberst stehen). */
+const selRadius = (extra: number): ExpressionSpecification => ['interpolate', ['linear'], ['zoom'], 6, 9 + extra, 14, 17 + extra];
+
+const reducedMotion = (): boolean =>
+  typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+/** Zählergrösse: 10–18 px statt bisher 13–25 px. */
+const CLUSTER_RADIUS: ExpressionSpecification = ['step', ['get', 'point_count'], 10, 10, 11.5, 50, 13, 250, 14.5, 1000, 16];
+const CLUSTER_COLOR: ExpressionSpecification = ['case', ['>', ['get', 'ski'], 0], SKI_BLUE, HIKE_GREEN];
 const NOT_CLUSTER: ExpressionSpecification = ['!', ['has', 'point_count']];
 
 // Weisse Typ-Symbole (sitzen auf dem farbigen Kreis) – als Map-Images registriert.
@@ -178,7 +196,9 @@ export function PeakrMap({
   const [ready, setReady] = useState(false);
   /** Karteninstanz für die Wetterebene (erst nach «load»). */
   const [mapObj, setMapObj] = useState<maplibregl.Map | null>(null);
-  const [wxOpen, setWxOpen] = useState(false);
+  const [wxOn, setWxOn] = useState(false);
+  const routeAnim = useRef(0);
+  const rippleAnim = useRef(0);
 
   // Quellen + Layer installieren (idempotent; auch nach Style-Fallback erneut aufrufbar).
   const installLayers = (map: maplibregl.Map) => {
@@ -194,11 +214,15 @@ export function PeakrMap({
         cluster: true,
         clusterMaxZoom: CLUSTER_MAX_ZOOM,
         clusterRadius: 46,
+        // Anzahl Skigebiete je Zähler → Farbe der Wandern- bzw. Ski-Suche.
+        clusterProperties: { ski: ['+', ['case', ['==', ['get', 'type'], 'ski'], 1, 0]] },
       });
     }
-    for (const id of ['sel', 'origin', 'pois', 'route', 'trailhead']) {
+    for (const id of ['sel', 'origin', 'pois', 'trailhead']) {
       if (!map.getSource(id)) map.addSource(id, { type: 'geojson', data: EMPTY });
     }
+    // lineMetrics: die Route lässt sich damit beim Erscheinen «nachzeichnen» (line-gradient).
+    if (!map.getSource('route')) map.addSource('route', { type: 'geojson', data: EMPTY, lineMetrics: true });
     if (!map.getSource('trails')) {
       map.addSource('trails', {
         type: 'raster',
@@ -219,24 +243,51 @@ export function PeakrMap({
       type: 'line',
       source: 'route',
       layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: { 'line-color': '#ffffff', 'line-width': 7, 'line-opacity': 0.9 },
+      paint: { 'line-width': 7, 'line-gradient': routeGradient(CASING_COLOR, 1) },
     });
     add({
       id: 'route-line',
       type: 'line',
       source: 'route',
       layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: { 'line-color': ROUTE_COLOR, 'line-width': 3.5 },
+      paint: { 'line-width': 3.5, 'line-gradient': routeGradient(ROUTE_COLOR, 1) },
+    });
+    // Kurzer Ring, der sich beim Auswählen eines Ziels einmal ausbreitet.
+    add({
+      id: 'sel-ripple',
+      type: 'circle',
+      source: 'sel',
+      paint: {
+        'circle-radius': selRadius(0),
+        'circle-color': 'rgba(0,0,0,0)',
+        'circle-stroke-width': 2,
+        'circle-stroke-color': '#1f2933',
+        'circle-stroke-opacity': 0,
+      },
     });
     add({
       id: 'sel-ring',
       type: 'circle',
       source: 'sel',
       paint: {
-        'circle-radius': ['interpolate', ['linear'], ['zoom'], 6, 9, 14, 17],
+        'circle-radius': selRadius(0),
         'circle-color': 'rgba(0,0,0,0)',
         'circle-stroke-width': 3,
         'circle-stroke-color': '#1f2933',
+      },
+    });
+    // Zähler: klein und ruhig – Akzentfarbe der Suche, feiner weisser Ring, weicher Hof.
+    add({
+      id: 'cluster-halo',
+      type: 'circle',
+      source: 'dests',
+      filter: IS_CLUSTER,
+      paint: {
+        'circle-color': CLUSTER_COLOR,
+        'circle-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 0.28, 0.16],
+        'circle-radius': ['+', CLUSTER_RADIUS, 6],
+        'circle-blur': 0.35,
+        'circle-opacity-transition': { duration: 180 },
       },
     });
     add({
@@ -245,11 +296,12 @@ export function PeakrMap({
       source: 'dests',
       filter: IS_CLUSTER,
       paint: {
-        'circle-color': '#1f2933',
-        'circle-opacity': 0.86,
-        'circle-radius': ['step', ['get', 'point_count'], 13, 20, 16, 100, 20, 500, 25],
-        'circle-stroke-width': 2,
-        'circle-stroke-color': '#ffffff',
+        'circle-color': CLUSTER_COLOR,
+        'circle-opacity': 0.94,
+        'circle-radius': ['+', CLUSTER_RADIUS, ['case', ['boolean', ['feature-state', 'hover'], false], 2, 0]],
+        'circle-radius-transition': { duration: 180 },
+        'circle-stroke-width': 1.5,
+        'circle-stroke-color': 'rgba(255,255,255,0.95)',
       },
     });
     add({
@@ -257,7 +309,12 @@ export function PeakrMap({
       type: 'symbol',
       source: 'dests',
       filter: IS_CLUSTER,
-      layout: { 'text-field': ['get', 'point_count_abbreviated'], 'text-size': 11.5, 'text-font': FONT, 'text-allow-overlap': true },
+      layout: {
+        'text-field': ['get', 'point_count_abbreviated'],
+        'text-size': ['step', ['get', 'point_count'], 10, 100, 10.5, 1000, 11],
+        'text-font': FONT,
+        'text-allow-overlap': true,
+      },
       paint: { 'text-color': '#ffffff' },
     });
     add({
@@ -421,6 +478,19 @@ export function PeakrMap({
       map.on('mouseenter', layer, () => (map.getCanvas().style.cursor = 'pointer'));
       map.on('mouseleave', layer, () => (map.getCanvas().style.cursor = ''));
     }
+    // Zähler unter dem Zeiger leicht vergrössern.
+    let hoverCluster: number | null = null;
+    const setHover = (id: number | null) => {
+      if (hoverCluster === id) return;
+      if (hoverCluster !== null) map.setFeatureState({ source: 'dests', id: hoverCluster }, { hover: false });
+      hoverCluster = id;
+      if (id !== null) map.setFeatureState({ source: 'dests', id }, { hover: true });
+    };
+    map.on('mousemove', 'clusters', (e) => {
+      const id = e.features?.[0]?.id;
+      setHover(typeof id === 'number' ? id : null);
+    });
+    map.on('mouseleave', 'clusters', () => setHover(null));
 
     const ro = new ResizeObserver(() => map.resize());
     ro.observe(wrapRef.current);
@@ -494,6 +564,7 @@ export function PeakrMap({
         ? { type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'LineString', coordinates: selLine }, properties: {} }] }
         : EMPTY,
     );
+    if (selLine && selLine.length > 1) drawRoute(map, routeAnim);
 
     // Ausschnitt: Ziel, Ausgangspunkt und – sobald geladen – die ganze Route.
     const bounds = new (mapLib().LngLatBounds)(dest, dest);
@@ -502,6 +573,30 @@ export function PeakrMap({
     if (selTh || selLine) map.fitBounds(bounds, { padding: viewPadding(), maxZoom: 14, duration: 500 });
     else map.flyTo({ center: dest, zoom: Math.max(map.getZoom(), 11.5), duration: 500 });
   }, [selId, selLine, selTh, ready]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Neues Ziel ausgewählt: ein Ring breitet sich einmal aus.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || !selId) return;
+    ripple(map, rippleAnim);
+  }, [selId, ready]);
+
+  // Auf der dunklen Wetterkarte sind Auswahlring und Welle hell.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    for (const id of ['sel-ring', 'sel-ripple']) {
+      if (map.getLayer(id)) map.setPaintProperty(id, 'circle-stroke-color', wxOn ? '#ffffff' : '#1f2933');
+    }
+  }, [wxOn, ready]);
+
+  useEffect(
+    () => () => {
+      cancelAnimationFrame(routeAnim.current);
+      cancelAnimationFrame(rippleAnim.current);
+    },
+    [],
+  );
 
   // Feuerstellen aus OpenStreetMap (Overpass): ab Zoom 13, je Kartenkachel nur einmal pro Sitzung.
   useEffect(() => {
@@ -563,9 +658,9 @@ export function PeakrMap({
   }, [ready]);
 
   return (
-    <div className={'map-wrap' + (wxOpen ? ' wx-on' : '')}>
+    <div className={'map-wrap' + (wxOn ? ' wx-on' : '')}>
       <div className="pk-map" ref={wrapRef} />
-      <WeatherLayer map={mapObj} onOpenChange={setWxOpen} />
+      <WeatherLayer map={mapObj} onActiveChange={setWxOn} />
       <div className="pk-legend" aria-hidden>
         <span>
           <i style={{ background: HIKE_GREEN }} /> Wandern
@@ -585,6 +680,43 @@ export function PeakrMap({
       </div>
     </div>
   );
+}
+
+/** Route vom Ausgangspunkt zum Ziel nachzeichnen (0,9 s); bei «Bewegung reduzieren» sofort ganz. */
+function drawRoute(map: maplibregl.Map, anim: { current: number }): void {
+  cancelAnimationFrame(anim.current);
+  const set = (p: number) => {
+    if (!map.getLayer('route-line')) return;
+    map.setPaintProperty('route-line', 'line-gradient', routeGradient(ROUTE_COLOR, p));
+    map.setPaintProperty('route-casing', 'line-gradient', routeGradient(CASING_COLOR, p));
+  };
+  if (reducedMotion()) {
+    set(1);
+    return;
+  }
+  const t0 = performance.now();
+  const frame = (now: number) => {
+    const t = Math.min(1, (now - t0) / 900);
+    set(1 - (1 - t) ** 3);
+    if (t < 1) anim.current = requestAnimationFrame(frame);
+  };
+  set(0);
+  anim.current = requestAnimationFrame(frame);
+}
+
+/** Ein heller Ring breitet sich vom gewählten Ziel aus und verblasst. */
+function ripple(map: maplibregl.Map, anim: { current: number }): void {
+  cancelAnimationFrame(anim.current);
+  if (reducedMotion() || !map.getLayer('sel-ripple')) return;
+  const t0 = performance.now();
+  const frame = (now: number) => {
+    const t = Math.min(1, (now - t0) / 1100);
+    const e = 1 - (1 - t) ** 3;
+    map.setPaintProperty('sel-ripple', 'circle-radius', selRadius(e * 22));
+    map.setPaintProperty('sel-ripple', 'circle-stroke-opacity', 0.85 * (1 - t));
+    if (t < 1) anim.current = requestAnimationFrame(frame);
+  };
+  anim.current = requestAnimationFrame(frame);
 }
 
 function escapeHtml(s: string): string {

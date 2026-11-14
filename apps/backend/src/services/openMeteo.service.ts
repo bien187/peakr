@@ -49,10 +49,12 @@ export interface HourlyForecast {
   temp: (number | null)[];
   /** Bewölkung in %. */
   cloud: (number | null)[];
+  /** Windrichtung (woher, Grad); fehlt in Prognosen vor November 2026. */
+  wdir?: (number | null)[];
 }
 
-/** 6 stündliche Grössen; zusammen mit current/daily 12 Variablen = 1,2 Abrufe je Ort. */
-const HOURLY_VARS = 'precipitation,snowfall,weather_code,wind_gusts_10m,temperature_2m,cloud_cover';
+/** 7 stündliche Grössen; zusammen mit current/daily 13 Variablen = 1,3 Abrufe je Ort. */
+const HOURLY_VARS = 'precipitation,snowfall,weather_code,wind_gusts_10m,wind_direction_10m,temperature_2m,cloud_cover';
 /** Heute bis übermorgen – so weit reicht die Tourplanung. */
 export const FORECAST_DAYS = 3;
 
@@ -72,6 +74,7 @@ export interface OpenMeteoResponse {
     snowfall?: (number | null)[];
     weather_code?: (number | null)[];
     wind_gusts_10m?: (number | null)[];
+    wind_direction_10m?: (number | null)[];
     temperature_2m?: (number | null)[];
     cloud_cover?: (number | null)[];
   };
@@ -104,6 +107,7 @@ export function parseHourly(h: OpenMeteoResponse['hourly']): HourlyForecast | nu
     gust: col(h.wind_gusts_10m, true),
     temp: col(h.temperature_2m),
     cloud: col(h.cloud_cover, true),
+    wdir: col(h.wind_direction_10m, true),
   };
 }
 

@@ -131,6 +131,8 @@ body {
 /* popovers */
 .pop {
   position: absolute; top: calc(100% + 10px); min-width: 240px; z-index: 80;
+  /* Popover.tsx misst die Lage und schiebt es in den sichtbaren Bereich (--pop-shift). */
+  translate: var(--pop-shift, 0px) 0; max-width: calc(100vw - 16px); overflow-y: auto; overscroll-behavior: contain;
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg);
   box-shadow: var(--shadow); padding: 12px; animation: popIn .14s ease;
 }
@@ -313,7 +315,8 @@ body {
   /* Off-screen-Karten überspringen (Performance bei tausenden Treffern). */
   content-visibility: auto; contain-intrinsic-size: auto 168px;
 }
-.rcard:hover { border-color: var(--line-2); box-shadow: var(--shadow); }
+.rcard:hover { border-color: var(--line-2); box-shadow: var(--shadow); transform: translateY(-1px); }
+.rcard:active { transform: translateY(0) scale(.997); }
 .rcard.is-sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), var(--shadow); }
 .rcard.is-sug { background: color-mix(in oklch, var(--surface) 70%, var(--bg)); }
 .rcard-top { display: flex; align-items: flex-start; gap: 12px; }
@@ -722,53 +725,193 @@ body {
 .route-meta dd { margin: 0; font: 600 14px/1.25 var(--font-sans); color: var(--ink); }
 
 /* ---- Wetterkarte (schwebend oben rechts im Kartenbereich) ----------------- */
+/* Eingeschaltet läuft sie weiter, auch wenn die Einstellungen zu sind (Chip + Mini-Legende). */
 .map-wrap.wx-on .pk-legend { display: none; }
-.wx-ctl { position: absolute; top: 12px; right: 12px; z-index: 6; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; max-width: calc(100% - 24px); }
+.wx-ctl {
+  position: absolute; top: 12px; right: 12px; z-index: 6; display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
+  max-width: calc(100% - 24px); pointer-events: none;
+}
+.wx-ctl > * { pointer-events: auto; }
 .wx-toggle {
   display: inline-flex; align-items: center; gap: 7px; height: 40px; padding: 0 14px; border-radius: 999px;
   border: 1px solid var(--line); background: color-mix(in oklch, var(--surface) 94%, transparent);
-  backdrop-filter: blur(8px); box-shadow: var(--shadow-sm); color: var(--ink); font: 600 13.5px/1 var(--font-sans); cursor: pointer;
-  transition: background .15s, box-shadow .15s, color .15s;
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); box-shadow: var(--shadow-sm); color: var(--ink);
+  font: 600 13.5px/1 var(--font-sans); cursor: pointer; transition: background .15s, box-shadow .15s, transform .12s;
 }
-.wx-toggle:hover { background: var(--surface); }
-.wx-toggle.is-on { background: var(--ink); color: var(--paper); border-color: var(--ink); box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow-sm); }
-.wx-toggle:focus-visible, .wx-chip:focus-visible, .wx-play:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.wx-toggle:hover { background: var(--surface); box-shadow: var(--shadow); }
+.wx-toggle:active { transform: scale(.97); }
+.wx-toggle-ico { display: inline-grid; color: #3a8fd9; }
+.wx-toggle:hover .wx-toggle-ico { animation: wxWiggle .7s ease; }
+@keyframes wxWiggle { 0%, 100% { transform: none; } 30% { transform: translateY(-2px) rotate(-8deg); } 65% { transform: translateY(0) rotate(6deg); } }
+.wx-toggle:focus-visible, .wx-layer:focus-visible, .wx-play:focus-visible, .wx-live:focus-visible, .wx-x:focus-visible, .wx-icon-btn:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+
+/* Live-Chip: dunkel wie die Wetterkarte, mit Zeit und «gemessen»/«Prognose». */
+.wx-chipbar { display: flex; align-items: center; gap: 6px; animation: wxIn .24s ease; }
+@keyframes wxIn { from { opacity: 0; transform: translateY(-4px); } }
+.wx-live {
+  display: inline-flex; align-items: center; gap: 7px; height: 38px; padding: 0 12px 0 12px; border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.14); background: rgba(13, 21, 35, .94); color: #eef2f8;
+  backdrop-filter: blur(12px) saturate(140%); -webkit-backdrop-filter: blur(12px) saturate(140%);
+  box-shadow: 0 8px 22px -10px rgba(0,0,0,.65); font: 600 12.5px/1 var(--font-sans); cursor: pointer;
+  transition: background .15s, transform .12s; max-width: 100%; min-width: 0;
+}
+.wx-live:hover { background: rgba(20, 31, 50, .9); }
+.wx-live:active { transform: scale(.97); }
+.wx-live svg { color: #9fd3ff; flex: none; }
+.wx-live-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.wx-live-time { font-size: 12px; color: #ffffff; white-space: nowrap; }
+.wx-live-kind {
+  padding: 3px 6px; border-radius: 999px; background: rgba(255,255,255,.12); color: #cbd5e3;
+  font: 600 9.5px/1 var(--font-mono); letter-spacing: .05em; text-transform: uppercase; white-space: nowrap;
+}
+.wx-live-kind.is-measured { background: rgba(255,255,255,.92); color: #0d1523; }
+.wx-x {
+  display: grid; place-items: center; width: 34px; height: 34px; flex: none; border-radius: 50%; cursor: pointer;
+  border: 1px solid rgba(255,255,255,.14); background: rgba(13, 21, 35, .94); color: #dfe6f0;
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); transition: background .15s, transform .12s;
+}
+.wx-x:hover { background: rgba(20, 31, 50, .92); color: #fff; }
+.wx-x:active { transform: scale(.94); }
+
+/* Punkt: pulsiert, solange die Zeit läuft. */
+.wx-dot { position: relative; width: 8px; height: 8px; border-radius: 50%; background: #8a94a0; flex: none; }
+.wx-dot.is-live { background: #5ac8fa; }
+.wx-dot.is-live::after {
+  content: ''; position: absolute; inset: -4px; border-radius: 50%; border: 2px solid #5ac8fa; opacity: 0;
+  animation: wxPulse 1.8s ease-out infinite;
+}
+@keyframes wxPulse { 0% { transform: scale(.45); opacity: .9; } 100% { transform: scale(1.55); opacity: 0; } }
+
+/* Mini-Legende (senkrecht) neben dem Chip. */
+.wx-mini {
+  display: flex; gap: 7px; height: 118px; padding: 9px 10px 9px 9px; border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.1); background: rgba(13, 21, 35, .94);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); animation: wxIn .3s ease; position: relative;
+}
+.wx-mini-ramp { width: 7px; border-radius: 999px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.12); }
+.wx-mini-marks { position: relative; width: 64px; }
+.wx-mini-marks span {
+  position: absolute; left: 0; transform: translateY(50%); white-space: nowrap;
+  font: 600 10px/1 var(--font-sans); color: #e3e9f2; text-shadow: 0 1px 2px rgba(0,0,0,.45);
+}
+.wx-mini-unit { position: absolute; right: 9px; top: 7px; font: 600 9px/1 var(--font-mono); color: #9aa6b6; }
+
+/* Panel (Einstellungen) */
 .wx-panel {
-  width: 330px; max-width: 100%; display: flex; flex-direction: column; gap: 10px; padding: 12px;
-  border-radius: var(--r-lg); border: 1px solid var(--line); background: color-mix(in oklch, var(--surface) 95%, transparent);
-  backdrop-filter: blur(10px); box-shadow: var(--shadow);
+  width: 344px; max-width: 100%; display: flex; flex-direction: column; gap: 12px; padding: 12px 12px 11px;
+  /* Fast deckend: Safari zeichnet den Weichzeichner nicht über der WebGL-Karte – sonst scheinen Beschriftungen durch. */
+  border-radius: var(--r-lg); border: 1px solid var(--line); background: color-mix(in oklch, var(--surface) 98.5%, transparent);
+  backdrop-filter: blur(14px) saturate(140%); -webkit-backdrop-filter: blur(14px) saturate(140%); box-shadow: var(--shadow);
+  transform-origin: top right; animation: wxPanel .22s cubic-bezier(.2, .8, .2, 1);
 }
+@keyframes wxPanel { from { opacity: 0; transform: translateY(-6px) scale(.98); } }
+.wx-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.wx-title { display: inline-flex; align-items: center; gap: 8px; font: 700 13.5px/1 var(--font-sans); color: var(--ink); }
+.wx-head-actions { display: inline-flex; gap: 4px; }
+.wx-icon-btn {
+  display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; border: none; cursor: pointer;
+  background: var(--surface-2); color: var(--ink-2); transition: background .15s, color .15s, transform .12s;
+}
+.wx-icon-btn:hover { background: var(--line); color: var(--ink); }
+.wx-icon-btn:active { transform: scale(.92); }
 .wx-layers { display: flex; flex-wrap: wrap; gap: 6px; }
-.wx-chip {
-  height: 30px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface-2);
-  color: var(--ink-2); font: 600 12px/1 var(--font-sans); cursor: pointer;
+.wx-layer {
+  display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px 0 9px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface-2); color: var(--ink-2); font: 600 12px/1 var(--font-sans);
+  transition: background .15s, color .15s, border-color .15s, transform .12s;
 }
-.wx-chip.is-on { background: var(--accent-soft); color: var(--accent-2); border-color: var(--accent); }
-.wx-time { display: grid; grid-template-columns: 34px 1fr; grid-template-rows: auto auto; align-items: center; gap: 4px 8px; }
+.wx-layer:hover { color: var(--ink); border-color: var(--line-2); }
+.wx-layer:active { transform: scale(.95); }
+.wx-layer.is-on { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.wx-layer.is-on svg { animation: wxPop .35s cubic-bezier(.3, 1.6, .5, 1); }
+@keyframes wxPop { from { transform: scale(.6) rotate(-12deg); } }
+
+/* Zeitachse: Messung (voll) | Prognose (gestrichelt), «Jetzt»-Marke. */
+.wx-time { display: grid; grid-template-columns: 36px 1fr; grid-template-rows: auto auto; align-items: center; gap: 2px 10px; }
 .wx-play {
-  grid-row: 1 / span 2; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%;
-  border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer;
+  grid-row: 1 / span 2; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink); transition: background .15s, transform .12s, box-shadow .15s;
 }
+.wx-play:hover { box-shadow: var(--shadow-sm); }
+.wx-play:active { transform: scale(.92); }
+.wx-play.is-playing { background: var(--ink); color: var(--paper); border-color: var(--ink); }
 .wx-play:disabled { opacity: .4; cursor: default; }
-.wx-slider { width: 100%; accent-color: var(--accent); margin: 0; }
-.wx-when { font-size: 11.5px; color: var(--ink-2); }
-.wx-legend { display: flex; flex-direction: column; gap: 6px; }
+.wx-track { position: relative; height: 26px; }
+.wx-track::before {
+  content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 6px; transform: translateY(-50%); border-radius: 999px;
+  background:
+    linear-gradient(to right, var(--ink-3) 0 var(--split, 0%), transparent var(--split, 0%)),
+    repeating-linear-gradient(90deg, var(--line-2) 0 5px, transparent 5px 8px);
+}
+.wx-track::after {
+  content: ''; position: absolute; left: var(--now, 0%); top: 50%; width: 2px; height: 14px; transform: translate(-1px, -50%);
+  border-radius: 2px; background: var(--accent);
+}
+.wx-now {
+  position: absolute; left: var(--now, 0%); top: 100%; transform: translate(var(--now-shift, -50%), -2px); white-space: nowrap;
+  font: 700 9px/1 var(--font-mono); letter-spacing: .05em; text-transform: uppercase; color: var(--accent-2);
+}
+.wx-slider {
+  position: relative; z-index: 1; width: 100%; height: 26px; margin: 0; background: transparent; cursor: pointer;
+  -webkit-appearance: none; appearance: none;
+}
+.wx-slider::-webkit-slider-runnable-track { height: 26px; background: transparent; }
+.wx-slider::-moz-range-track { height: 26px; background: transparent; }
+.wx-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 18px; height: 18px; margin-top: 4px; border-radius: 50%;
+  background: #fff; border: 2px solid var(--ink); box-shadow: 0 1px 4px rgba(0,0,0,.25); transition: transform .12s;
+}
+.wx-slider::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: #fff; border: 2px solid var(--ink); box-shadow: 0 1px 4px rgba(0,0,0,.25); }
+.wx-slider:active::-webkit-slider-thumb { transform: scale(1.15); }
+.wx-when { grid-column: 2; font-size: 11.5px; color: var(--ink-2); margin-top: 10px; }
+
+/* Legende: Verlauf wie auf der Karte, Zahlen und Worte darunter. */
+.wx-legend { display: flex; flex-direction: column; gap: 5px; }
 .wx-legend-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font: 600 12px/1.2 var(--font-sans); color: var(--ink); }
 .wx-unit { color: var(--ink-3); font-weight: 500; }
 .wx-badge { padding: 3px 7px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); font: 600 10.5px/1 var(--font-mono); color: var(--ink-2); white-space: nowrap; }
 .wx-badge.is-measured { border-color: var(--ink-3); color: var(--ink); }
-.wx-legend-row { display: flex; gap: 2px; }
-.wx-legend-cell { flex: 1 1 0; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.wx-legend-cell i { display: block; height: 10px; border-radius: 2px; box-shadow: inset 0 0 0 1px rgba(0,0,0,.06); }
-.wx-legend-cell span { font-size: 10px; color: var(--ink-3); white-space: nowrap; }
+.wx-ramp { height: 10px; border-radius: 999px; box-shadow: inset 0 0 0 1px rgba(0,0,0,.08); }
+.wx-ramp.is-loading {
+  background: linear-gradient(90deg, var(--surface-2) 0%, var(--line) 50%, var(--surface-2) 100%) 0 0 / 200% 100%;
+  animation: wxShimmer 1.2s linear infinite;
+}
+@keyframes wxShimmer { to { background-position: -200% 0; } }
+.wx-ticks, .wx-words { position: relative; height: 12px; margin: 0 6px; }
+.wx-ticks span, .wx-words span { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; }
+.wx-ticks span { font-size: 10px; color: var(--ink-3); }
+.wx-words span { font: 600 10.5px/1 var(--font-sans); color: var(--ink-2); }
 .wx-note { display: flex; align-items: flex-start; gap: 6px; margin: 0; font: 500 11.5px/1.4 var(--font-sans); color: var(--ink-3); }
 .wx-note.is-warn { color: var(--ink-2); }
 .wx-note svg { flex: none; margin-top: 2px; }
 .wx-src { margin: 0; font: 500 10.5px/1.4 var(--font-sans); color: var(--ink-3); }
+
+/* Wert unter dem Mauszeiger */
+.wx-readout {
+  position: absolute; left: 0; top: 0; z-index: 5; display: flex; flex-direction: column; gap: 3px; padding: 7px 10px;
+  border-radius: 10px; background: rgba(13, 21, 35, .92); color: #fff; pointer-events: none;
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); box-shadow: 0 6px 18px -8px rgba(0,0,0,.6);
+}
+.wx-readout[hidden] { display: none; }
+.wx-readout-v { font: 700 13px/1 var(--font-sans); }
+.wx-readout-m { font: 500 10.5px/1 var(--font-mono); color: #b8c3d3; }
+
 @media (max-width: 860px) {
   .wx-ctl { top: 10px; right: 10px; }
-  .wx-panel { width: min(330px, calc(100vw - 20px)); max-height: 46vh; overflow: auto; }
-  .wx-chip { height: 34px; }
+  .wx-panel { width: min(344px, calc(100vw - 20px)); max-height: 52vh; overflow: auto; overscroll-behavior: contain; }
+  .wx-layer { height: 34px; }
+  .wx-live { height: 36px; padding: 0 10px; }
+  .wx-mini { height: 104px; }
+}
+@media (max-width: 420px) {
+  /* Schmal: Ebenenname weglassen, Symbol + Zeit genügen. */
+  .wx-live-name { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wx-dot.is-live::after, .wx-toggle:hover .wx-toggle-ico, .wx-layer.is-on svg, .wx-ramp.is-loading { animation: none; }
+  .wx-panel, .wx-chipbar, .wx-mini { animation: none; }
 }
 
 .route-export { margin-top: 18px; }
