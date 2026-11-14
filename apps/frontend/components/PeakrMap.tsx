@@ -5,7 +5,7 @@ import { mapLib } from '@/lib/map';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useEffect, useRef, useState } from 'react';
 import type { ExpressionSpecification, GeoJSONSource, MapGeoJSONFeature } from 'maplibre-gl';
-import { DARK_MODE_VEIL, mapShade } from '@/lib/mapShade';
+import { mapShade } from '@/lib/mapShade';
 import { fmtDrive, KIND_META, trailheadLabel, type MapSelection, type PPoint } from '@/lib/peakr';
 import { useSettings } from '@/lib/theme';
 import { WeatherLayer } from './WeatherLayer';
@@ -208,8 +208,6 @@ export function PeakrMap({
   const [wxOn, setWxOn] = useState(false);
   const routeAnim = useRef(0);
   const rippleAnim = useRef(0);
-  const darkAnim = useRef(0);
-  const darkLevel = useRef(0);
   const dark = useSettings().s.mode === 'dark';
 
   // Quellen + Layer installieren (idempotent; auch nach Style-Fallback erneut aufrufbar).
@@ -611,28 +609,12 @@ export function PeakrMap({
     }
   }, [wxOn, dark, ready]);
 
-  // Dunkler Modus: Grundkarte abdunkeln (weich), Beschriftungen hell – auch die eigenen.
+  // Dunkler Modus: dunkle Variante der Grundkarte – Flächen dunkel, Strassen, Wege und
+  // Markierungen hell (lib/darkStyle.ts); MapLibre blendet die Farben weich über.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
-    const shade = mapShade(map, 'trails');
-    shade.setLabels('theme', dark);
-    cancelAnimationFrame(darkAnim.current);
-    const from = darkLevel.current;
-    const to = dark ? DARK_MODE_VEIL : 0;
-    if (reducedMotion() || from === to) {
-      darkLevel.current = to;
-      shade.setVeil('theme', to);
-    } else {
-      const t0 = performance.now();
-      const step = (now: number) => {
-        const t = Math.min(1, (now - t0) / 350);
-        darkLevel.current = from + (to - from) * t;
-        shade.setVeil('theme', darkLevel.current);
-        if (t < 1) darkAnim.current = requestAnimationFrame(step);
-      };
-      darkAnim.current = requestAnimationFrame(step);
-    }
+    mapShade(map, 'trails').setDark(dark);
     const names = dark ? NAME_DARK : NAME_LIGHT;
     if (map.getLayer('point-name')) {
       map.setPaintProperty('point-name', 'text-color', names.text);
@@ -648,7 +630,6 @@ export function PeakrMap({
     () => () => {
       cancelAnimationFrame(routeAnim.current);
       cancelAnimationFrame(rippleAnim.current);
-      cancelAnimationFrame(darkAnim.current);
     },
     [],
   );

@@ -704,6 +704,8 @@ body {
 .pk-legend i.pk-legend-p { border-radius: 3px; }
 .maplibregl-popup.pk-hover { pointer-events: none; }
 /* Dunkler Modus: Symbole der Kartenknöpfe und Quellenangabe hell auf dunkel */
+.app[data-mode="dark"] .maplibregl-ctrl-group { background: var(--surface); }
+.app[data-mode="dark"] .maplibregl-ctrl-group button + button { border-top-color: var(--line); }
 .app[data-mode="dark"] .maplibregl-ctrl-group button .maplibregl-ctrl-icon { filter: invert(0.92); }
 .app[data-mode="dark"] .maplibregl-ctrl-attrib { background: color-mix(in oklch, var(--surface) 84%, transparent); color: var(--ink-2); }
 .app[data-mode="dark"] .maplibregl-ctrl-attrib a { color: var(--ink-2); }
