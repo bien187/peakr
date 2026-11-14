@@ -5,7 +5,9 @@ import { mapLib } from '@/lib/map';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useEffect, useRef, useState } from 'react';
 import type { ExpressionSpecification, GeoJSONSource, MapGeoJSONFeature } from 'maplibre-gl';
+import { DARK_MODE_VEIL, mapShade } from '@/lib/mapShade';
 import { fmtDrive, KIND_META, trailheadLabel, type MapSelection, type PPoint } from '@/lib/peakr';
+import { useSettings } from '@/lib/theme';
 import { WeatherLayer } from './WeatherLayer';
 
 const STYLE_URL =
@@ -57,6 +59,8 @@ const POINT_COLOR: ExpressionSpecification = [
   HIKE_GREEN,
 ];
 const CASING_COLOR = 'rgba(255,255,255,0.9)';
+const NAME_DARK = { text: '#e6ebf2', halo: 'rgba(10,16,24,0.85)' };
+const NAME_LIGHT = { text: '#1f2933', halo: '#ffffff' };
 const IS_CLUSTER: ExpressionSpecification = ['has', 'point_count'];
 
 /** Farbe entlang der Route bis zum Anteil p (0–1); dahinter durchsichtig – zum Nachzeichnen. */
@@ -204,6 +208,9 @@ export function PeakrMap({
   const [wxOn, setWxOn] = useState(false);
   const routeAnim = useRef(0);
   const rippleAnim = useRef(0);
+  const darkAnim = useRef(0);
+  const darkLevel = useRef(0);
+  const dark = useSettings().s.mode === 'dark';
 
   // Quellen + Layer installieren (idempotent; auch nach Style-Fallback erneut aufrufbar).
   const installLayers = (map: maplibregl.Map) => {
@@ -595,19 +602,53 @@ export function PeakrMap({
     ripple(map, rippleAnim);
   }, [selId, ready]);
 
-  // Auf der dunklen Wetterkarte sind Auswahlring und Welle hell.
+  // Auf dunkler Karte (Wetter oder dunkler Modus) sind Auswahlring und Welle hell.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
     for (const id of ['sel-ring', 'sel-ripple']) {
-      if (map.getLayer(id)) map.setPaintProperty(id, 'circle-stroke-color', wxOn ? '#ffffff' : '#1f2933');
+      if (map.getLayer(id)) map.setPaintProperty(id, 'circle-stroke-color', wxOn || dark ? '#ffffff' : '#1f2933');
     }
-  }, [wxOn, ready]);
+  }, [wxOn, dark, ready]);
+
+  // Dunkler Modus: Grundkarte abdunkeln (weich), Beschriftungen hell – auch die eigenen.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const shade = mapShade(map, 'trails');
+    shade.setLabels('theme', dark);
+    cancelAnimationFrame(darkAnim.current);
+    const from = darkLevel.current;
+    const to = dark ? DARK_MODE_VEIL : 0;
+    if (reducedMotion() || from === to) {
+      darkLevel.current = to;
+      shade.setVeil('theme', to);
+    } else {
+      const t0 = performance.now();
+      const step = (now: number) => {
+        const t = Math.min(1, (now - t0) / 350);
+        darkLevel.current = from + (to - from) * t;
+        shade.setVeil('theme', darkLevel.current);
+        if (t < 1) darkAnim.current = requestAnimationFrame(step);
+      };
+      darkAnim.current = requestAnimationFrame(step);
+    }
+    const names = dark ? NAME_DARK : NAME_LIGHT;
+    if (map.getLayer('point-name')) {
+      map.setPaintProperty('point-name', 'text-color', names.text);
+      map.setPaintProperty('point-name', 'text-halo-color', names.halo);
+    }
+    if (map.getLayer('trailhead')) {
+      map.setPaintProperty('trailhead', 'text-color', dark ? '#9ec2f5' : PARK_BLUE);
+      map.setPaintProperty('trailhead', 'text-halo-color', names.halo);
+    }
+  }, [dark, ready]);
 
   useEffect(
     () => () => {
       cancelAnimationFrame(routeAnim.current);
       cancelAnimationFrame(rippleAnim.current);
+      cancelAnimationFrame(darkAnim.current);
     },
     [],
   );

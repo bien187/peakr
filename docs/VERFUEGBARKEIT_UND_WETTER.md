@@ -129,6 +129,9 @@ darüber und **läuft von selbst ab** – ausser bei «Bewegung reduzieren» im 
   Datenabdeckung laufen aus. Die Bilder liegen als MapLibre-Canvas-Quellen in Web-Mercator.
 - `apps/frontend/lib/weatherParticles.ts` zeichnet Striche und Flocken als eigene WebGL-Ebene unter
   den Beschriftungen und Zielpunkten.
+- `apps/frontend/lib/mapShade.ts` liefert den dunklen Schleier und die hellen Beschriftungen – für
+  die Wetterkarte und für den dunklen Modus der App. Es gilt der stärkere Wunsch, die Karte wird nie
+  doppelt abgedunkelt; schaltet man eines aus, bleibt das andere.
 
 **Ressourcen und Störungen:**
 - Daten werden erst beim Einschalten geladen, je Ebene einmal; das Radar alle 5 Minuten neu
