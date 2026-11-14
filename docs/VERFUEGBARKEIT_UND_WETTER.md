@@ -129,9 +129,14 @@ darüber und **läuft von selbst ab** – ausser bei «Bewegung reduzieren» im 
   Datenabdeckung laufen aus. Die Bilder liegen als MapLibre-Canvas-Quellen in Web-Mercator.
 - `apps/frontend/lib/weatherParticles.ts` zeichnet Striche und Flocken als eigene WebGL-Ebene unter
   den Beschriftungen und Zielpunkten.
-- `apps/frontend/lib/mapShade.ts` liefert den dunklen Schleier und die hellen Beschriftungen – für
-  die Wetterkarte und für den dunklen Modus der App. Es gilt der stärkere Wunsch, die Karte wird nie
-  doppelt abgedunkelt; schaltet man eines aus, bleibt das andere.
+- `apps/frontend/lib/mapShade.ts` steuert das Aussehen der Grundkarte:
+  - **Dunkler Modus:** echte dunkle Variante der swisstopo-Karte (`lib/darkStyle.ts`). Die Farben des
+    hellen Stils werden je Rolle in OKLCH umgerechnet: Flächen dunkel (Relief, Wald grün, Wasser
+    dunkelblau), Strassen hell, Autobahnen bernstein, Wege, Höhenlinien, Grenzen und Bahnen hell
+    bzw. farbig sichtbar, Gebäude als hellere Blöcke, Beschriftungen hell. Kein Schleier.
+  - **Wetterkarte:** Schleier unter den Beschriftungen und helle Beschriftungen; hier darf die Karte
+    zurücktreten. Im dunklen Modus fällt der Schleier schwächer aus.
+  - Die Werte des hellen Stils werden gemerkt und beim Zurückschalten wiederhergestellt.
 
 **Ressourcen und Störungen:**
 - Daten werden erst beim Einschalten geladen, je Ebene einmal; das Radar alle 5 Minuten neu
