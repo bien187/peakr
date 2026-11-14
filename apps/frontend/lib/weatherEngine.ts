@@ -28,6 +28,7 @@ import {
   type Palette,
   type WindField,
 } from './weatherField';
+import { mapShade, type MapShade } from './mapShade';
 import { particleLayer, ParticleSystem, type FieldProbe } from './weatherParticles';
 
 export type Step = { kind: 'radar'; time: number; frame: number } | { kind: 'forecast'; time: number; hour: number };
@@ -71,19 +72,17 @@ export interface Readout {
   time: number;
 }
 
-const ID = { veil: 'wx-veil', radar: 'wx-radar', grid: 'wx-grid', particles: 'wx-particles' } as const;
-const ORDER = [ID.veil, ID.radar, ID.grid, ID.particles];
+const ID = { radar: 'wx-radar', grid: 'wx-grid', particles: 'wx-particles' } as const;
+const ORDER = [ID.radar, ID.grid, ID.particles];
 /** ~30 Bilder pro Sekunde: flüssig, aber schonend für Akku und Grafik. */
 const FRAME_MS = 33;
-const VEIL_COLOR = '#0a1322';
+/** Dunkler Schleier unter dem Wetter (gemeinsam mit dem dunklen Modus, siehe mapShade). */
 const VEIL_OPACITY = 0.7;
 const FADE_MS = 320;
 /** Dauer je Schritt beim Abspielen. */
 const STEP_MS = { radar: 360, forecast: 460, boundary: 760 };
 /** Am Ende der Zeitachse kurz stehen bleiben, dann von vorn. */
 const HOLD_MS = 1400;
-const LABEL_TEXT = 'rgba(232, 238, 247, 0.94)';
-const LABEL_HALO = 'rgba(10, 18, 34, 0.75)';
 
 /** Leichtes Abbremsen um jeden echten Daten-Zeitpunkt: die Bilder selbst sind kurz zu sehen. */
 const ease = (t: number): number => 0.35 * t + 0.65 * t * t * (3 - 2 * t);
@@ -137,7 +136,7 @@ export class WeatherEngine {
   private veil = 0;
   private veilTarget = 0;
   private weights = { radar: 0, grid: 0 };
-  private applied: Record<'radar' | 'grid' | 'veil', number> = { radar: -1, grid: -1, veil: -1 };
+  private applied: Record<'radar' | 'grid', number> = { radar: -1, grid: -1 };
   /** Stundenpaar der Prognose an der aktuellen Position (für Partikel); null bei Radar. */
   private hours: { a: number; b: number | null; t: number } | null = null;
   private dirty = true;
@@ -145,7 +144,7 @@ export class WeatherEngine {
   private last = 0;
   private lastStep = -1;
   private particles: ParticleSystem | null = null;
-  private labels = new Map<string, { color: unknown; halo: unknown }>();
+  private readonly shade: MapShade;
   private destroyed = false;
 
   constructor(map: maplibregl.Map, ev: EngineEvents, appLayer: string) {
@@ -154,6 +153,7 @@ export class WeatherEngine {
     this.appLayer = appLayer;
     this.radarCanvas = document.createElement('canvas');
     this.gridCanvas = document.createElement('canvas');
+    this.shade = mapShade(map, appLayer);
     map.on('moveend', this.onMoveEnd);
     map.on('style.load', this.onStyleLoad);
   }
@@ -410,12 +410,7 @@ export class WeatherEngine {
     if (this.installed) return;
     try {
       if (!this.map.isStyleLoaded() && this.map.getLayersOrder().length === 0) return;
-      this.addInOrder({
-        id: ID.veil,
-        type: 'background',
-        paint: { 'background-color': VEIL_COLOR, 'background-opacity': 0, 'background-opacity-transition': { duration: 0, delay: 0 } },
-      });
-      this.applied = { radar: -1, grid: -1, veil: -1 };
+      this.applied = { radar: -1, grid: -1 };
       this.corners = { radar: '', grid: '' };
       this.radarKey = '';
       this.gridKey = '';
@@ -427,10 +422,11 @@ export class WeatherEngine {
   }
 
   private uninstall(): void {
-    for (const id of [ID.particles, ID.grid, ID.radar, ID.veil]) this.removeLayer(id);
+    for (const id of [ID.particles, ID.grid, ID.radar]) this.removeLayer(id);
     for (const id of [ID.grid, ID.radar]) if (this.map.getSource(id)) this.map.removeSource(id);
+    this.shade.setVeil('weather', 0);
     this.installed = false;
-    this.applied = { radar: -1, grid: -1, veil: -1 };
+    this.applied = { radar: -1, grid: -1 };
   }
 
   private removeLayer(id: string): void {
@@ -495,41 +491,18 @@ export class WeatherEngine {
   };
 
   private onStyleLoad = (): void => {
-    // Neuer Stil (z. B. Ersatzkarte): alle Wetter-Ebenen sind weg – neu anlegen.
+    // Neuer Stil (z. B. Ersatzkarte): alle Wetter-Ebenen sind weg – neu anlegen
+    // (Schleier und Beschriftungen stellt mapShade selbst wieder her).
     this.installed = false;
-    this.labels.clear();
     if (!this.active) return;
     this.install();
-    this.restyleLabels(true);
     this.dirty = true;
     this.schedule();
   };
 
-  /** Beschriftungen der Grundkarte hell auf dunklem Schleier – und zurück. */
+  /** Beschriftungen der Grundkarte hell (gemeinsam mit dem dunklen Modus, siehe mapShade). */
   private restyleLabels(dark: boolean): void {
-    try {
-      if (dark) {
-        // Ohne eigene Ebenen ist unklar, was zur Grundkarte gehört – dann nichts umfärben.
-        for (const l of this.baseLayers()) {
-          if (l.type !== 'symbol' || this.labels.has(l.id)) continue;
-          this.labels.set(l.id, {
-            color: this.map.getPaintProperty(l.id, 'text-color'),
-            halo: this.map.getPaintProperty(l.id, 'text-halo-color'),
-          });
-          this.map.setPaintProperty(l.id, 'text-color', LABEL_TEXT);
-          this.map.setPaintProperty(l.id, 'text-halo-color', LABEL_HALO);
-        }
-      } else {
-        for (const [id, orig] of this.labels) {
-          if (!this.map.getLayer(id)) continue;
-          this.map.setPaintProperty(id, 'text-color', orig.color as never);
-          this.map.setPaintProperty(id, 'text-halo-color', orig.halo as never);
-        }
-        this.labels.clear();
-      }
-    } catch {
-      /* Beschriftung bleibt, wie sie ist */
-    }
+    this.shade.setLabels('weather', dark);
   }
 
   // ── Animation ──────────────────────────────────────────────────────────────
@@ -727,14 +700,14 @@ export class WeatherEngine {
   }
 
   private applyOpacities(): void {
-    const set = (kind: 'radar' | 'grid' | 'veil', v: number) => {
+    const set = (kind: 'radar' | 'grid', v: number) => {
       if (Math.abs(this.applied[kind] - v) < 0.004) return;
       const id = ID[kind];
       if (!this.map.getLayer(id)) return;
-      this.map.setPaintProperty(id, kind === 'veil' ? 'background-opacity' : 'raster-opacity', v);
+      this.map.setPaintProperty(id, 'raster-opacity', v);
       this.applied[kind] = v;
     };
-    set('veil', this.veil);
+    this.shade.setVeil('weather', this.veil);
     set('radar', this.master * this.weights.radar);
     set('grid', this.master * this.weights.grid);
   }

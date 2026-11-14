@@ -2,6 +2,8 @@
 
 import type * as maplibregl from 'maplibre-gl';
 import { mapLib } from '@/lib/map';
+import { DARK_MODE_VEIL, mapShade } from '@/lib/mapShade';
+import { useSettings } from '@/lib/theme';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Icon } from './Icon';
@@ -115,6 +117,26 @@ function DetailMap({ d, variant, route }: { d: PDetail; variant: MediaVariant; r
   const parkRef = useRef<maplibregl.Marker | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [loaded, setLoaded] = useState(false);
+  const dark = useSettings().s.mode === 'dark';
+
+  // Dunkler Modus: Karte abgedunkelt mit hellen Beschriftungen, 3D-Ansicht gedimmt.
+  // Das Luftbild bleibt, wie es ist (Fotos abzudunkeln hilft niemandem).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !loaded) return;
+    try {
+      if (variant === 'map') {
+        const shade = mapShade(map, 'route-casing');
+        shade.setLabels('theme', dark);
+        shade.setVeil('theme', dark ? DARK_MODE_VEIL : 0);
+      } else if (variant === '3d' && map.getLayer('osm')) {
+        map.setPaintProperty('osm', 'raster-brightness-max', dark ? 0.62 : 1);
+        map.setPaintProperty('osm', 'raster-saturation', dark ? -0.25 : 0);
+      }
+    } catch {
+      /* Stil noch nicht bereit */
+    }
+  }, [dark, loaded, variant]);
 
   useEffect(() => {
     if (!hostRef.current) return;
