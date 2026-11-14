@@ -175,6 +175,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     <Ctx.Provider value={{ s, set, direction, setAppMode }}>
       <div
         className="app"
+        data-mode={s.mode}
         data-density="regular"
         data-labels="1"
         style={themeVars(direction, s.mode) as CSSProperties}
