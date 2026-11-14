@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Icon } from './Icon';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/lib/store';
@@ -34,6 +34,9 @@ export function useClickOutside(
   }, [active, ref, onOut]);
 }
 
+/** Abstand zum Bildschirmrand, den ein Popover mindestens einhält. */
+const POP_MARGIN = 8;
+
 export function Popover({
   open,
   onClose,
@@ -47,6 +50,27 @@ export function Popover({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useClickOutside(ref, onClose, open);
+
+  // Im sichtbaren Bereich halten: auf dem Handy ist die Zelle oft schmaler als das
+  // Popover und es ragte über den Rand. Seitlich verschieben, Höhe begrenzen.
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!open || !el) return;
+    const place = () => {
+      el.style.setProperty('--pop-shift', '0px');
+      const r = el.getBoundingClientRect();
+      const vw = document.documentElement.clientWidth;
+      let dx = 0;
+      if (r.left < POP_MARGIN) dx = POP_MARGIN - r.left;
+      else if (r.right > vw - POP_MARGIN) dx = vw - POP_MARGIN - r.right;
+      el.style.setProperty('--pop-shift', `${Math.round(dx)}px`);
+      el.style.maxHeight = `${Math.max(220, window.innerHeight - r.top - POP_MARGIN)}px`;
+    };
+    place();
+    window.addEventListener('resize', place);
+    return () => window.removeEventListener('resize', place);
+  }, [open]);
+
   if (!open) return null;
   return (
     <div className={'pop pop-' + align} ref={ref}>

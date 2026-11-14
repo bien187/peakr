@@ -83,10 +83,25 @@ Die technische Beschneiung kennt Peakr nicht und sagt das auch.
 
 ## Live-Wetterkarte
 
-Der Schalter **Wetter** sitzt oben rechts im Kartenbereich. Er ist nicht Teil der Navigation, ein
-dunkler Hintergrund zeigt den aktiven Zustand. Das Panel bietet Ebenenwahl, Zeitleiste mit
-Abspielen/Pause, Legende mit Einheit, Kennzeichnung «Radar · gemessen» bzw. «Prognose · Modell»,
-Quellen und Stand. Für die Prognoseraster zeigt der Zeiger den Wert der Zelle.
+Der Schalter **Wetter** sitzt oben rechts im Kartenbereich. Eingeschaltet wird die Karte dunkel
+(Schleier unter den Beschriftungen, Beschriftungen hell), die Wetterebene liegt als weicher Verlauf
+darüber und **läuft von selbst ab** – ausser bei «Bewegung reduzieren» im System.
+
+- **Einstellungen (Panel):** Ebenenwahl, Zeitleiste mit Abspielen/Pause und «Jetzt»-Marke
+  (Messung voll, Prognose gestrichelt), Legende als Verlauf mit Zahlen und Worten, Kennzeichnung
+  «Radar · gemessen» bzw. «Prognose · Modell», Quellen und Stand.
+- **Zugeklappt** (Pfeil oben im Panel; auf dem Handy auch beim Verschieben der Karte) läuft das
+  Wetter weiter. Ein dunkler Chip zeigt Ebene, Zeit und «gemessen»/«Prognose», daneben eine
+  senkrechte Mini-Legende. Antippen öffnet die Einstellungen wieder (dort Pause), das × schaltet aus.
+- **Pause** hält Zeit, Bild und Partikel an und rastet auf einem echten Daten-Zeitpunkt ein.
+  Zwischenbilder entstehen nur beim Abspielen (Überblendung zweier Stunden bzw. Radarbilder).
+  Zwischen Messung und Prognose wird nur über die Deckkraft gewechselt – ein Mischbild aus
+  Messung und Prognose gibt es nicht.
+- **Wert unter dem Zeiger** (Maus): z. B. «2,4 mm/h · leicht – Radar gemessen · 14:35» für den
+  angezeigten Zeitpunkt.
+- **Windböen:** kleine, auslaufende Striche ziehen mit Windrichtung und Böenstärke (Open-Meteo
+  `wind_direction_10m` und `wind_gusts_10m`); ohne Windrichtung im Datenstand gibt es keine Striche
+  und einen Hinweis. **Neuschnee:** Flocken fallen dort, wo Neuschnee erwartet wird.
 
 | Ebene | Quelle | Zeitachse |
 |---|---|---|
@@ -94,40 +109,55 @@ Quellen und Stand. Für die Prognoseraster zeigt der Zeiger den Wert der Zelle.
 | Bewölkung | Prognose Open-Meteo | stündlich bis 48 h |
 | Neuschnee | Prognose Open-Meteo (cm/h) | stündlich bis 48 h |
 | Temperatur | Prognose Open-Meteo, Höhe des Modellgeländes | stündlich bis 48 h |
-| Windböen | Prognose Open-Meteo (km/h) | stündlich bis 48 h |
+| Windböen | Prognose Open-Meteo (km/h, mit Windrichtung) | stündlich bis 48 h |
 
-**Farben:**
-- Grössen sind einfarbige Rampen von hell nach dunkel: Niederschlag blau, Neuschnee violett, Böen orange, Bewölkung grau.
-- Die Temperatur ist divergierend: blau, neutral um 0 °C, rot.
-- Die Rampen sind auf den Helligkeitsstufen der Referenzrampe abgeleitet und geprüft:
-  - Helligkeit monoton;
-  - Stufenabstand ≥ 0,06 OKLCH-L;
-  - ein Farbton je Rampe.
-- Die hellste Stufe («wenig») tritt bewusst zurück.
-- Radarbild, Raster und Legende nutzen dieselben Klassen (`packages/shared/src/weatherScales.ts`).
+**Farben** (`packages/shared/src/weatherScales.ts`, eine Quelle für Karte und Legende):
+- Fliessende Verläufe statt Klassen. Werte werden auf 0–255 abgebildet (Niederschlag und Neuschnee
+  logarithmisch), eine Farbtabelle mit 256 Einträgen färbt jedes Pixel; schwache Werte laufen über
+  die Deckkraft weich aus.
+- Niederschlag: hellblau → blau → violett → rot → orange → gelb (wie bekannte Wetter-Apps), Worte
+  leicht < 2,5 · mässig < 10 · stark < 50 · extrem (mm/h, Stufen wie beim Deutschen Wetterdienst).
+- Temperatur divergierend: blau, neutral hell um 0 °C, orange bis rot.
+- Bewölkung als weisser Schleier, Böen als zarte Tönung (die Striche tragen die Richtung).
+- Die Legende zeigt die Farben so, wie sie auf dem dunklen Schleier erscheinen.
+
+**Darstellung (Browser):**
+- `apps/frontend/lib/weatherEngine.ts` steuert die Ebenen ausserhalb von React (rund 30 Bilder pro
+  Sekunde, nur solange etwas läuft; angehalten zeichnet die Karte nur bei Bedarf).
+- `apps/frontend/lib/weatherField.ts` rechnet die Flächen: Radar zweimal weichgezeichnet (Kastenfilter,
+  ≈ Gauss), Prognoseraster bilinear zwischen Zellmitten und weichgezeichnet; Ränder der
+  Datenabdeckung laufen aus. Die Bilder liegen als MapLibre-Canvas-Quellen in Web-Mercator.
+- `apps/frontend/lib/weatherParticles.ts` zeichnet Striche und Flocken als eigene WebGL-Ebene unter
+  den Beschriftungen und Zielpunkten.
 
 **Ressourcen und Störungen:**
-- Daten werden erst beim Einschalten geladen, und je Ebene nur einmal.
-- Verschieben und Zoomen lösen keine Abrufe aus. Das Radarbild ist ein einziges Bild für die
-  Schweiz, das Prognoseraster ein GeoJSON mit allen Stunden.
-- Ausgeschaltet werden Quellen und Ebenen entfernt.
+- Daten werden erst beim Einschalten geladen, je Ebene einmal; das Radar alle 5 Minuten neu
+  (nur neue Bilder), solange Niederschlag sichtbar ist.
+- Verschieben und Zoomen lösen keine Abrufe aus. Radar und Raster decken die ganze Schweiz ab.
+- Ausgeschaltet werden Schleier, Quellen und Ebenen entfernt, die Beschriftungen zurückgesetzt.
 - Fehler bleiben in der Wetterkomponente. Das Panel meldet sie, Karte und Suche laufen weiter.
 - Ist das letzte Radarbild älter als 30 Minuten, steht «Keine aktuellen Radardaten – letzte Messung …».
 
-**Radarbild:**
+**Radar:**
 - `GET /api/weather/radar` listet die jüngsten 12 Bilder aus dem STAC-Katalog (Cache 2 min).
-- `GET /api/weather/radar/<JJJJMMTTHHMM>` liefert ein Bild:
+- `GET /api/weather/radar/<JJJJMMTTHHMM>/data` liefert ein **Datenbild**:
   1. HDF5-Datei laden (~30 KB);
   2. mit **jsfive** lesen (reiner JavaScript-Leser von NIST, ohne WebAssembly);
-  3. auf Web-Mercator umrechnen;
-  4. nach den Legendenklassen einfärben und als PNG ausliefern (650 × 468 px).
+  3. auf Web-Mercator umrechnen (650 × 468 px);
+  4. je Pixel die Intensität als Byte speichern (0 = trocken, 1–255 = 0,1–100 mm/h logarithmisch)
+     und als Graustufen-PNG ausliefern (meist nur wenige KB).
+  Gefärbt, weichgezeichnet und überblendet wird im Browser; das PNG wird dort selbst dekodiert
+  (ohne Farbmanagement, damit die Werte exakt bleiben).
+- `GET /api/weather/radar/<JJJJMMTTHHMM>` liefert weiterhin das eingefärbte Bild (Klassen) für
+  andere Verwendungen.
 - Ein Bild ändert sich nach der Veröffentlichung nicht mehr. Das CDN hält es deshalb dauerhaft
   (`s-maxage=1 Jahr`); gerechnet wird es einmal.
 - Die Ausrichtung ist an SwissMetNet-Regenmessern geprüft. Nasse Messer zeigten im Mittel 0,63 mm/h
   Radar, trockene 0,35 mm/h; im gespiegelten Raster wäre es umgekehrt (0,29 bzw. 0,40).
 
 **Prognoseraster:** `GET /api/weather/forecast?var=precip|cloud|snowfall|temp|gust` liest die
-Datenbank (Cache 15 min). Es entstehen keine Abrufe bei Open-Meteo.
+Datenbank (CDN-Cache 30 min). Für `gust` kommt die Windrichtung je Stunde und Zelle mit. Es
+entstehen keine Abrufe bei Open-Meteo.
 
 ## Quellen
 
@@ -137,7 +167,7 @@ Datenbank (Cache 15 min). Es entstehen keine Abrufe bei Open-Meteo.
 | **SLF IMIS** | `measurement-api.slf.ch`, Tageswerte Schneehöhe/Neuschnee (132 Stationen, 1300–2950 m) | Worker «ski» alle 3 h, «weather» alle 6 h | CC BY 4.0, Quellenangabe SLF mit Link; Schnittstelle nicht für Abfragen je Nutzeranfrage | öffentlich | Messfelder sind flach; Tageswert ohne Uhrzeit |
 | **MeteoSchweiz Schneemessnetz** | geo.admin.ch GeoJSON (manuell 1×/Tag, automatisch 10 min; ~240 Stationen) | wie IMIS | OGD, CC BY 4.0, «Quelle: MeteoSchweiz» | öffentlich | überwiegend tiefe Lagen |
 | **MeteoSchweiz Radar** | STAC `ch.meteoschweiz.ogd-radar-precip`, Produkt RZC, 5 min, 14 Tage | beim Öffnen der Karte | OGD, CC BY 4.0 | öffentlich, ~1 min nach Messzeit | Radar unterschätzt bzw. verpasst Niederschlag hinter Bergen; sehr leichter Niederschlag erscheint, bevor ihn ein Regenmesser registriert |
-| **Open-Meteo** | stündliche Prognose je 0,1°-Zelle (Niederschlag, Neuschnee, Wettercode, Böen, Temperatur, Bewölkung) für heute bis übermorgen | Worker «weather» alle 6 h | CC BY 4.0, gratis nur nicht-kommerziell | ohne Garantie | Modell, kein Messwert; Zelle ≈ 11 × 8 km, Werte auf Höhe des Modellgeländes (Temperatur für die Route mit 0,65 °C/100 m umgerechnet) |
+| **Open-Meteo** | stündliche Prognose je 0,1°-Zelle (Niederschlag, Neuschnee, Wettercode, Böen, Windrichtung, Temperatur, Bewölkung) für heute bis übermorgen | Worker «weather» alle 6 h | CC BY 4.0, gratis nur nicht-kommerziell | ohne Garantie | Modell, kein Messwert; Zelle ≈ 11 × 8 km, Werte auf Höhe des Modellgeländes (Temperatur für die Route mit 0,65 °C/100 m umgerechnet) |
 | **SLF Lawinenbulletin** | `aws.slf.ch` CAAML v6 (Gefahrenstufen, Kernzonen aus den Lawinenproblemen) | Worker «ski» alle 3 h | CC BY 4.0 | saisonal; ausserhalb der Saison leer | Peakr wertet Höhe aus, nicht Exposition; massgebend bleibt whiterisk.ch |
 | **Sonnenstand** | berechnet (Sonnenstandsgleichung, ±1 min) | – | – | immer | Gelände, das früher Schatten wirft, ist nicht berücksichtigt |
 
@@ -168,10 +198,14 @@ Ziele) braucht lokal rund 150 ms.
 
 Es entstehen keine Kosten.
 - **Open-Meteo** (gratis bis 10'000 Abrufe/Tag): Der Wetterlauf fragt dieselben ~560 Zellen wie
-  bisher ab, mit 12 statt 6 Variablen, also 1,2 Abrufe je Zelle. Das sind rund 2'700 Abrufe/Tag.
-  Zusammen mit dem Ski-Lauf (~5'100/Tag) liegt Peakr bei etwa 7'800/Tag. Die Wetterkarte löst keine
-  Abrufe aus.
-- **Radar:** ein Funktionsaufruf je neuem 5-Minuten-Bild, das jemand ansieht, sonst CDN.
+  bisher ab, mit 13 Variablen (neu: Windrichtung für die Böen-Striche), also 1,3 Abrufe je Zelle.
+  Das sind rund 2'900 Abrufe/Tag. Zusammen mit dem Ski-Lauf (~5'100/Tag) liegt Peakr bei etwa
+  8'000/Tag. Die Wetterkarte löst keine Abrufe aus.
+- **Radar:** ein Funktionsaufruf je neuem 5-Minuten-Bild, das jemand ansieht, sonst CDN. Das
+  Datenbild ist meist nur wenige KB gross.
+- **Neon:** Das Prognoseraster für Böen liest zusätzlich die Windrichtung (gut doppelt so viele
+  Daten wie die anderen Ebenen); der CDN-Cache von 30 min begrenzt das auf rund 48 Lesungen je
+  Ebene, Tag und CDN-Region.
 - **geo.admin.ch, SLF, MeteoSchweiz:** wenige Abrufe je Worker-Lauf.
 - **GitHub Actions:** unverändert (öffentliches Repository). Jeder Worker-Lauf wendet zusätzlich die
   Migrationen an, das dauert wenige Sekunden.
@@ -198,14 +232,19 @@ Es entstehen keine Kosten.
   Ausblendungen, «unsichere zeigen», Ski ohne Betriebsstatus, Cache-Schlüssel.
 - `apps/backend/src/services/slf.service.test.ts`: Kernzone, «Waldgrenze», eine Stufe tiefer ausserhalb.
 - `apps/backend/src/services/radar.service.test.ts`: Dateinamen, echte Radardatei dekodieren,
-  Nord-Süd-Lage, Farbklassen, PNG-Aufbau.
+  Nord-Süd-Lage, Farbklassen, PNG-Aufbau, Datenbild (Byte je Pixel, Graustufen-PNG).
+- `packages/shared/test/weatherScales.test.ts`: Wert ↔ Byte (log/linear), Radar-Byte zurück auf
+  mm/h (≤ 3 % Abweichung), Farbtabelle, Legendenlage, Worte je Stufe.
+- `apps/frontend/lib/weatherField.test.ts`: Färben und Ausblenden, Weichzeichner (Summe erhalten),
+  Zwischenbilder, Rastergeometrie in Mercator, bilinearer Wert, Windrichtung «woher» → Vektor
+  «wohin», PNG-Dekodierung aller fünf Filter.
+- `apps/frontend/lib/weatherParticles.test.ts`: Striche ziehen mit dem Wind, stehen bei Pause still,
+  keine Striche bei Windstille oder ohne Daten, Flocken fallen; Start der Zeitachse bei «jetzt».
 - `apps/frontend/lib/peakr.test.ts`: Planungsdatum in Schweizer Zeit, Beschriftungen, Gründe.
-- Browsertest Desktop 1360 × 900 und Mobil 390 × 844:
-  - keine Wetterabrufe vor dem Einschalten;
-  - Schalter oben rechts mit aktivem Zustand;
-  - Radar als Messung, spätere Stunden als Prognose gekennzeichnet;
-  - Legende, Abspielen, Ebenenwechsel;
-  - keine neuen Abrufe beim Verschieben und Zoomen;
-  - Ausschalten entfernt alles;
-  - Ski-Leerzustand, Detailkarte «Verfügbarkeit»;
+- Browsertest Desktop 1360 × 900, Mobil 390 × 844 (Chrome) und iPhone-Ansicht in WebKit (Safari):
+  - keine Wetterabrufe vor dem Einschalten; Fahrzeit-Fenster vollständig im Bild;
+  - läuft nach dem Einschalten von selbst und bei zugeklappten Einstellungen weiter;
+  - Pause hält Zeit, Bild und Böen-Striche an; abgespielt ziehen die Striche;
+  - Radar als Messung, spätere Stunden als Prognose gekennzeichnet; Wert unter dem Zeiger;
+  - dunkle Ansicht eingeschaltet, ausgeschaltet wieder hell;
   - keine Skriptfehler.

@@ -189,7 +189,9 @@ pgRouting bräuchte für dieselbe Arbeit ein Vielfaches an Zeit und Platz in der
 Suche und Detailseite bewerten jede Route bzw. jedes Skigebiet für die geplante Tour (Sperrungen,
 Schnee, Wetter, Lawinen, Tageslicht bzw. Betrieb) – beim Lesen, aus zwischengespeicherten
 Grundlagen. Standardmässig erscheinen nur verfügbare Ziele. Die Wetterkarte lädt Radar
-(MeteoSchweiz) und Prognoseraster nur bei Bedarf. Regeln, Quellen und Grenzen:
+(MeteoSchweiz, als Datenbild) und Prognoseraster nur bei Bedarf; gefärbt, weichgezeichnet und
+animiert wird im Browser (`apps/frontend/lib/weatherEngine.ts`, `weatherField.ts`,
+`weatherParticles.ts`). Regeln, Quellen und Grenzen:
 [VERFUEGBARKEIT_UND_WETTER.md](VERFUEGBARKEIT_UND_WETTER.md).
 
 ## Worker

@@ -250,8 +250,9 @@ const FIELD: Record<WeatherLayerKey, keyof HourlyForecast> = {
  */
 export async function getForecastGrid(variable: WeatherLayerKey, now: Date, maxHours = 48): Promise<ForecastGridResponse> {
   // Nur die gewünschte Grösse aus dem JSON holen (ein Sechstel der Daten).
-  const rows = await sql<{ cell: string; model_elev_m: number | null; start: string | null; series: (number | null)[] | null; forecast_at: Date | string | null }[]>`
-    SELECT cell, model_elev_m, forecast->>'start' AS start, forecast->${FIELD[variable]} AS series, forecast_at
+  const rows = await sql<{ cell: string; model_elev_m: number | null; start: string | null; series: (number | null)[] | null; wdir: (number | null)[] | null; forecast_at: Date | string | null }[]>`
+    SELECT cell, model_elev_m, forecast->>'start' AS start, forecast->${FIELD[variable]} AS series,
+           ${variable === 'gust' ? sql`forecast->'wdir'` : sql`NULL::jsonb`} AS wdir, forecast_at
     FROM weather_cells
     WHERE forecast IS NOT NULL AND forecast_at > now() - interval '36 hours'
     ORDER BY cell
@@ -270,6 +271,9 @@ export async function getForecastGrid(variable: WeatherLayerKey, now: Date, maxH
   const cells: [number, number][] = [];
   const elevations: (number | null)[] = [];
   const values: (number | null)[][] = Array.from({ length: hours }, () => []);
+  // Windrichtung nur, wenn alle Zellen sie haben (ältere Prognosen ohne Richtung → keine Pfeile).
+  const withDir = variable === 'gust' && rows.length > 0 && rows.every((r) => Array.isArray(r.wdir));
+  const directions: (number | null)[][] | null = withDir ? Array.from({ length: hours }, () => []) : null;
   for (const r of rows) {
     const [a, b] = r.cell.split('_').map(Number);
     if (!Number.isFinite(a) || !Number.isFinite(b)) continue;
@@ -279,10 +283,14 @@ export async function getForecastGrid(variable: WeatherLayerKey, now: Date, maxH
     for (let h = 0; h < hours; h++) {
       const v = Array.isArray(r.series) ? r.series[offset + h] : null;
       values[h].push(typeof v === 'number' ? v : null);
+      if (directions) {
+        const d = r.wdir?.[offset + h];
+        directions[h].push(typeof d === 'number' ? d : null);
+      }
     }
   }
   return {
     variable, evidence: 'forecast', source: 'Open-Meteo (Modellprognose)', fetchedAt,
-    start: new Date(start).toISOString(), hours, cellDeg: 0.1, cells, elevations, values,
+    start: new Date(start).toISOString(), hours, cellDeg: 0.1, cells, elevations, values, directions,
   };
 }

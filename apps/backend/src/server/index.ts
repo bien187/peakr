@@ -30,7 +30,7 @@ import { AppError, validate } from '../lib/errors';
 import { logger } from '../lib/logger';
 import { getForecastGrid } from '../repositories/conditions.repo';
 import { getDestinationDetail } from '../repositories/destination.repo';
-import { listRadarFrames, parseStamp, radarCoordinates, radarPng, stampOf } from '../services/radar.service';
+import { listRadarFrames, parseStamp, radarCoordinates, radarDataPng, radarPng, stampOf } from '../services/radar.service';
 import { addFavorite, listFavorites, removeFavorite } from '../repositories/favorites.repo';
 import { getPublicUser, updateProfile } from '../repositories/user.repo';
 import { login, rateLimit, register, requireUser } from '../services/auth.service';
@@ -115,14 +115,24 @@ export async function apiRadarFrames(): Promise<RadarFramesResponse> {
   };
 }
 
-/** Radarbild als PNG; null = für diesen Zeitpunkt nicht (mehr) vorhanden. */
-export async function apiRadarImage(stamp: string): Promise<Buffer | null> {
+function radarTime(stamp: string): Date | null {
   const at = parseStamp(stamp);
   if (!at) throw new AppError(400, 'VALIDATION', 'Ungültiger Zeitstempel.');
   const age = Date.now() - at.getTime();
   // MeteoSchweiz hält die Bilder 14 Tage bereit; Zukunft gibt es nicht.
-  if (age < 0 || age > 14 * 86_400_000) return null;
-  return radarPng(at);
+  return age < 0 || age > 14 * 86_400_000 ? null : at;
+}
+
+/** Radarbild als farbiges PNG (Klassen); null = für diesen Zeitpunkt nicht (mehr) vorhanden. */
+export async function apiRadarImage(stamp: string): Promise<Buffer | null> {
+  const at = radarTime(stamp);
+  return at ? radarPng(at) : null;
+}
+
+/** Radar-Datenbild (Graustufen, Intensität je Pixel) für die fliessende Darstellung im Browser. */
+export async function apiRadarData(stamp: string): Promise<Buffer | null> {
+  const at = radarTime(stamp);
+  return at ? radarDataPng(at) : null;
 }
 
 const routeRank = z.coerce.number().int().min(1).max(20);

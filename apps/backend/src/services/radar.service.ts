@@ -11,7 +11,7 @@
  * lässt es danach im CDN liegen (ein Radarbild ändert sich nicht mehr).
  */
 import { deflateSync } from 'node:zlib';
-import { scaleClass, WEATHER_SCALES } from '@ch-alpineroute/shared';
+import { encodeRate, scaleClass, WEATHER_SCALES } from '@ch-alpineroute/shared';
 import { wgs84ToLv95 } from '../geo/lv95';
 import { fetchJson } from '../lib/http';
 
@@ -208,17 +208,18 @@ function chunk(type: string, data: Uint8Array): Buffer {
   return out;
 }
 
-/** RGBA → PNG (Farbtyp 6, 8 bit, Filter 0). */
-export function encodePng(width: number, height: number, rgba: Uint8Array): Buffer {
+/** RGBA (4 Kanäle, Farbtyp 6) bzw. Graustufen (1 Kanal, Farbtyp 0) → PNG, 8 bit, Filter 0. */
+export function encodePng(width: number, height: number, pixels: Uint8Array, channels: 1 | 4 = 4): Buffer {
   const ihdr = Buffer.alloc(13);
   ihdr.writeUInt32BE(width, 0);
   ihdr.writeUInt32BE(height, 4);
   ihdr[8] = 8;
-  ihdr[9] = 6;
-  const raw = Buffer.alloc((width * 4 + 1) * height);
+  ihdr[9] = channels === 4 ? 6 : 0;
+  const stride = width * channels;
+  const raw = Buffer.alloc((stride + 1) * height);
   for (let y = 0; y < height; y++) {
-    raw[y * (width * 4 + 1)] = 0;
-    Buffer.from(rgba.buffer, rgba.byteOffset + y * width * 4, width * 4).copy(raw, y * (width * 4 + 1) + 1);
+    raw[y * (stride + 1)] = 0;
+    Buffer.from(pixels.buffer, pixels.byteOffset + y * stride, stride).copy(raw, y * (stride + 1) + 1);
   }
   return Buffer.concat([
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
@@ -226,6 +227,37 @@ export function encodePng(width: number, height: number, rgba: Uint8Array): Buff
     chunk('IDAT', deflateSync(raw, { level: 9 })),
     chunk('IEND', new Uint8Array(0)),
   ]);
+}
+
+/**
+ * Datenbild für die Karte: je Pixel (Web-Mercator, wie renderRadar) die
+ * Intensität als Byte (encodeRate: 0 = trocken/ohne Abdeckung, 1–255 = 0,1–100 mm/h
+ * logarithmisch). Färben, weichzeichnen und überblenden macht der Browser.
+ */
+export function renderRadarBytes(grid: RadarGrid): { width: number; height: number; bytes: Uint8Array } {
+  const { width, height } = outputSize();
+  const b = RADAR_BOUNDS;
+  const bytes = new Uint8Array(width * height);
+  const y0 = mercY(b.north);
+  const y1 = mercY(b.south);
+  for (let py = 0; py < height; py++) {
+    const lat = latOfMercY(y0 + ((py + 0.5) / height) * (y1 - y0));
+    for (let px = 0; px < width; px++) {
+      const lng = b.west + ((px + 0.5) / width) * (b.east - b.west);
+      bytes[py * width + px] = encodeRate(sampleGrid(grid, lat, lng));
+    }
+  }
+  return { width, height, bytes };
+}
+
+/** Radar-Datenbild als Graustufen-PNG; null, wenn MeteoSchweiz das Bild (noch) nicht anbietet. */
+export async function radarDataPng(at: Date): Promise<Buffer | null> {
+  const res = await fetch(radarAssetUrl(at), { signal: AbortSignal.timeout(20_000) });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`Radar ${res.status}`);
+  const grid = await decodeRadar(new Uint8Array(await res.arrayBuffer()));
+  const img = renderRadarBytes(grid);
+  return encodePng(img.width, img.height, img.bytes, 1);
 }
 
 /** Lädt ein Radarbild und liefert es als PNG; null, wenn MeteoSchweiz es (noch) nicht anbietet. */
