@@ -175,6 +175,7 @@ export function PeakrMap({
   originPt,
   selection,
   onSelect,
+  onBackgroundTap,
 }: {
   /** Alle Treffer der Suche als kompakte Punkte. */
   points: PPoint[];
@@ -183,6 +184,8 @@ export function PeakrMap({
   originPt: { lat: number; lng: number };
   selection: MapSelection | null;
   onSelect: (id: string) => void;
+  /** Tippen ins Leere oder Verschieben der Karte (Handy: Liste einklappen). */
+  onBackgroundTap?: () => void;
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -193,6 +196,8 @@ export function PeakrMap({
   const fitted = useRef<string | null>(null);
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
+  const onBackgroundRef = useRef(onBackgroundTap);
+  onBackgroundRef.current = onBackgroundTap;
   const [ready, setReady] = useState(false);
   /** Karteninstanz für die Wetterebene (erst nach «load»). */
   const [mapObj, setMapObj] = useState<maplibregl.Map | null>(null);
@@ -433,6 +438,15 @@ export function PeakrMap({
     };
     map.on('click', 'points', selectFromEvent);
     map.on('click', 'point-icons', selectFromEvent);
+    // Tippen ins Leere (nicht auf Ziel, Zähler, Feuerstelle, Ausgangspunkt) bzw. Karte ziehen.
+    map.on('click', (e) => {
+      const layers = ['points', 'point-icons', 'clusters', 'poi-fire', 'trailhead'].filter((id) => map.getLayer(id));
+      if (layers.length > 0 && map.queryRenderedFeatures(e.point, { layers }).length > 0) return;
+      onBackgroundRef.current?.();
+    });
+    map.on('dragstart', (e) => {
+      if (e.originalEvent) onBackgroundRef.current?.();
+    });
 
     // Zähler antippen → so weit hineinzoomen, bis er sich auflöst.
     map.on('click', 'clusters', (e) => {

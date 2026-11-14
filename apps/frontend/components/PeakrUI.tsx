@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, useEffect, useRef, type CSSProperties, type ReactNode } from 'react';
+import { memo, useEffect, useLayoutEffect, useRef, type CSSProperties, type ReactNode } from 'react';
 import { AVAILABILITY_LABEL, type Availability, type SearchResponse } from '@ch-alpineroute/shared';
 import { Icon } from './Icon';
 import {
@@ -360,7 +360,7 @@ export function ResultsPanel({
   sort,
   onSort,
   sheetOpen,
-  onSheetToggle,
+  onSheetChange,
   includeUncertain,
   onIncludeUncertain,
 }: {
@@ -385,13 +385,114 @@ export function ResultsPanel({
   mode: 'ski' | 'hike';
   sort: SortKey;
   onSort: (s: SortKey) => void;
+  /** Handy: Fenster ganz offen (true) oder nur der Kopf sichtbar (false). */
   sheetOpen: boolean;
-  onSheetToggle: () => void;
+  onSheetChange: (open: boolean) => void;
   includeUncertain: boolean;
   onIncludeUncertain: (v: boolean) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const handleRef = useRef<HTMLDivElement>(null);
+  const headRef = useRef<HTMLDivElement>(null);
+  const openRef = useRef(sheetOpen);
+  openRef.current = sheetOpen;
+  const changeRef = useRef(onSheetChange);
+  changeRef.current = onSheetChange;
+
+  // Handy: eingeklappt bleiben Griff und Kopf sichtbar. Ihre Höhe gilt als --peek
+  // (auch für die Kartenknöpfe, die darüber liegen sollen).
+  useLayoutEffect(() => {
+    const panel = panelRef.current;
+    const head = headRef.current;
+    if (!panel || !head) return;
+    const host = panel.parentElement ?? panel;
+    const apply = () => host.style.setProperty('--peek', `${Math.round((handleRef.current?.offsetHeight ?? 0) + head.offsetHeight + 6)}px`);
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(head);
+    if (handleRef.current) ro.observe(handleRef.current);
+    return () => ro.disconnect();
+  }, []);
+
+  // Handy: Fenster mit dem Finger ziehen. Eingeklappt öffnet jedes Wischen nach oben
+  // (auch in der Liste); offen schliesst Ziehen am Griff/Kopf nach unten – oder in der
+  // Liste, wenn sie ganz oben ist. Sonst scrollt die Liste wie gewohnt.
+  useEffect(() => {
+    const panel = panelRef.current;
+    if (!panel) return;
+    const mobile = window.matchMedia('(max-width: 860px)');
+    let mode: 'idle' | 'drag' | 'native' = 'native';
+    let y0 = 0;
+    let dy = 0;
+    let lastY = 0;
+    let lastT = 0;
+    let vel = 0;
+    let base = 0;
+    let max = 0;
+    let fromList = false;
+    const start = (e: TouchEvent) => {
+      if (!mobile.matches || e.touches.length !== 1) {
+        mode = 'native';
+        return;
+      }
+      mode = 'idle';
+      y0 = lastY = e.touches[0].clientY;
+      lastT = e.timeStamp;
+      dy = 0;
+      vel = 0;
+      fromList = !!scrollRef.current?.contains(e.target as Node);
+    };
+    const move = (e: TouchEvent) => {
+      if (mode === 'native' || e.touches.length !== 1) return;
+      const y = e.touches[0].clientY;
+      dy = y - y0;
+      const dt = Math.max(1, e.timeStamp - lastT);
+      vel = 0.7 * ((y - lastY) / dt) + 0.3 * vel;
+      lastY = y;
+      lastT = e.timeStamp;
+      if (mode === 'idle') {
+        if (Math.abs(dy) < 6) return;
+        const open = openRef.current;
+        const listAtTop = (scrollRef.current?.scrollTop ?? 0) <= 0;
+        if (!open || !fromList || (dy > 0 && listAtTop)) {
+          mode = 'drag';
+          const peek = parseFloat(getComputedStyle(panel).getPropertyValue('--peek')) || 132;
+          max = Math.max(0, panel.offsetHeight - peek);
+          base = open ? 0 : max;
+          panel.classList.add('is-dragging');
+        } else {
+          mode = 'native';
+          return;
+        }
+      }
+      e.preventDefault();
+      panel.style.transform = `translateY(${Math.min(max, Math.max(0, base + dy))}px)`;
+    };
+    const end = () => {
+      if (mode === 'drag') {
+        const open = openRef.current;
+        // Schwung zählt mehr als Weg: kurzes Schnippen genügt.
+        const next = open ? !(dy > 80 || vel > 0.35) : dy < -40 || vel < -0.35;
+        panel.classList.remove('is-dragging');
+        panel.classList.toggle('sheet-open', next);
+        panel.style.transform = '';
+        if (next !== open) changeRef.current(next);
+      }
+      mode = 'native';
+    };
+    panel.addEventListener('touchstart', start, { passive: true });
+    panel.addEventListener('touchmove', move, { passive: false });
+    panel.addEventListener('touchend', end);
+    panel.addEventListener('touchcancel', end);
+    return () => {
+      panel.removeEventListener('touchstart', start);
+      panel.removeEventListener('touchmove', move);
+      panel.removeEventListener('touchend', end);
+      panel.removeEventListener('touchcancel', end);
+    };
+  }, []);
 
   // Nachladen, sobald das Listenende in Sicht kommt.
   useEffect(() => {
@@ -490,12 +591,25 @@ export function ResultsPanel({
   if (totals && totals.unrouted > 0) extra.push(`${nf.format(totals.unrouted)} ohne Route`);
 
   return (
-    <div className={'panel' + (sheetOpen ? ' sheet-open' : '')}>
-      <div className="panel-handle" onClick={onSheetToggle}>
+    <div className={'panel' + (sheetOpen ? ' sheet-open' : '')} ref={panelRef}>
+      <div
+        className="panel-handle"
+        ref={handleRef}
+        role="button"
+        tabIndex={0}
+        aria-label={sheetOpen ? 'Liste einklappen' : 'Liste ausklappen'}
+        onClick={() => onSheetChange(!sheetOpen)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onSheetChange(!sheetOpen);
+          }
+        }}
+      >
         <span />
       </div>
 
-      <div className="panel-head" onClick={sheetOpen ? undefined : onSheetToggle}>
+      <div className="panel-head" ref={headRef} onClick={sheetOpen ? undefined : () => onSheetChange(true)}>
         <div>
           <p className="panel-eyebrow">
             {mode === 'ski' ? 'Skigebiete' : 'Wanderziele'} · ab {originLabel}
@@ -507,7 +621,7 @@ export function ResultsPanel({
           </h2>
           {extra.length > 0 && <p className="panel-extra">+ {extra.join(' · ')}</p>}
         </div>
-        <button type="button" className="sheet-close" onClick={onSheetToggle} aria-label="Liste schliessen">
+        <button type="button" className="sheet-close" onClick={() => onSheetChange(false)} aria-label="Liste einklappen">
           <Icon name="ChevronDown" size={20} />
         </button>
       </div>
