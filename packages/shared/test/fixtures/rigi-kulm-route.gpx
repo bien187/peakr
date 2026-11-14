@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<gpx version="1.1" creator="Peakr" xmlns="http://www.topografix.com/GPX/1/1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">
+<gpx version="1.1" creator="Peakr" xmlns="http://www.topografix.com/GPX/1/1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:swisstopo="https://prod-static.swisstopo-app.ch/xmlschemas/SwisstopoExtensions" xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">
   <metadata>
     <name>Rigi Kulm ab Überlaufparkplatz Seeboden</name>
     <desc>Wanderroute zu Rigi Kulm (1797 m) ab Überlaufparkplatz Seeboden. 4.4 km, Aufstieg 792 m, Abstieg 20 m, Gehzeit hin 3 h 14 min (DIN 33466, ohne Pausen), Schwierigkeit T2, 100 % auf signalisierten Wanderwegen. Höhen: amtliche Wegdaten swissTLM3D bzw. Geländemodell, am Ziel die amtliche Höhe. Aus dem Wegnetz berechnet (swisstopo-Wanderwege und OpenStreetMap), nicht begangen. Verhältnisse, Sperrungen und Ausrüstung vor der Tour selbst prüfen. Berechnet am 2026-11-13. Daten: © swisstopo, © OpenStreetMap-Mitwirkende (ODbL).</desc>
@@ -12,6 +12,9 @@
     <time>2026-11-13T10:00:00Z</time>
     <keywords>Wanderung, Peakr, Schweiz</keywords>
     <bounds minlat="47.053601" minlon="8.467616" maxlat="47.068894" maxlon="8.485478"/>
+    <extensions>
+      <swisstopo:tour_type>0</swisstopo:tour_type>
+    </extensions>
   </metadata>
   <wpt lat="47.068894" lon="8.467959">
     <ele>1025</ele>

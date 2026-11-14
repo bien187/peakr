@@ -41,7 +41,16 @@ export interface GpxDocument {
   waypoints?: readonly GpxWaypoint[];
   track: readonly GpxPoint[];
   trackType?: string | null;
+  /**
+   * Tourenart für die swisstopo-App (Erweiterung `swisstopo:tour_type` wie in den
+   * GPX-Dateien der App; 0 = Wandern, 1 = Velo, 2 = Mountainbike, 4 = Ski,
+   * 5 = Schneeschuh). Andere Programme ignorieren sie.
+   */
+  swisstopoTourType?: number | null;
 }
+
+/** Namensraum der GPX-Erweiterungen der swisstopo-App (aus deren eigenen GPX-Dateien). */
+const SWISSTOPO_NS = 'https://prod-static.swisstopo-app.ch/xmlschemas/SwisstopoExtensions';
 
 const validLat = (v: number): boolean => Number.isFinite(v) && v >= -90 && v <= 90;
 /** GPX 1.1 lonType: −180 ≤ lon < 180. */
@@ -114,13 +123,15 @@ export function buildGpx(doc: GpxDocument): string {
 
   const out: string[] = [];
   out.push('<?xml version="1.0" encoding="UTF-8"?>');
+  const tourType = doc.swisstopoTourType != null && Number.isInteger(doc.swisstopoTourType) ? doc.swisstopoTourType : null;
   out.push(
     '<gpx version="1.1" creator="Peakr" xmlns="http://www.topografix.com/GPX/1/1" ' +
       'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" ' +
+      (tourType !== null ? `xmlns:swisstopo="${SWISSTOPO_NS}" ` : '') +
       'xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">',
   );
 
-  // metadata: name, desc, author, copyright, link, time, keywords, bounds (Reihenfolge laut XSD)
+  // metadata: name, desc, author, copyright, link, time, keywords, bounds, extensions (Reihenfolge laut XSD)
   out.push('  <metadata>');
   out.push(`    <name>${esc(doc.name)}</name>`);
   if (doc.desc) out.push(`    <desc>${esc(doc.desc)}</desc>`);
@@ -140,6 +151,11 @@ export function buildGpx(doc: GpxDocument): string {
   out.push(
     `    <bounds minlat="${fmtCoord(minLat)}" minlon="${fmtCoord(minLng)}" maxlat="${fmtCoord(maxLat)}" maxlon="${fmtCoord(maxLng)}"/>`,
   );
+  if (tourType !== null) {
+    out.push('    <extensions>');
+    out.push(`      <swisstopo:tour_type>${tourType}</swisstopo:tour_type>`);
+    out.push('    </extensions>');
+  }
   out.push('  </metadata>');
 
   // wpt: ele, time, magvar, geoidheight, name, cmt, desc, src, link, sym, type …
@@ -345,8 +361,61 @@ export function routeGpx(input: RouteGpxInput): RouteGpx {
     waypoints,
     track,
     trackType: 'hiking',
+    swisstopoTourType: 0,
   });
   return { fileName: gpxFileName(`${d.name}${variant}`), xml, trackPoints: track.length, elevationShare };
+}
+
+// ── swisstopo-App ────────────────────────────────────────────────────────────
+
+const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
+/** Base64 eines ASCII-Texts, ohne Auffüllzeichen «=». */
+function base64Ascii(s: string): string {
+  let out = '';
+  for (let i = 0; i < s.length; i += 3) {
+    const a = s.charCodeAt(i);
+    const b = i + 1 < s.length ? s.charCodeAt(i + 1) : 0;
+    const c = i + 2 < s.length ? s.charCodeAt(i + 2) : 0;
+    const n = (a << 16) | (b << 8) | c;
+    out += B64[(n >> 18) & 63] + B64[(n >> 12) & 63];
+    if (i + 1 < s.length) out += B64[(n >> 6) & 63];
+    if (i + 2 < s.length) out += B64[n & 63];
+  }
+  return out;
+}
+
+/**
+ * Routen-Link der swisstopo-App, wie swisstopo ihn für Touren dokumentiert
+ * («QR-Codes für Touren»): `https://swisstopo.app/u/` + Adresse der GPX-Datei in
+ * Base64. swisstopo.app ist für iOS (apple-app-site-association) und Android
+ * (assetlinks.json) mit der App verknüpft: Ist sie installiert, öffnet sich die
+ * Route direkt in der App; sonst zeigt swisstopo.app eine Seite zum Installieren.
+ * null, wenn die GPX-Datei nicht öffentlich per HTTPS erreichbar ist.
+ */
+export function swisstopoAppUrl(gpxUrl: string): string | null {
+  if (!isViewerLoadableUrl(gpxUrl)) return null;
+  const code = base64Ascii(gpxUrl);
+  // «+» oder «/» würden den Pfad zerlegen – kommt bei normalen https-Adressen nicht vor.
+  if (!/^[A-Za-z0-9]+$/.test(code)) return null;
+  return `https://swisstopo.app/u/${code}`;
+}
+
+/** Paketname der swisstopo-App auf Android (Google Play, assetlinks.json von swisstopo.app). */
+export const SWISSTOPO_ANDROID_PACKAGE = 'ch.admin.swisstopo';
+
+/**
+ * Android (Chrome und kompatible Browser): öffnet den App-Link in der swisstopo-App,
+ * wenn sie installiert ist, sonst `fallbackUrl` im Browser (Android-Intent mit
+ * `S.browser_fallback_url`, dokumentiert unter developer.chrome.com «Android Intents
+ * with Chrome»).
+ */
+export function swisstopoAndroidIntent(appUrl: string, fallbackUrl: string): string {
+  const hostAndPath = appUrl.replace(/^https:\/\//, '');
+  return (
+    `intent://${hostAndPath}#Intent;scheme=https;package=${SWISSTOPO_ANDROID_PACKAGE};` +
+    `S.browser_fallback_url=${encodeURIComponent(fallbackUrl)};end`
+  );
 }
 
 // ── swisstopo-Kartenviewer ───────────────────────────────────────────────────

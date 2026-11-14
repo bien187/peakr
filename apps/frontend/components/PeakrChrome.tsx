@@ -19,19 +19,30 @@ export function Brandmark({ size = 'md' }: { size?: 'md' | 'lg' }) {
   );
 }
 
+/**
+ * Schliesst bei Klick ausserhalb. `scope: 'parent'` zählt den umgebenden Block
+ * mit (dort sitzt der Knopf, der das Fenster öffnet) – so schliesst ein zweiter
+ * Klick auf denselben Knopf das Fenster, statt es zu schliessen und gleich
+ * wieder zu öffnen.
+ */
 export function useClickOutside(
   ref: React.RefObject<HTMLElement | null>,
   onOut: () => void,
   active: boolean,
+  scope: 'self' | 'parent' = 'self',
 ) {
   useEffect(() => {
     if (!active) return;
-    const h = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onOut();
+    // pointerdown statt mousedown: auf dem Handy unterdrückt die Karte die Maus-Ersatzereignisse
+    // beim Tippen – dann käme ein Tipp auf die Karte hier nie an.
+    const h = (e: PointerEvent) => {
+      const el = ref.current;
+      const root = scope === 'parent' ? (el?.parentElement ?? el) : el;
+      if (root && !root.contains(e.target as Node)) onOut();
     };
-    document.addEventListener('mousedown', h);
-    return () => document.removeEventListener('mousedown', h);
-  }, [active, ref, onOut]);
+    document.addEventListener('pointerdown', h);
+    return () => document.removeEventListener('pointerdown', h);
+  }, [active, ref, onOut, scope]);
 }
 
 /** Abstand zum Bildschirmrand, den ein Popover mindestens einhält. */
@@ -49,7 +60,18 @@ export function Popover({
   align?: 'left' | 'right';
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  useClickOutside(ref, onClose, open);
+  // Der öffnende Knopf liegt im selben Block wie das Fenster: erneut klicken schliesst.
+  useClickOutside(ref, onClose, open, 'parent');
+
+  // Escape schliesst.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
 
   // Im sichtbaren Bereich halten: auf dem Handy ist die Zelle oft schmaler als das
   // Popover und es ragte über den Rand. Seitlich verschieben, Höhe begrenzen.

@@ -14,6 +14,8 @@ import {
   isViewerLoadableUrl,
   routeGpx,
   routeGpxPath,
+  swisstopoAndroidIntent,
+  swisstopoAppUrl,
   swisstopoLink,
   type GpxPoint,
   type RouteGpxInput,
@@ -318,5 +320,48 @@ describe('swisstopo-Link', () => {
       expect(link.url).not.toContain('GPX|');
     }
     expect(isViewerLoadableUrl(gpxUrl)).toBe(true);
+  });
+});
+
+describe('swisstopo-App', () => {
+  it('Routen-Link genau wie im Beispiel von swisstopo («QR-Codes für Touren»)', () => {
+    expect(swisstopoAppUrl('https://cms.geo.admin.ch/fmc/Riederhorn.gpx')).toBe(
+      'https://swisstopo.app/u/aHR0cHM6Ly9jbXMuZ2VvLmFkbWluLmNoL2ZtYy9SaWVkZXJob3JuLmdweA',
+    );
+  });
+
+  it('Peakr-GPX-Adresse: nur Buchstaben und Ziffern im Pfad; zurückgerechnet die GPX-Adresse', () => {
+    const gpx = `https://peakr-ch.vercel.app${routeGpxPath(rigi.destination.id, 1)}`;
+    const url = swisstopoAppUrl(gpx)!;
+    const code = url.replace('https://swisstopo.app/u/', '');
+    expect(code).toMatch(/^[A-Za-z0-9]+$/);
+    expect(Buffer.from(code, 'base64').toString('utf8')).toBe(gpx);
+  });
+
+  it('nur öffentliche HTTPS-Adressen', () => {
+    expect(swisstopoAppUrl('http://peakr-ch.vercel.app/x.gpx')).toBeNull();
+    expect(swisstopoAppUrl('https://localhost:3000/x.gpx')).toBeNull();
+    expect(swisstopoAppUrl('https://192.168.1.5/x.gpx')).toBeNull();
+  });
+
+  it('Android: App-Link als Intent mit Webkarte als Ausweich', () => {
+    const app = 'https://swisstopo.app/u/aHR0cHM6Ly9jbXMuZ2VvLmFkbWluLmNoL2ZtYy9SaWVkZXJob3JuLmdweA';
+    const web = 'https://map.geo.admin.ch/#/map?lang=de&layers=a;b';
+    const intent = swisstopoAndroidIntent(app, web);
+    expect(intent).toBe(
+      'intent://swisstopo.app/u/aHR0cHM6Ly9jbXMuZ2VvLmFkbWluLmNoL2ZtYy9SaWVkZXJob3JuLmdweA' +
+        '#Intent;scheme=https;package=ch.admin.swisstopo;' +
+        `S.browser_fallback_url=${encodeURIComponent(web)};end`,
+    );
+    // Ausweich-Adresse ohne «;» und «#», die den Intent beenden würden
+    const fb = intent.split('S.browser_fallback_url=')[1].replace(/;end$/, '');
+    expect(fb).not.toMatch(/[;#]/);
+    expect(decodeURIComponent(fb)).toBe(web);
+  });
+
+  it('GPX nennt der swisstopo-App die Tourenart Wandern (Erweiterung wie in deren eigenen GPX-Dateien)', () => {
+    const out = routeGpx({ ...rigi, appUrl: null, time: '2026-11-13T10:00:00Z' });
+    expect(out.xml).toContain('xmlns:swisstopo="https://prod-static.swisstopo-app.ch/xmlschemas/SwisstopoExtensions"');
+    expect(out.xml).toMatch(/<extensions>\s*<swisstopo:tour_type>0<\/swisstopo:tour_type>\s*<\/extensions>\s*<\/metadata>/);
   });
 });
