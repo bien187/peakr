@@ -24,6 +24,7 @@ body {
 
 .app {
   height: 100%;
+  height: 100dvh; /* Handy: sichtbare Höhe, auch wenn die Browserleisten ein- und ausfahren */
   background: var(--bg);
   color: var(--ink);
   display: flex;
@@ -456,13 +457,23 @@ body {
   .cap-val { font-size: 13px; }
   .origin-cell { padding-left: 8px; }
 
+  /* Die Seite selbst scrollt nicht: das eingeklappte Fenster ragt sonst unten heraus
+     und die ganze Seite (samt Kopfzeile) würde mitgescrollt. */
+  .stage { overflow: hidden; }
   .panel {
     top: auto; left: 0; right: 0; bottom: 0; width: 100%;
     border-radius: var(--r-xl) var(--r-xl) 0 0; max-height: 88%;
-    transform: translateY(calc(100% - 132px)); transition: transform .32s cubic-bezier(.32,.72,.3,1);
+    /* Eingeklappt bleiben Griff und Kopf sichtbar (--peek misst PeakrUI). */
+    transform: translateY(calc(100% - var(--peek, 132px))); transition: transform .32s cubic-bezier(.32,.72,.3,1);
+    will-change: transform;
   }
   .panel.sheet-open { transform: translateY(0); }
-  .panel-handle { display: flex; justify-content: center; padding: 10px 0 4px; cursor: pointer; }
+  .panel.is-dragging { transition: none; }
+  .panel-scroll { overscroll-behavior: contain; }
+  .panel-handle { display: flex; justify-content: center; padding: 10px 0 8px; cursor: grab; touch-action: none; }
+  .panel-handle:focus-visible { outline: 2px solid var(--accent); outline-offset: -4px; border-radius: 12px; }
+  /* Kartenknöpfe und Quellenangabe über dem eingeklappten Fenster */
+  .stage .maplibregl-ctrl-bottom-right, .stage .maplibregl-ctrl-bottom-left { bottom: calc(var(--peek, 132px) + 4px); }
   .panel-handle span { width: 40px; height: 5px; border-radius: 999px; background: var(--line-2); }
   .panel-head { padding: 4px 18px 10px; }
   .sheet-close { display: grid; place-items: center; width: 34px; height: 34px; border: none; background: var(--surface-2); border-radius: 50%; color: var(--ink-2); cursor: pointer; }

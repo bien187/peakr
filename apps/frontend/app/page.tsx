@@ -290,6 +290,9 @@ export default function HomePage() {
       .catch(() => undefined);
   }, []);
 
+  // Handy: Tippen oder Ziehen auf der Karte klappt die Liste ein.
+  const collapseSheet = useCallback(() => setSheetOpen(false), []);
+
   const handleMapSelect = useCallback(
     (id: string) => {
       select(id);
@@ -361,6 +364,7 @@ export default function HomePage() {
           originPt={originPt}
           selection={selection}
           onSelect={handleMapSelect}
+          onBackgroundTap={collapseSheet}
         />
         <ResultsPanel
           items={items}
@@ -384,7 +388,7 @@ export default function HomePage() {
           sort={sort}
           onSort={setSort}
           sheetOpen={sheetOpen}
-          onSheetToggle={() => setSheetOpen((v) => !v)}
+          onSheetChange={setSheetOpen}
           includeUncertain={params.includeUncertain}
           onIncludeUncertain={(v) => set({ includeUncertain: v })}
         />

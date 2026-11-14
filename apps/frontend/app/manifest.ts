@@ -13,7 +13,9 @@ export default function manifest(): MetadataRoute.Manifest {
     start_url: '/',
     display: 'browser',
     background_color: '#faf9f6',
-    theme_color: '#e8542b',
+    // Wie die Kopfzeile im hellen Modus – nicht die Akzentfarbe, sonst färbt iOS die
+    // Statusleiste der Home-Bildschirm-App orange. Die Seite setzt theme-color je Modus.
+    theme_color: '#f7fbfe',
     icons: [
       { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
       { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },

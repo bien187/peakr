@@ -8,6 +8,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from 'react';
+import { oklchToHex } from './color';
 
 export type Direction = 'paper' | 'glacier' | 'pine';
 export type Mode = 'light' | 'dark';
@@ -22,13 +23,26 @@ export const DIRECTIONS: Record<
   pine: { label: 'Tannwald', hue: 158, ac: 0.085, sub: 'Helles Papier · Föhrengrün' },
 };
 
+/** Helligkeit/Buntheit (OKLCH) von Hintergrund und «Papier» (Kopfzeile, Panels) je Modus. */
+const BG = { light: [0.962, 0.008], dark: [0.205, 0.012] } as const;
+const PAPER = { light: [0.986, 0.006], dark: [0.235, 0.014] } as const;
+
+/**
+ * Farben für die Browser-Oberfläche: Statusleiste/Adressleiste (meta theme-color)
+ * wie die Kopfzeile, Seitenhintergrund (sichtbar beim Überziehen) wie die App.
+ */
+export function chromeColors(dir: Direction, mode: Mode): { bar: string; page: string } {
+  const H = (DIRECTIONS[dir] ?? DIRECTIONS.paper).hue;
+  return { bar: oklchToHex(PAPER[mode][0], PAPER[mode][1], H), page: oklchToHex(BG[mode][0], BG[mode][1], H) };
+}
+
 export function themeVars(dir: Direction, mode: Mode): Record<string, string> {
   const { hue: H, ac } = DIRECTIONS[dir] ?? DIRECTIONS.paper;
 
   if (mode === 'dark') {
     return {
-      '--bg': `oklch(0.205 0.012 ${H})`,
-      '--paper': `oklch(0.235 0.014 ${H})`,
+      '--bg': `oklch(${BG.dark[0]} ${BG.dark[1]} ${H})`,
+      '--paper': `oklch(${PAPER.dark[0]} ${PAPER.dark[1]} ${H})`,
       '--surface': `oklch(0.262 0.016 ${H})`,
       '--surface-2': `oklch(0.305 0.018 ${H})`,
       '--ink': `oklch(0.945 0.008 ${H})`,
@@ -52,8 +66,8 @@ export function themeVars(dir: Direction, mode: Mode): Record<string, string> {
   }
 
   return {
-    '--bg': `oklch(0.962 0.008 ${H})`,
-    '--paper': `oklch(0.986 0.006 ${H})`,
+    '--bg': `oklch(${BG.light[0]} ${BG.light[1]} ${H})`,
+    '--paper': `oklch(${PAPER.light[0]} ${PAPER.light[1]} ${H})`,
     '--surface': `oklch(0.997 0.004 ${H})`,
     '--surface-2': `oklch(0.945 0.010 ${H})`,
     '--ink': `oklch(0.255 0.014 ${H})`,
@@ -138,6 +152,24 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     });
 
   const setAppMode = (m: 'ski' | 'hike') => setDirection(directionFromAppMode(m));
+
+  // Statusleiste (iPhone, auch als Web-App vom Home-Bildschirm) und Seitenhintergrund
+  // in den Farben der App: hell im hellen, dunkelgrau im dunklen Modus.
+  useEffect(() => {
+    const { bar, page } = chromeColors(direction, s.mode);
+    const metas = document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]');
+    if (metas.length === 0) {
+      const meta = document.createElement('meta');
+      meta.name = 'theme-color';
+      meta.content = bar;
+      document.head.appendChild(meta);
+    }
+    metas.forEach((m) => {
+      m.content = bar;
+      m.removeAttribute('media');
+    });
+    document.documentElement.style.backgroundColor = page;
+  }, [direction, s.mode]);
 
   return (
     <Ctx.Provider value={{ s, set, direction, setAppMode }}>

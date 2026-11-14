@@ -30,6 +30,8 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
+  // Statusleiste wie die Kopfzeile (hell); ThemeProvider passt sie an Modus und Farbwelt an.
+  themeColor: '#f7fbfe',
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
