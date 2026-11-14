@@ -34,6 +34,8 @@ import {
   EVIDENCE_LABEL,
   routeGpx,
   routeGpxPath,
+  swisstopoAndroidIntent,
+  swisstopoAppUrl,
   swisstopoLink,
   type Availability,
   type DriveInfo,
@@ -609,25 +611,40 @@ function AvailabilityCard({ a, isSki }: { a: Availability | null; isSki: boolean
   );
 }
 
+type Platform = 'ios' | 'android' | 'desktop';
+
+/** Handy-Betriebssystem für den passenden swisstopo-Link (iPadOS meldet sich als Mac mit Touch). */
+function detectPlatform(): Platform {
+  const ua = navigator.userAgent;
+  if (/Android/i.test(ua)) return 'android';
+  if (/iPhone|iPad|iPod/i.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) return 'ios';
+  return 'desktop';
+}
+
 /**
  * «In Swisstopo öffnen» und «GPX herunterladen» für die gewählte Variante. Die
  * GPX-Datei entsteht im Browser aus den geladenen Routendaten; swisstopo lädt
  * dieselbe Datei über die öffentliche Peakr-URL (nur ab einer HTTPS-Adresse).
+ *
+ * Auf dem Handy öffnet der Knopf die Route in der swisstopo-App (dokumentierter
+ * Routen-Link swisstopo.app/u/…). Android fällt ohne App von selbst auf die
+ * swisstopo-Webkarte zurück; iOS lässt Webseiten nicht prüfen, ob eine App
+ * installiert ist – dort gibt es zusätzlich «im Browser öffnen».
  */
 function RouteExport({ d, route }: { d: PDetail; route: PRoute }) {
-  const [env, setEnv] = useState<{ origin: string; width: number; height: number } | null>(null);
+  const [env, setEnv] = useState<{ origin: string; width: number; height: number; platform: Platform } | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    setEnv({ origin: window.location.origin, width: window.innerWidth, height: window.innerHeight });
+    setEnv({ origin: window.location.origin, width: window.innerWidth, height: window.innerHeight, platform: detectPlatform() });
   }, []);
   useEffect(() => setError(null), [route.routeId]);
 
   if (route.line.length < 2) return null;
-  const link = swisstopoLink({
-    line: route.line,
-    gpxUrl: env ? `${env.origin}${routeGpxPath(d.id, route.rank)}` : null,
-    viewport: env ?? undefined,
-  });
+  const gpxUrl = env ? `${env.origin}${routeGpxPath(d.id, route.rank)}` : null;
+  const link = swisstopoLink({ line: route.line, gpxUrl, viewport: env ?? undefined });
+  const appUrl = gpxUrl && env && env.platform !== 'desktop' ? swisstopoAppUrl(gpxUrl) : null;
+  const platform = appUrl ? env!.platform : 'desktop';
+  const openHref = platform === 'android' ? swisstopoAndroidIntent(appUrl!, link.url) : platform === 'ios' ? appUrl! : link.url;
   const withElevation = route.src.elevations?.some((z) => z != null) ?? false;
   const places = route.src.waypoints?.length ?? 0;
 
@@ -661,17 +678,34 @@ function RouteExport({ d, route }: { d: PDetail; route: PRoute }) {
   return (
     <div className="route-export">
       <div className="route-export-btns">
-        <a className="btn btn-soft" href={link.url} target="_blank" rel="noopener noreferrer">
+        {/* Handy: App-Link im selben Tab (so öffnet das System die App); Computer: Webkarte im neuen Tab. */}
+        <a
+          className="btn btn-soft"
+          href={openHref}
+          {...(platform === 'desktop' ? { target: '_blank', rel: 'noopener noreferrer' } : { rel: 'noopener' })}
+        >
           <Icon name="Map" size={16} stroke={2} /> In Swisstopo öffnen
         </a>
         <button type="button" className="btn btn-soft" onClick={download}>
           <Icon name="Download" size={16} stroke={2} /> GPX herunterladen
         </button>
       </div>
+      {platform === 'ios' && (
+        <p className="route-export-alt">
+          Ohne swisstopo-App:{' '}
+          <a href={link.url} target="_blank" rel="noopener noreferrer">
+            im Browser öffnen
+          </a>
+        </p>
+      )}
       <p className="route-export-hint">
-        {link.withRoute
-          ? 'Swisstopo zeigt die Route auf der Landeskarte mit dem Wanderwegnetz.'
-          : 'Swisstopo öffnet den Kartenausschnitt der Route. Die Route selbst lädt swisstopo nur von der veröffentlichten Peakr-Adresse – hier die GPX-Datei im Viewer über «Import» hinzufügen.'}{' '}
+        {platform === 'android'
+          ? 'Öffnet die Route in der swisstopo-App – ist sie nicht installiert, auf der swisstopo-Webkarte mit Landeskarte und Wanderwegnetz.'
+          : platform === 'ios'
+            ? 'Öffnet die Route in der swisstopo-App. Ist sie nicht installiert, bietet swisstopo die App an – oder oben «im Browser öffnen» für die Webkarte.'
+            : link.withRoute
+              ? 'Swisstopo zeigt die Route auf der Landeskarte mit dem Wanderwegnetz.'
+              : 'Swisstopo öffnet den Kartenausschnitt der Route. Die Route selbst lädt swisstopo nur von der veröffentlichten Peakr-Adresse – hier die GPX-Datei im Viewer über «Import» hinzufügen.'}{' '}
         GPX 1.1 mit Track, Start, Ziel{places > 0 ? ` und ${places} ${places === 1 ? 'Ort' : 'Orten'} am Weg` : ''}
         {withElevation ? ', mit Höhen.' : ' – ohne Höhenangaben (werden mit dem nächsten Datenaufbau ergänzt).'}
       </p>

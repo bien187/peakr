@@ -6,7 +6,7 @@ Ohne berechnete Route (Ziel «ohne Route») gibt es keine Buttons.
 
 | Button | Wirkung |
 |---|---|
-| **In Swisstopo öffnen** (Kartensymbol) | Öffnet [map.geo.admin.ch](https://map.geo.admin.ch) in einem neuen Tab bzw. in der swisstopo-App. Zu sehen sind die Landeskarte, das amtliche Wanderwegnetz und die Route als eigene Ebene, auf den Routenausschnitt gezoomt. |
+| **In Swisstopo öffnen** (Kartensymbol) | **Computer:** öffnet [map.geo.admin.ch](https://map.geo.admin.ch) in einem neuen Tab mit Landeskarte, Wanderwegnetz und der Route als eigener Ebene. **Handy:** öffnet die Route in der swisstopo-App. Android ohne App öffnet die Webkarte, iPhone zeigt zusätzlich «Ohne swisstopo-App: im Browser öffnen» (siehe unten). |
 | **GPX herunterladen** (Downloadsymbol) | Lädt `peakr_wanderroute_<name>.gpx` direkt im Browser herunter. Die Datei wird lokal aus den bereits geladenen Routendaten erzeugt, ohne weiteren Serveraufruf. |
 
 ## Wie die Übergabe an swisstopo funktioniert
@@ -46,6 +46,30 @@ https://map.geo.admin.ch/#/map?lang=de&center=<E>,<N>&z=<0–10>
 öffentlichen HTTPS-Adresse öffnet der Link deshalb nur den Kartenausschnitt mit dem Wanderwegnetz. Der
 Hinweis unter den Buttons erklärt, wie die heruntergeladene GPX-Datei im Viewer über «Import»
 ergänzt wird.
+
+## swisstopo-App auf dem Handy
+
+swisstopo dokumentiert für Touren einen Routen-Link
+([«QR-Codes für Touren»](https://www.swisstopo.admin.ch/de/qr-codes-fuer-touren)):
+`https://swisstopo.app/u/` + Adresse der GPX-Datei in Base64. Peakr baut ihn aus derselben öffentlichen
+GPX-Adresse wie für die Webkarte (`swisstopoAppUrl()` in `packages/shared/src/gpx.ts`; der Test prüft
+das Beispiel von swisstopo Zeichen für Zeichen).
+
+- `swisstopo.app` ist mit der App verknüpft: auf iOS über `/.well-known/apple-app-site-association`
+  (alle Pfade), auf Android über `/.well-known/assetlinks.json` (Paket `ch.admin.swisstopo`). Ist die
+  App installiert, öffnet das System die Route direkt in der App.
+- **Android:** Der Knopf ist ein Intent-Link nach
+  [Chrome «Android Intents»](https://developer.chrome.com/docs/android/intents) mit
+  `package=ch.admin.swisstopo` und `S.browser_fallback_url`. Mit App öffnet sich die App, ohne App die
+  Webkarte mit der Route.
+- **iPhone:** Webseiten können unter iOS nicht prüfen, ob eine App installiert ist. Der Knopf führt
+  deshalb zum Routen-Link. Ohne App zeigt swisstopo.app eine Seite «In der App öffnen / App
+  installieren». Darum steht darunter der Link «Ohne swisstopo-App: im Browser öffnen» zur Webkarte.
+- **Tourenart:** Die GPX-Datei trägt wie die Dateien der swisstopo-App die Erweiterung
+  `<swisstopo:tour_type>0</swisstopo:tour_type>` (0 = Wandern; Namensraum aus deren GPX-Dateien). Andere
+  Programme ignorieren sie; die Datei bleibt gültig gegen das GPX-1.1-Schema.
+- Lokal (`http://localhost`) gibt es keinen App-Link: Die App könnte die Datei nicht laden. Dann
+  verhält sich der Knopf wie am Computer.
 
 ## Wie die GPX-Datei aufgebaut ist
 
