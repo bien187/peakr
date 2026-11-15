@@ -51,9 +51,9 @@ ergänzt wird.
 
 swisstopo dokumentiert für Touren einen Routen-Link
 ([«QR-Codes für Touren»](https://www.swisstopo.admin.ch/de/qr-codes-fuer-touren)):
-`https://swisstopo.app/u/` + Adresse der GPX-Datei in Base64. Peakr baut ihn aus derselben öffentlichen
-GPX-Adresse wie für die Webkarte (`swisstopoAppUrl()` in `packages/shared/src/gpx.ts`; der Test prüft
-das Beispiel von swisstopo Zeichen für Zeichen).
+`https://swisstopo.app/u/` + Adresse der GPX-Datei in Base64. Peakr baut ihn aus der öffentlichen
+Adresse der App-Datei (siehe unten; `swisstopoAppUrl()` in `packages/shared/src/gpx.ts`, der Test
+prüft das Beispiel von swisstopo Zeichen für Zeichen).
 
 - `swisstopo.app` ist mit der App verknüpft: auf iOS über `/.well-known/apple-app-site-association`
   (alle Pfade), auf Android über `/.well-known/assetlinks.json` (Paket `ch.admin.swisstopo`). Ist die
@@ -65,9 +65,22 @@ das Beispiel von swisstopo Zeichen für Zeichen).
 - **iPhone:** Webseiten können unter iOS nicht prüfen, ob eine App installiert ist. Der Knopf führt
   deshalb zum Routen-Link. Ohne App zeigt swisstopo.app eine Seite «In der App öffnen / App
   installieren». Darum steht darunter der Link «Ohne swisstopo-App: im Browser öffnen» zur Webkarte.
-- **Tourenart:** Die GPX-Datei trägt wie die Dateien der swisstopo-App die Erweiterung
-  `<swisstopo:tour_type>0</swisstopo:tour_type>` (0 = Wandern; Namensraum aus deren GPX-Dateien). Andere
-  Programme ignorieren sie; die Datei bleibt gültig gegen das GPX-1.1-Schema.
+- **Eigene Datei für die App** (`GET|HEAD|OPTIONS /api/destinations/<id>/routes/<variante>/gpx/swisstopo`,
+  `routeGpx(…, { swisstopoApp: true })`). Mit der normalen GPX-Datei übernahm die App über den Routen-Link
+  nur den Titel und eine leere Route (Issue #17). Die App-Datei ist deshalb aufgebaut wie die
+  GPX-Dateien der swisstopo-App selbst (Beispieldatei von swisstopo:
+  `https://cms.geo.admin.ch/fmc/Riederhorn.gpx`):
+  - jeder Trackpunkt mit `<swisstopo:routepoint_id>`;
+  - Start, Orte am Weg und Ziel als Kontrollpunkte genau auf dem nächstgelegenen Trackpunkt, mit
+    `waypoint_id`, `waypoint_routepoint_id`, `waypoint_meters_into_tour` (Laufmeter ab Start,
+    räumlich) und `waypoint_is_controlpoint` = 1;
+  - am Ziel `waypoint_stage_before` mit Distanz (m), Gehzeit (s, DIN 33466), Auf- und Abstieg wie in
+    Peakr; dazwischen Nullwerte wie in der Beispieldatei;
+  - Tourenart `<swisstopo:tour_type>0</swisstopo:tour_type>` (0 = Wandern).
+
+  Download und Webkarte nutzen weiterhin die normale Datei: Start, Orte und Ziel liegen dort an ihrer
+  echten Lage, ohne Routenpunkt-IDs. Beide Dateien sind gültig gegen das GPX-1.1-Schema. Ob die App die
+  Datei wie erwartet übernimmt, lässt sich nur auf einem Handy mit installierter App prüfen.
 - Lokal (`http://localhost`) gibt es keinen App-Link: Die App könnte die Datei nicht laden. Dann
   verhält sich der Knopf wie am Computer.
 

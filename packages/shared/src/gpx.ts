@@ -20,6 +20,22 @@ export interface GpxPoint {
   lng: number;
   /** Höhe in Metern; null/undefined = unbekannt (wird dann weggelassen). */
   ele?: number | null;
+  /** Nur Format der swisstopo-App: ID des Routenpunkts (`swisstopo:routepoint_id`). */
+  routepointId?: number | null;
+}
+
+/**
+ * Wegpunkt im Format der swisstopo-App (wie in deren eigenen GPX-Dateien): liegt
+ * auf einem Routenpunkt und verweist darauf.
+ */
+export interface SwisstopoWaypoint {
+  waypointId: number;
+  routepointId: number;
+  /** Laufmeter ab Start bis zu diesem Punkt. */
+  metersIntoTour: number;
+  controlPoint: boolean;
+  /** Etappe bis hierher (Meter, Sekunden, Höhenmeter); in den Dateien der App nur am Ziel mit Werten. */
+  stageBefore?: { distance: number; duration: number; ascent: number; descent: number } | null;
 }
 
 export interface GpxWaypoint extends GpxPoint {
@@ -28,6 +44,7 @@ export interface GpxWaypoint extends GpxPoint {
   /** Symbolname (Garmin-Konvention, z. B. «Summit»); andere Programme ignorieren ihn. */
   sym?: string | null;
   type?: string | null;
+  swisstopo?: SwisstopoWaypoint | null;
 }
 
 export interface GpxDocument {
@@ -78,7 +95,7 @@ export function cleanTrack(points: readonly GpxPoint[]): GpxPoint[] {
       continue;
     }
     lastKey = key;
-    out.push({ lat: p.lat, lng: p.lng, ele });
+    out.push(p.routepointId != null ? { lat: p.lat, lng: p.lng, ele, routepointId: p.routepointId } : { lat: p.lat, lng: p.lng, ele });
   }
   return out;
 }
@@ -124,10 +141,11 @@ export function buildGpx(doc: GpxDocument): string {
   const out: string[] = [];
   out.push('<?xml version="1.0" encoding="UTF-8"?>');
   const tourType = doc.swisstopoTourType != null && Number.isInteger(doc.swisstopoTourType) ? doc.swisstopoTourType : null;
+  const swisstopoNs = tourType !== null || waypoints.some((w) => w.swisstopo) || track.some((p) => p.routepointId != null);
   out.push(
     '<gpx version="1.1" creator="Peakr" xmlns="http://www.topografix.com/GPX/1/1" ' +
       'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" ' +
-      (tourType !== null ? `xmlns:swisstopo="${SWISSTOPO_NS}" ` : '') +
+      (swisstopoNs ? `xmlns:swisstopo="${SWISSTOPO_NS}" ` : '') +
       'xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">',
   );
 
@@ -166,6 +184,22 @@ export function buildGpx(doc: GpxDocument): string {
     if (w.desc) out.push(`    <desc>${esc(w.desc)}</desc>`);
     if (w.sym) out.push(`    <sym>${esc(w.sym)}</sym>`);
     if (w.type) out.push(`    <type>${esc(w.type)}</type>`);
+    if (w.swisstopo) {
+      const x = w.swisstopo;
+      out.push('    <extensions>');
+      out.push(`      <swisstopo:waypoint_id>${x.waypointId}</swisstopo:waypoint_id>`);
+      out.push(`      <swisstopo:waypoint_routepoint_id>${x.routepointId}</swisstopo:waypoint_routepoint_id>`);
+      out.push(`      <swisstopo:waypoint_meters_into_tour>${x.metersIntoTour.toFixed(6)}</swisstopo:waypoint_meters_into_tour>`);
+      out.push(`      <swisstopo:waypoint_is_controlpoint>${x.controlPoint ? 1 : 0}</swisstopo:waypoint_is_controlpoint>`);
+      if (x.stageBefore) {
+        const st = x.stageBefore;
+        out.push(
+          `      <swisstopo:waypoint_stage_before distance="${st.distance.toFixed(6)}" duration="${st.duration.toFixed(6)}" ` +
+            `ascent="${st.ascent.toFixed(6)}" descent="${st.descent.toFixed(6)}"/>`,
+        );
+      }
+      out.push('    </extensions>');
+    }
     out.push('  </wpt>');
   }
 
@@ -176,9 +210,12 @@ export function buildGpx(doc: GpxDocument): string {
   if (doc.trackType) out.push(`    <type>${esc(doc.trackType)}</type>`);
   out.push('    <trkseg>');
   for (const p of track) {
+    const ele = validEle(p.ele) ? `<ele>${fmtEle(p.ele)}</ele>` : '';
+    const ext =
+      p.routepointId != null ? `<extensions><swisstopo:routepoint_id>${p.routepointId}</swisstopo:routepoint_id></extensions>` : '';
     out.push(
-      validEle(p.ele)
-        ? `      <trkpt lat="${fmtCoord(p.lat)}" lon="${fmtCoord(p.lng)}"><ele>${fmtEle(p.ele)}</ele></trkpt>`
+      ele || ext
+        ? `      <trkpt lat="${fmtCoord(p.lat)}" lon="${fmtCoord(p.lng)}">${ele}${ext}</trkpt>`
         : `      <trkpt lat="${fmtCoord(p.lat)}" lon="${fmtCoord(p.lng)}"/>`,
     );
   }
@@ -274,6 +311,13 @@ export interface RouteGpxInput {
   appUrl?: string | null;
   /** Erstellungszeitpunkt; Standard: jetzt. */
   time?: string;
+  /**
+   * Format der swisstopo-App (für deren Routen-Link): Routenpunkte mit ID, Start,
+   * Orte am Weg und Ziel als Kontrollpunkte auf der Route, Ziel mit Etappenwerten –
+   * aufgebaut wie die GPX-Dateien der App selbst. Für Download und Webkarte nicht
+   * nötig: dort liegen Start, Orte und Ziel an ihrer echten Lage.
+   */
+  swisstopoApp?: boolean;
 }
 
 export interface RouteGpx {
@@ -351,6 +395,7 @@ export function routeGpx(input: RouteGpxInput): RouteGpx {
   }
 
   const variant = (input.variantCount ?? 1) > 1 ? ` Variante ${r.rank}` : '';
+  const app = input.swisstopoApp && track.length >= 2 ? toSwisstopoApp(track, waypoints, r) : null;
   const xml = buildGpx({
     name: title,
     desc,
@@ -358,8 +403,8 @@ export function routeGpx(input: RouteGpxInput): RouteGpx {
     link: input.appUrl ? { href: input.appUrl, text: 'Peakr' } : null,
     copyright: { author: 'swisstopo, OpenStreetMap-Mitwirkende', license: 'https://www.openstreetmap.org/copyright' },
     keywords: 'Wanderung, Peakr, Schweiz',
-    waypoints,
-    track,
+    waypoints: app ? app.waypoints : waypoints,
+    track: app ? app.track : track,
     trackType: 'hiking',
     swisstopoTourType: 0,
   });
@@ -367,6 +412,75 @@ export function routeGpx(input: RouteGpxInput): RouteGpx {
 }
 
 // ── swisstopo-App ────────────────────────────────────────────────────────────
+
+/** Abstand zweier Punkte in Metern (Haversine); mit Höhen räumlich. */
+function segmentM(a: GpxPoint, b: GpxPoint): number {
+  const R = 6_371_008.8;
+  const rad = Math.PI / 180;
+  const dLat = (b.lat - a.lat) * rad;
+  const dLng = (b.lng - a.lng) * rad;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLng / 2) ** 2;
+  const flat = 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+  return validEle(a.ele) && validEle(b.ele) ? Math.hypot(flat, b.ele - a.ele) : flat;
+}
+
+/**
+ * Route im Format der swisstopo-App: jeder Trackpunkt mit Routenpunkt-ID;
+ * Start, Orte am Weg und Ziel als Kontrollpunkte genau auf dem nächstgelegenen
+ * Trackpunkt (wie in den GPX-Dateien der App), mit Laufmetern ab Start; das Ziel
+ * mit Distanz, Gehzeit, Auf- und Abstieg der ganzen Tour.
+ */
+function toSwisstopoApp(
+  track: GpxPoint[],
+  waypoints: GpxWaypoint[],
+  r: Pick<HikeRouteDetail, 'ascentM' | 'descentM' | 'durationUpMin'>,
+): { track: GpxPoint[]; waypoints: GpxWaypoint[] } {
+  const pts = track.map((p, i) => ({ ...p, routepointId: i + 1 }));
+  const along = [0];
+  for (let i = 1; i < pts.length; i++) along.push(along[i - 1] + segmentM(pts[i - 1], pts[i]));
+  const last = pts.length - 1;
+  const nearest = (w: GpxPoint): number => {
+    let best = 0;
+    let bestD = Infinity;
+    for (let i = 0; i < pts.length; i++) {
+      const d = segmentM({ lat: w.lat, lng: w.lng }, { lat: pts[i].lat, lng: pts[i].lng });
+      if (d < bestD) {
+        bestD = d;
+        best = i;
+      }
+    }
+    return best;
+  };
+  const onRoute = (w: GpxWaypoint, i: number, stage: SwisstopoWaypoint['stageBefore']): GpxWaypoint => ({
+    ...w,
+    lat: pts[i].lat,
+    lng: pts[i].lng,
+    ele: pts[i].ele ?? null,
+    swisstopo: { waypointId: 0, routepointId: pts[i].routepointId, metersIntoTour: along[i], controlPoint: true, stageBefore: stage },
+  });
+  const zero = { distance: 0, duration: 0, ascent: 0, descent: 0 };
+  // Orte am Weg in Gehrichtung, ohne Doppelte und ohne Start/Ziel selbst.
+  const used = new Set<number>([0, last]);
+  const middle: { i: number; w: GpxWaypoint }[] = [];
+  for (const w of waypoints.slice(1, -1)) {
+    const i = nearest(w);
+    if (used.has(i)) continue;
+    used.add(i);
+    middle.push({ i, w });
+  }
+  middle.sort((a, b) => a.i - b.i);
+  const out = [
+    onRoute(waypoints[0], 0, null),
+    ...middle.map(({ i, w }) => onRoute(w, i, zero)),
+    onRoute(waypoints[waypoints.length - 1], last, {
+      distance: along[last],
+      duration: r.durationUpMin * 60,
+      ascent: r.ascentM,
+      descent: r.descentM,
+    }),
+  ].map((w, k) => ({ ...w, swisstopo: { ...w.swisstopo!, waypointId: k + 1 } }));
+  return { track: pts, waypoints: out };
+}
 
 const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
@@ -425,6 +539,11 @@ const LV95_RESOLUTIONS = [650, 500, 250, 100, 50, 20, 10, 5, 2.5, 2, 1, 0.5, 0.2
 /** Zulässiger Bereich für `center` laut Dokumentation der URL-Parameter. */
 const LV95_E = [2_450_000, 2_900_000] as const;
 const LV95_N = [1_050_000, 1_350_000] as const;
+
+/** Pfad der GPX-Datei im Format der swisstopo-App (für deren Routen-Link). */
+export function routeGpxAppPath(destinationId: string, rank: number): string {
+  return `${routeGpxPath(destinationId, rank)}/swisstopo`;
+}
 
 /** Pfad der GPX-Datei einer Route (für den Viewer öffentlich per HTTPS abrufbar). */
 export function routeGpxPath(destinationId: string, rank: number): string {
