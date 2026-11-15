@@ -33,6 +33,7 @@ import {
   CHECK_LABEL,
   EVIDENCE_LABEL,
   routeGpx,
+  routeGpxAppPath,
   routeGpxPath,
   swisstopoAndroidIntent,
   swisstopoAppUrl,
@@ -642,7 +643,8 @@ function RouteExport({ d, route }: { d: PDetail; route: PRoute }) {
   if (route.line.length < 2) return null;
   const gpxUrl = env ? `${env.origin}${routeGpxPath(d.id, route.rank)}` : null;
   const link = swisstopoLink({ line: route.line, gpxUrl, viewport: env ?? undefined });
-  const appUrl = gpxUrl && env && env.platform !== 'desktop' ? swisstopoAppUrl(gpxUrl) : null;
+  // Die App bekommt die Datei in ihrem eigenen Format (Kontrollpunkte auf der Route).
+  const appUrl = env && env.platform !== 'desktop' ? swisstopoAppUrl(`${env.origin}${routeGpxAppPath(d.id, route.rank)}`) : null;
   const platform = appUrl ? env!.platform : 'desktop';
   const openHref = platform === 'android' ? swisstopoAndroidIntent(appUrl!, link.url) : platform === 'ios' ? appUrl! : link.url;
   const withElevation = route.src.elevations?.some((z) => z != null) ?? false;

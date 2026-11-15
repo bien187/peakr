@@ -13,6 +13,7 @@ import {
   gpxFileName,
   isViewerLoadableUrl,
   routeGpx,
+  routeGpxAppPath,
   routeGpxPath,
   swisstopoAndroidIntent,
   swisstopoAppUrl,
@@ -363,5 +364,98 @@ describe('swisstopo-App', () => {
     const out = routeGpx({ ...rigi, appUrl: null, time: '2026-11-13T10:00:00Z' });
     expect(out.xml).toContain('xmlns:swisstopo="https://prod-static.swisstopo-app.ch/xmlschemas/SwisstopoExtensions"');
     expect(out.xml).toMatch(/<extensions>\s*<swisstopo:tour_type>0<\/swisstopo:tour_type>\s*<\/extensions>\s*<\/metadata>/);
+  });
+});
+
+/**
+ * Format der swisstopo-App – abgeleitet aus deren eigener Beispieldatei
+ * (https://cms.geo.admin.ch/fmc/Riederhorn.gpx, verlinkt unter «QR-Codes für Touren»):
+ * jeder Trackpunkt mit swisstopo:routepoint_id; jeder Wegpunkt liegt genau auf einem
+ * Trackpunkt und trägt waypoint_id, waypoint_routepoint_id, waypoint_meters_into_tour,
+ * waypoint_is_controlpoint (1) und – am Ziel mit Werten – waypoint_stage_before.
+ */
+describe('GPX für die swisstopo-App (Routen-Link)', () => {
+  const out = routeGpx({ ...rigi, appUrl: 'https://peakr-ch.vercel.app/destinations/x', time: '2026-11-13T10:00:00Z', swisstopoApp: true });
+  const xml = out.xml;
+  const doc = parseXml(xml);
+  const NS = 'https://prod-static.swisstopo-app.ch/xmlschemas/SwisstopoExtensions';
+  const pts = [...doc.getElementsByTagName('trkpt')].map((t) => ({
+    lat: t.getAttribute('lat'),
+    lon: t.getAttribute('lon'),
+    id: Number(t.getElementsByTagNameNS(NS, 'routepoint_id')[0]?.textContent),
+  }));
+  const wpts = [...doc.getElementsByTagName('wpt')].map((w) => {
+    const ext = w.getElementsByTagName('extensions')[0];
+    const kids = ext ? [...ext.childNodes].filter((n) => n.nodeType === 1).map((n) => (n as unknown as { localName: string }).localName) : [];
+    const val = (name: string) => w.getElementsByTagNameNS(NS, name)[0];
+    const stage = val('waypoint_stage_before');
+    return {
+      name: w.getElementsByTagName('name')[0]?.textContent ?? '',
+      lat: w.getAttribute('lat'),
+      lon: w.getAttribute('lon'),
+      kids,
+      id: Number(val('waypoint_id')?.textContent),
+      ref: Number(val('waypoint_routepoint_id')?.textContent),
+      meters: Number(val('waypoint_meters_into_tour')?.textContent),
+      control: val('waypoint_is_controlpoint')?.textContent,
+      stage: stage
+        ? Object.fromEntries(['distance', 'duration', 'ascent', 'descent'].map((k) => [k, Number(stage.getAttribute(k))]))
+        : null,
+    };
+  });
+
+  it('jeder Trackpunkt hat eine eindeutige Routenpunkt-ID', () => {
+    expect(pts.length).toBe(out.trackPoints);
+    expect(pts.map((p) => p.id)).toEqual(pts.map((_, i) => i + 1));
+  });
+
+  it('Start, Orte am Weg und Ziel liegen genau auf ihrem Routenpunkt, in Gehrichtung', () => {
+    expect(wpts[0].name).toMatch(/^Start: /);
+    expect(wpts[wpts.length - 1].name).toBe('Ziel: Rigi Kulm');
+    expect(wpts.length).toBeGreaterThan(2);
+    for (const w of wpts) {
+      const p = pts[w.ref - 1];
+      expect(p, w.name).toBeDefined();
+      expect([w.lat, w.lon]).toEqual([p.lat, p.lon]);
+    }
+    expect(wpts[0].ref).toBe(1);
+    expect(wpts[wpts.length - 1].ref).toBe(pts.length);
+    const meters = wpts.map((w) => w.meters);
+    expect(meters[0]).toBe(0);
+    expect([...meters].sort((a, b) => a - b)).toEqual(meters);
+    expect(wpts.map((w) => w.id)).toEqual(wpts.map((_, i) => i + 1));
+  });
+
+  it('Erweiterungen wie in den Dateien der App: Reihenfolge, Kontrollpunkt, Etappe am Ziel', () => {
+    for (const w of wpts) {
+      expect(w.control).toBe('1');
+      expect(w.kids.slice(0, 4)).toEqual(['waypoint_id', 'waypoint_routepoint_id', 'waypoint_meters_into_tour', 'waypoint_is_controlpoint']);
+    }
+    expect(wpts[0].stage).toBeNull();
+    for (const w of wpts.slice(1, -1)) expect(w.stage).toEqual({ distance: 0, duration: 0, ascent: 0, descent: 0 });
+    const goal = wpts[wpts.length - 1];
+    expect(goal.stage!.distance).toBeCloseTo(goal.meters, 3);
+    expect(goal.stage!.distance / 1000).toBeGreaterThan(rigi.route.distanceKm * 0.95);
+    expect(goal.stage!.distance / 1000).toBeLessThan(rigi.route.distanceKm * 1.08);
+    expect(goal.stage!.duration).toBe(rigi.route.durationUpMin * 60);
+    expect(goal.stage!.ascent).toBe(rigi.route.ascentM);
+    expect(goal.stage!.descent).toBe(rigi.route.descentM);
+    expect(xml).toContain('<swisstopo:tour_type>0</swisstopo:tour_type>');
+  });
+
+  it.skipIf(!hasXmllint)('bleibt gültig gegen das GPX-1.1-Schema (xmllint)', () => {
+    expect(() => validateAgainstXsd(xml)).not.toThrow();
+  });
+
+  it('Download/Webkarte bleiben unverändert: Start, Orte und Ziel an ihrer echten Lage, ohne Routenpunkt-IDs', () => {
+    const plain = routeGpx({ ...rigi, appUrl: null, time: '2026-11-13T10:00:00Z' }).xml;
+    expect(plain).not.toContain('swisstopo:routepoint_id');
+    expect(plain).not.toContain('swisstopo:waypoint_id');
+  });
+
+  it('eigene Adresse für die App, sicher im Routen-Link', () => {
+    const path = routeGpxAppPath(rigi.destination.id, 2);
+    expect(path).toBe(`/api/destinations/${rigi.destination.id}/routes/2/gpx/swisstopo`);
+    expect(swisstopoAppUrl(`https://peakr-ch.vercel.app${path}`)).toMatch(/^https:\/\/swisstopo\.app\/u\/[A-Za-z0-9]+$/);
   });
 });

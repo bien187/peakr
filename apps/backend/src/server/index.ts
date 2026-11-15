@@ -142,7 +142,16 @@ const routeRank = z.coerce.number().int().min(1).max(20);
  * die URL dient dem swisstopo-Kartenviewer, der die Route selbst laden muss.
  * `appOrigin` (z. B. https://peakr-ch.vercel.app) ergibt den Link zur Detailseite in den Metadaten.
  */
-export async function apiRouteGpx(id: string, rank: string, appOrigin: string | null): Promise<{ fileName: string; xml: string }> {
+/**
+ * GPX einer Routenvariante. `swisstopoApp`: Format der swisstopo-App (Routenpunkte
+ * mit ID, Kontrollpunkte auf der Route) für deren Routen-Link swisstopo.app/u/….
+ */
+export async function apiRouteGpx(
+  id: string,
+  rank: string,
+  appOrigin: string | null,
+  opts: { swisstopoApp?: boolean } = {},
+): Promise<{ fileName: string; xml: string }> {
   const destinationId = validate(uuid, id);
   const wanted = validate(routeRank, rank);
   const found = await getDestinationDetail(destinationId);
@@ -158,6 +167,7 @@ export async function apiRouteGpx(id: string, rank: string, appOrigin: string | 
     route,
     variantCount: detail.routes.length,
     appUrl: appOrigin ? `${appOrigin}/destinations/${destinationId}` : null,
+    swisstopoApp: opts.swisstopoApp,
   });
   return { fileName: gpx.fileName, xml: gpx.xml };
 }
