@@ -8,6 +8,7 @@ import {
   assessSkiSnow,
   assessSnow,
   assessWeather,
+  closureCoverageText,
   StationIndex,
   type CellForecast,
   type SnowStation,
@@ -76,10 +77,40 @@ describe('Sommer: Sperrungen', () => {
     expect(assessClosures([], 0.95, fresh, now).status).toBe('available');
   });
 
-  it('fehlender Bericht ist kein Nachweis: Route grösstenteils abseits des amtlichen Netzes → unsicher', () => {
-    const c = assessClosures([], 0.3, fresh, now);
-    expect(c.status).toBe('uncertain');
-    expect(c.text).toContain('30 %');
+  it('Route grösstenteils abseits des amtlichen Netzes: nicht unsicher, aber der Anteil steht offen im Text (Issue #20)', () => {
+    // Trübsee ab Gerschnialp: 29 % amtlich – früher deswegen das ganze Jahr ausgeblendet.
+    const c = assessClosures([], 0.286, fresh, now);
+    expect(c.status).toBe('available');
+    expect(c.text).toBe(
+      'Keine Sperrung gemeldet. Nur 29 % der Route liegen auf amtlichen Wanderwegen – für die übrigen Wege gibt es keine Sperrungsmeldungen.',
+    );
+    expect(c.evidence).toBe('official');
+  });
+
+  it('Text nennt immer, wofür es Meldungen gibt', () => {
+    expect(closureCoverageText(0.95)).toBe('Keine Sperrung auf der Route gemeldet.');
+    expect(closureCoverageText(0.7)).toContain('70 % der Route liegen auf amtlichen Wanderwegen; nur für diese gibt es Meldungen');
+    expect(closureCoverageText(0)).toContain('abseits amtlicher Wanderwege');
+    expect(closureCoverageText(0.001)).toContain('abseits amtlicher Wanderwege'); // gerundet 0 %
+    expect(closureCoverageText(1.2)).toBe('Keine Sperrung auf der Route gemeldet.');
+  });
+
+  it('gemeldete Sperrung zählt auch bei geringem amtlichem Anteil', () => {
+    expect(assessClosures([closure], 0.2, fresh, now).status).toBe('unavailable');
+    expect(assessClosures([{ ...closure, hasDetour: true }], 0.2, fresh, now).status).toBe('uncertain');
+  });
+
+  it('ganze Route: geringer amtlicher Anteil allein blendet nicht aus, gemessener Schnee schon', () => {
+    const plan = { date: '2026-07-15', startHour: 8 };
+    const ok = evaluateHikeRoute(route({ officialShare: 0.29 }), summerConditions(), plan, now);
+    expect(ok.status).toBe('available');
+    expect(byKind(ok.checks, 'closure').text).toContain('Nur 29 %');
+
+    const snowy = summerConditions();
+    snowy.stations = new StationIndex([station({ elevationM: 2050, snowCm: 14 })]);
+    const a = evaluateHikeRoute(route({ officialShare: 0.29 }), snowy, plan, now);
+    expect(a.status).toBe('uncertain');
+    expect(a.reason).toContain('14 cm');
   });
 
   it('veraltete oder fehlende Sperrungsdaten → unsicher', () => {

@@ -620,6 +620,27 @@ export function ResultsPanel({
             <span className="panel-title-sub">{includeUncertain ? 'in Reichweite' : 'verfügbar'}</span>
           </h2>
           {extra.length > 0 && <p className="panel-extra">+ {extra.join(' · ')}</p>}
+          {/* Ausgeblendete gehören nach oben: am Ende der Liste (nach «Weitere laden») sieht sie
+              niemand, und auf dem Handy ist bei eingeklappter Liste nur der Kopf sichtbar (Issue #20). */}
+          {!includeUncertain && hiddenUncertain > 0 && total > 0 && (
+            <p className="panel-hidden">
+              <Icon name="CircleHelp" size={13} stroke={2} />
+              <span>
+                {nf.format(hiddenUncertain)} {hiddenUncertain === 1 ? 'unsicheres Ziel' : 'unsichere Ziele'} ausgeblendet
+              </span>
+              <button
+                type="button"
+                className="btn-link"
+                onClick={(e) => {
+                  // Nicht zusätzlich die Liste aufklappen: die neuen Punkte erscheinen auf der Karte.
+                  e.stopPropagation();
+                  onIncludeUncertain(true);
+                }}
+              >
+                Zeigen
+              </button>
+            </p>
+          )}
         </div>
         <button type="button" className="sheet-close" onClick={() => onSheetChange(false)} aria-label="Liste einklappen">
           <Icon name="ChevronDown" size={20} />

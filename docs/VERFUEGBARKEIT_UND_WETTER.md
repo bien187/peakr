@@ -12,6 +12,9 @@ Stand 13.11.2026. Die Seite beschreibt:
   und die Gründe stehen am Ende der Trefferliste.
 - **Ein fehlender Bericht ist kein Nachweis für «offen».** Fehlen Daten für eine Prüfung oder sind sie
   veraltet, lautet das Ergebnis höchstens «unsicher».
+  - Ausnahme: Wege ausserhalb des amtlichen Wanderwegnetzes. Für sie gibt es grundsätzlich keine
+    Sperrungsmeldungen; das ist kein vorübergehender Datenmangel. Der Prüftext nennt den Anteil
+    offen, die Route gilt deswegen aber nicht als unsicher (siehe «Sperrungen» unten).
 - **Prognosen und Modellwerte sind als solche gekennzeichnet.** Jede Prüfung trägt ihre Belegart:
   amtliche Meldung, gemessen, Prognose (Modell), Modellwert, berechnet oder keine Daten. Dazu kommen
   Quelle und Zeitstempel.
@@ -40,7 +43,7 @@ Prognose) und eine Startstunde.
 
 | Prüfung | Verfügbar | Unsicher | Nicht verfügbar |
 |---|---|---|---|
-| **Sperrungen** | keine gemeldete Sperrung; mindestens 50 % der Route auf amtlichen Wanderwegen | gesperrter Abschnitt mit signalisierter Umleitung · weniger als 50 % auf amtlichen Wegen (für den Rest gibt es keine Meldungen) · Daten älter als 48 h | gesperrter Abschnitt ohne Umleitung auf der Route |
+| **Sperrungen** | keine gemeldete Sperrung (der Text nennt, welcher Anteil der Route auf amtlichen Wanderwegen liegt – nur dafür gibt es Meldungen) | gesperrter Abschnitt mit signalisierter Umleitung · Daten älter als 48 h | gesperrter Abschnitt ohne Umleitung auf der Route |
 | **Schnee entlang der Route** | eine Station auf ähnlicher oder grösserer Höhe misst schneefrei (< 2 cm) · nur Modell: Modellhöhe nahe der Route und schneefrei | Station knapp unter dem höchsten Punkt misst 5–20 cm · Modell meldet Schnee nahe Routenhöhe · keine Messung in Routenhöhe | ≥ 20 cm an einer Station bis 100 m über dem höchsten Punkt · ≥ 5 cm an einer Station 300 m oder mehr darunter · Modell meldet Schnee unterhalb der Route |
 | **Wetter zur Tourzeit** (Prognose) | trocken bzw. leichter Regen, Böen < 60 km/h | Gewitter (WMO 95–99) · Böen 60–90 km/h · Schneefall möglich (≥ 1 cm oder Niederschlag bei ≤ 0,5 °C auf dem höchsten Punkt) · ≥ 15 mm bzw. ≥ 5 mm/h · Prognose älter als 18 h oder zu kurz | Böen ≥ 90 km/h · ≥ 10 cm Neuschnee |
 | **Lawinenbulletin** (räumlich) | Stufe 1 · kein Bulletin in Kraft · Route unterhalb 1500 m | Stufe 2 · Bulletin älter als 30 h (Routen ≥ 1500 m) | Stufe ≥ 3 im Höhenband der Route |
@@ -62,6 +65,17 @@ Abschnitts (höchstens 150 m, mindestens 15 m) innerhalb von 25 m der Route lieg
 einen gesperrten Weg nur kreuzt, gilt damit nicht als gesperrt. Eine Umleitung zählt, wenn eine
 «detour»-Meldung mit gleichem Titel in 3 km Umkreis existiert. Die Zuordnung läuft nach jedem Abruf
 und nach jedem Neuaufbau der Routen.
+
+Meldungen gibt es nur für das amtliche Wanderwegnetz. Der Prüftext sagt deshalb immer, wofür die
+Aussage gilt:
+- ab 90 % amtlich: «Keine Sperrung auf der Route gemeldet»;
+- sonst: «Keine Sperrung gemeldet. Nur 29 % der Route liegen auf amtlichen Wanderwegen – für die
+  übrigen Wege gibt es keine Sperrungsmeldungen»;
+- ganz abseits: «Wegzustand vor Ort prüfen».
+
+Bis 20.11.2026 galt eine Route unter 50 % amtlichem Anteil als «unsicher». Damit war rund ein Drittel
+aller Ziele das ganze Jahr standardmässig ausgeblendet, darunter 34 % der Seen, z. B. Trübsee und
+Engstlensee (Issue #20). Am 20.11. waren 319 der 548 ausgeblendeten Seen nur deswegen unsicher.
 
 Hat ein Ziel mehrere Routen, wählt die Suche zuerst eine verfügbare Variante. Ist die kürzeste Route
 gesperrt, erscheint das Ziel mit der nächsten verfügbaren.
@@ -220,9 +234,13 @@ Es entstehen keine Kosten.
 
 ## Grenzen
 
-- Peakr kann Sperrungen ausserhalb des amtlichen Wanderwegnetzes nicht kennen. Routen grösstenteils
-  abseits davon gelten deshalb als unsicher. Das betrifft rund ein Drittel der Routen. Die Schwelle
-  ist `MIN_OFFICIAL_SHARE` in `apps/backend/src/availability/checks.ts`.
+- Peakr kann Sperrungen ausserhalb des amtlichen Wanderwegnetzes nicht kennen. Bei der besten Route
+  liegt das für rund ein Drittel der Ziele zu mehr als der Hälfte abseits davon. Das steht im Prüftext
+  (`closureCoverageText` in `apps/backend/src/availability/checks.ts`), macht die Route aber nicht
+  unsicher.
+- Die Routenwahl bevorzugt amtliche Wanderwege bisher nicht: Ein OSM-Pfad mit `sac_scale` kostet
+  gleich viel wie ein signalisierter Weg. So führt die Trübsee-Route ab Gerschnialp zu 71 % über
+  OSM-Pfade (T2), bis 365 m neben dem amtlichen Weg.
 - Die Wetterprüfung nutzt die Zelle des Ziels. Auf Graten können Böen deutlich stärker sein.
 - Exposition (Schnee, Lawinen) und Steinschlag werden nicht beurteilt.
 - Ohne Live-Betriebsstatus sind alle Skigebiete «unsicher». Die Ski-Suche zeigt dann einen
