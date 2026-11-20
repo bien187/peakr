@@ -5,6 +5,8 @@ import { mapLib } from '@/lib/map';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useEffect, useRef, useState } from 'react';
 import type { ExpressionSpecification, GeoJSONSource, MapGeoJSONFeature } from 'maplibre-gl';
+import { ClusterMarkers } from '@/lib/clusterMarkers';
+import { CLUSTER_KINDS } from '@/lib/clusterStyle';
 import { mapShade } from '@/lib/mapShade';
 import { fmtDrive, KIND_META, trailheadLabel, type MapSelection, type PPoint } from '@/lib/peakr';
 import { useSettings } from '@/lib/theme';
@@ -76,9 +78,6 @@ const selRadius = (extra: number): ExpressionSpecification => ['interpolate', ['
 
 const reducedMotion = (): boolean =>
   typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-/** Zählergrösse: 10–18 px statt bisher 13–25 px. */
-const CLUSTER_RADIUS: ExpressionSpecification = ['step', ['get', 'point_count'], 10, 10, 11.5, 50, 13, 250, 14.5, 1000, 16];
-const CLUSTER_COLOR: ExpressionSpecification = ['case', ['>', ['get', 'ski'], 0], SKI_BLUE, HIKE_GREEN];
 const NOT_CLUSTER: ExpressionSpecification = ['!', ['has', 'point_count']];
 
 // Weisse Typ-Symbole (sitzen auf dem farbigen Kreis) – als Map-Images registriert.
@@ -208,6 +207,7 @@ export function PeakrMap({
   const [wxOn, setWxOn] = useState(false);
   const routeAnim = useRef(0);
   const rippleAnim = useRef(0);
+  const clustersRef = useRef<ClusterMarkers | null>(null);
   const dark = useSettings().s.mode === 'dark';
 
   // Quellen + Layer installieren (idempotent; auch nach Style-Fallback erneut aufrufbar).
@@ -223,9 +223,12 @@ export function PeakrMap({
         // Weit herausgezoomt fassen Zähler nahe Ziele zusammen; ab Zoom 10 liegt jedes Ziel an seinem Ort.
         cluster: true,
         clusterMaxZoom: CLUSTER_MAX_ZOOM,
-        clusterRadius: 46,
-        // Anzahl Skigebiete je Zähler → Farbe der Wandern- bzw. Ski-Suche.
-        clusterProperties: { ski: ['+', ['case', ['==', ['get', 'type'], 'ski'], 1, 0]] },
+        // Etwas grösser als früher (46): die Zähler sind grösser und sollen sich nicht überdecken.
+        clusterRadius: 60,
+        // Anzahl je Art (Gipfel, Aussicht, Hütte, See, Pass, Skigebiet) – für Farbe und Zusatzzeile.
+        clusterProperties: Object.fromEntries(
+          CLUSTER_KINDS.map((k) => [k, ['+', ['case', ['==', ['get', 'kind'], k], 1, 0]]]),
+        ),
       });
     }
     for (const id of ['sel', 'origin', 'pois', 'trailhead']) {
@@ -286,46 +289,14 @@ export function PeakrMap({
         'circle-stroke-color': '#1f2933',
       },
     });
-    // Zähler: klein und ruhig – Akzentfarbe der Suche, feiner weisser Ring, weicher Hof.
-    add({
-      id: 'cluster-halo',
-      type: 'circle',
-      source: 'dests',
-      filter: IS_CLUSTER,
-      paint: {
-        'circle-color': CLUSTER_COLOR,
-        'circle-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 0.28, 0.16],
-        'circle-radius': ['+', CLUSTER_RADIUS, 6],
-        'circle-blur': 0.35,
-        'circle-opacity-transition': { duration: 180 },
-      },
-    });
+    // Zähler: gezeichnet als HTML-Marker («Pulse Cluster», lib/clusterMarkers.ts). Diese
+    // unsichtbare Ebene liefert nur, welche Zähler MapLibre gerade zeigt – samt Lage.
     add({
       id: 'clusters',
       type: 'circle',
       source: 'dests',
       filter: IS_CLUSTER,
-      paint: {
-        'circle-color': CLUSTER_COLOR,
-        'circle-opacity': 0.94,
-        'circle-radius': ['+', CLUSTER_RADIUS, ['case', ['boolean', ['feature-state', 'hover'], false], 2, 0]],
-        'circle-radius-transition': { duration: 180 },
-        'circle-stroke-width': 1.5,
-        'circle-stroke-color': 'rgba(255,255,255,0.95)',
-      },
-    });
-    add({
-      id: 'cluster-count',
-      type: 'symbol',
-      source: 'dests',
-      filter: IS_CLUSTER,
-      layout: {
-        'text-field': ['get', 'point_count_abbreviated'],
-        'text-size': ['step', ['get', 'point_count'], 10, 100, 10.5, 1000, 11],
-        'text-font': FONT,
-        'text-allow-overlap': true,
-      },
-      paint: { 'text-color': '#ffffff' },
+      paint: { 'circle-radius': 20, 'circle-opacity': 0, 'circle-stroke-width': 0 },
     });
     add({
       id: 'points',
@@ -432,6 +403,7 @@ export function PeakrMap({
     map.on('load', () => {
       styleLoaded = true;
       installLayers(map);
+      clustersRef.current = new ClusterMarkers(map, 'dests', 'clusters', CLUSTER_MAX_ZOOM);
       map.resize();
       setReady(true);
       setMapObj(map);
@@ -451,18 +423,6 @@ export function PeakrMap({
     });
     map.on('dragstart', (e) => {
       if (e.originalEvent) onBackgroundRef.current?.();
-    });
-
-    // Zähler antippen → so weit hineinzoomen, bis er sich auflöst.
-    map.on('click', 'clusters', (e) => {
-      const f = e.features?.[0];
-      const clusterId = f?.properties?.cluster_id as number | undefined;
-      const src = map.getSource('dests') as GeoJSONSource | undefined;
-      if (clusterId == null || !src || !f) return;
-      void src
-        .getClusterExpansionZoom(clusterId)
-        .then((zoom) => map.easeTo({ center: (f.geometry as GeoJSON.Point).coordinates as [number, number], zoom: zoom + 0.3 }))
-        .catch(() => undefined);
     });
 
     // Kurzinfo beim Überfahren: Name, Art und Fahrzeit.
@@ -493,30 +453,18 @@ export function PeakrMap({
         .addTo(map);
     });
 
-    for (const layer of ['points', 'point-icons', 'clusters', 'poi-fire']) {
+    for (const layer of ['points', 'point-icons', 'poi-fire']) {
       map.on('mouseenter', layer, () => (map.getCanvas().style.cursor = 'pointer'));
       map.on('mouseleave', layer, () => (map.getCanvas().style.cursor = ''));
     }
-    // Zähler unter dem Zeiger leicht vergrössern.
-    let hoverCluster: number | null = null;
-    const setHover = (id: number | null) => {
-      if (hoverCluster === id) return;
-      if (hoverCluster !== null) map.setFeatureState({ source: 'dests', id: hoverCluster }, { hover: false });
-      hoverCluster = id;
-      if (id !== null) map.setFeatureState({ source: 'dests', id }, { hover: true });
-    };
-    map.on('mousemove', 'clusters', (e) => {
-      const id = e.features?.[0]?.id;
-      setHover(typeof id === 'number' ? id : null);
-    });
-    map.on('mouseleave', 'clusters', () => setHover(null));
-
     const ro = new ResizeObserver(() => map.resize());
     ro.observe(wrapRef.current);
 
     return () => {
       ro.disconnect();
       if (poiTimer.current) clearTimeout(poiTimer.current);
+      clustersRef.current?.destroy();
+      clustersRef.current = null;
       hover.remove();
       setMapObj(null);
       map.remove();
@@ -530,6 +478,7 @@ export function PeakrMap({
     const map = mapRef.current;
     if (!map || !ready) return;
     (map.getSource('dests') as GeoJSONSource | undefined)?.setData(pointsToFeatures(points));
+    clustersRef.current?.dataChanged();
     (map.getSource('origin') as GeoJSONSource | undefined)?.setData({
       type: 'FeatureCollection',
       features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [originPt.lng, originPt.lat] }, properties: {} }],
@@ -592,6 +541,14 @@ export function PeakrMap({
     if (selTh || selLine) map.fitBounds(bounds, { padding: viewPadding(), maxZoom: 14, duration: 500 });
     else map.flyTo({ center: dest, zoom: Math.max(map.getZoom(), 11.5), duration: 500 });
   }, [selId, selLine, selTh, ready]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Zähler, der das gewählte Ziel enthält, hervorheben (weit herausgezoomt).
+  const selLat = selection?.lat ?? null;
+  const selLng = selection?.lng ?? null;
+  useEffect(() => {
+    if (!ready) return;
+    clustersRef.current?.setSelection(selId && selLat != null && selLng != null ? { id: selId, lngLat: [selLng, selLat] } : null);
+  }, [selId, selLat, selLng, ready]);
 
   // Neues Ziel ausgewählt: ein Ring breitet sich einmal aus.
   useEffect(() => {
