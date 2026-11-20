@@ -29,7 +29,7 @@ Bedingungen. Alles läuft mit kostenlosen, offenen Daten; es gibt keine kostenpf
 | **Verfügbarkeit** | Standardmässig nur Ziele, die zur geplanten Zeit verfügbar sind: Wegsperrungen, Schnee entlang der Route (Messstationen), Wetter zur Tourzeit, Lawinenbulletin nach Höhenlage, Tageslicht · Skigebiete nie «offen» ohne Live-Betriebsstatus · Unsichere optional · Gründe je Ziel |
 | **Wetterkarte** | Schalter «Wetter» auf der Karte: Radar MeteoSchweiz (gemessen, 5 min) und Prognose bis 48 h für Niederschlag, Bewölkung, Neuschnee, Temperatur, Böen · fliessende Verläufe auf dunkler Karte · läuft auch bei zugeklappten Einstellungen weiter · Böen als ziehende Striche, Neuschnee als Flocken · Zeitleiste mit Pause · Legende |
 | **Ergebnisse** | Abschnitte «in Reichweite», «knapp ausserhalb», «Schwierigkeit unbekannt», «ohne Route» · Sortierung nach Bewertung, Fahrzeit, Gehzeit, Höhe, Schnee · seitenweise, ohne Obergrenze |
-| **Karte** | swisstopo-Karte · Zähler fassen nahe Ziele zusammen · gewählte Route und Parkplatz eingezeichnet · Wanderwege-Overlay · Feuerstellen |
+| **Karte** | swisstopo-Karte · Zähler («Pulse Cluster») fassen nahe Ziele zusammen, mit Arten beim Überfahren · gewählte Route und Parkplatz eingezeichnet · Wanderwege-Overlay · Feuerstellen |
 | **Detail** | 3D-Gelände, Karte, Luftbild · alle Routenvarianten mit eigener Fahrzeit · Route in swisstopo öffnen · GPX-Download (Track mit Höhen, Start, Ziel, Orte am Weg) · Navigation zum Parkplatz · Anlagen und Pisten · 7-Tage-Prognose · Datenquellen |
 | **Konto** | Registrierung, Favoriten, Standard-Startort; ohne Konto Favoriten im Browser |
 

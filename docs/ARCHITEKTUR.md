@@ -194,6 +194,32 @@ animiert wird im Browser (`apps/frontend/lib/weatherEngine.ts`, `weatherField.ts
 `weatherParticles.ts`). Regeln, Quellen und Grenzen:
 [VERFUEGBARKEIT_UND_WETTER.md](VERFUEGBARKEIT_UND_WETTER.md).
 
+## Karte: Sammelmarkierungen («Pulse Cluster»)
+
+Weit herausgezoomt fasst die Kartenquelle nahe Ziele zu Zählern zusammen (MapLibre-Clustering der
+GeoJSON-Quelle `dests`, bis Zoom 9, Radius 60 px). Gezählt werden je Zähler auch die Arten der Ziele
+(`clusterProperties`: Gipfel, Aussicht, Hütte, See, Pass, Skigebiet) – aus den echten Daten.
+
+- **Darstellung:** schlanke HTML-Marker (`apps/frontend/lib/clusterMarkers.ts`), weil nur so
+  Lichtschein, Tiefe, Topo-Ringe, App-Schrift und weiche Übergänge möglich sind. Es sind immer nur
+  wenige Dutzend Zähler gleichzeitig; die einzelnen Ziele bleiben WebGL. Eine unsichtbare
+  WebGL-Ebene (`clusters`) liefert, welche Zähler MapLibre gerade zeigt. Der Abgleich läuft
+  gedrosselt (höchstens alle 140 ms) und blendet neue Zähler ein, aufgelöste aus.
+- **Logik** (`apps/frontend/lib/clusterStyle.ts`, getestet):
+  - **Grösse:** logarithmisch und fest verankert (2 Ziele → klein, ab 1000 → gross), Desktop 42–70 px,
+    Handy 36–58 px, in 2-px-Stufen. Sie hängt nur von der Anzahl ab, nicht vom Zoom.
+  - **Stufen:**
+    - klein (nur Zahl);
+    - mittel (+ Bergsymbol);
+    - gross (+ Topo-Ring; die zwei häufigsten Arten beim Überfahren);
+    - sehr gross (+ zweiter Ring).
+- **Zustände:**
+  - Überfahren: leicht grösser, hellerer Rand, stärkerer Glow.
+  - Antippen: kurz gedrückt; dann wie bisher bis zur Auflösung hineinzoomen.
+  - Ausgewählt: Der Zähler, der das gewählte Ziel enthält, bekommt einen hellen Rand, einen Hof und
+    einen sanften Puls.
+  - Bei «Bewegung reduzieren» gibt es keine Animationen.
+
 ## Worker
 
 `apps/backend/src/workers/runner.ts` gibt jedem Job:
