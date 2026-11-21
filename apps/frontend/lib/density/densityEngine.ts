@@ -8,20 +8,26 @@
  *  Bildschirmpixeln der jeweiligen Zoomstufe (Web Mercator, 512-px-Kacheln). Was
  *  die Engine als Hotspot findet, leuchtet auf der Karte genau dort.
  *
- * Radius
- *  Geografisch festgelegt (km je Zoomstufe, dazwischen log-linear) und erst dann
- *  in Pixel umgerechnet: Beim Hineinzoomen wachsen die Flecken mit der Karte mit
- *  und werden dabei geografisch enger – die Hotspots werden präziser.
+ * Radius (seit 2.1 deutlich kleiner)
+ *  Geografisch festgelegt (km je Zoomstufe) und dann in Pixel umgerechnet. In der
+ *  Schweiz-Übersicht 5–6 km statt 15 km: nahe Ziele verbinden sich, wo sie wirklich
+ *  dicht liegen, statt zu einem grossen Nebel zu verschmelzen. Beim Hineinzoomen
+ *  wird er nur langsam enger – die Flecken bleiben geografisch stabil.
  *
  * Normalisierung
  *  Je Zoomstufe das robuste Maximum (98. Perzentil der Dichte an den Zielen) →
- *  heatmap-intensity. Die dichtesten 2 % erreichen die oberste Farbe, Ausreisser
- *  werden dort abgeschnitten. Ein einzelnes Ziel bleibt immer unter «mittel» –
- *  keine künstlichen Hotspots.
+ *  heatmap-intensity; Spitzen werden abgeschnitten.
+ *
+ * Farbstufen (seit 2.1 aus den Daten)
+ *  Die fünf Stufen sitzen auf Quantilen der Dichte an den Zielen: so ist jede
+ *  Stufe mit echten Zielen besetzt und auch dünn besetzte Regionen (z. B. das
+ *  Tessin neben dem dichten Mittelland) bleiben sichtbar. Ein einzelnes Ziel
+ *  erreicht mindestens «sehr niedrig» (bleibt als feiner Punkt sichtbar), nie
+ *  aber «mittel» – keine künstlichen Hotspots.
  *
  * Hotspots
  *  Dichtefeld auf einem Raster, Einzugsgebiete der Dichtemaxima (aufsteigend
- *  zusammengefügt, kleine Nebenmaxima werden dem Nachbarn zugeschlagen). Jedes
+ *  zusammengefügt, flache Nebenmaxima werden dem Nachbarn zugeschlagen). Jedes
  *  Ziel im sichtbar leuchtenden Bereich gehört zu genau einem Hotspot; die Zahl
  *  ist die echte Anzahl dieser Ziele.
  */
@@ -50,20 +56,21 @@ const unmercY = (y: number): number => (360 / Math.PI) * Math.atan(Math.exp((0.5
 // ── Radius (geografisch) ─────────────────────────────────────────────────────
 
 /**
- * Radius des Kerns in km je Zoomstufe. Ganze Schweiz (Zoom 6–7): 10–15 km, also
- * Regionen; mittlerer Zoom (8–9): 4–7 km, Täler und Gebiete; nah (10–11): 2–3 km.
+ * Radius des Kerns in km je Zoomstufe (dazwischen log-linear). Je Zoomstufe nur
+ * gut 25 % enger, während die Karte doppelt so gross wird: die Flecken wachsen mit
+ * der Karte mit, statt beim Zoomen zu «fliessen».
  */
 const RADIUS_KM: readonly (readonly [number, number])[] = [
-  [4, 32],
-  [5, 23],
-  [6, 15],
-  [7, 10],
-  [8, 6.7],
-  [9, 4.4],
-  [10, 2.8],
-  [11, 1.7],
-  [12, 1.05],
-  [13, 0.65],
+  [4, 10],
+  [5, 7.6],
+  [6, 5.6],
+  [7, 4.1],
+  [8, 3.0],
+  [9, 2.2],
+  [10, 1.6],
+  [11, 1.2],
+  [12, 0.9],
+  [13, 0.7],
 ];
 
 export function radiusKm(zoom: number): number {
@@ -122,9 +129,10 @@ export interface PreparedPoints {
 /**
  * Doppelte entfernen: gleiche ID nur einmal; gleicher Ort (≈ 1 m) mit gleichem
  * Namen nur einmal. Verschiedene Ziele am selben Ort (z. B. See und Hütte) bleiben.
- * Punkte ohne gültige Koordinaten fallen weg.
+ * Punkte ohne gültige Koordinaten fallen weg. Dieselbe Liste geht an die GPU-Heatmap
+ * und an die Engine – beide sehen also genau dieselben Ziele.
  */
-export function preparePoints(points: readonly DensityPoint[]): PreparedPoints {
+export function uniquePoints(points: readonly DensityPoint[]): DensityPoint[] {
   const seenId = new Set<string>();
   const seenPlace = new Set<string>();
   const keep: DensityPoint[] = [];
@@ -137,6 +145,11 @@ export function preparePoints(points: readonly DensityPoint[]): PreparedPoints {
     seenPlace.add(place);
     keep.push(p);
   }
+  return keep;
+}
+
+export function preparePoints(points: readonly DensityPoint[]): PreparedPoints {
+  const keep = uniquePoints(points);
   const n = keep.length;
   const out: PreparedPoints = {
     n,
@@ -160,8 +173,14 @@ export function preparePoints(points: readonly DensityPoint[]): PreparedPoints {
 
 // ── Dichtefeld ───────────────────────────────────────────────────────────────
 
-/** Höchstens so viele Rasterzellen je Zoomstufe (sonst wird die Zelle gröber). */
-const MAX_CELLS = 320_000;
+/**
+ * Rasterauflösung: Für Intensität und Stufen genügen Quantile der Dichte an den
+ * Zielen (grobes Raster, Zelle ≈ 0,8 σ); die Hotspots brauchen die genaue Lage
+ * (feineres Raster, Zelle ≈ 0,6 σ). Höchstzahl der Zellen, sonst wird die Zelle gröber.
+ */
+const COARSE = { cellPerSigma: 0.8, maxCells: 250_000 };
+const FINE = { cellPerSigma: 0.6, maxCells: 400_000 };
+type Resolution = typeof COARSE;
 
 interface Field {
   zoom: number;
@@ -182,7 +201,7 @@ interface Field {
  * Dichtefeld bei Zoom z: Ziele ins Raster legen (Zelle ≈ σ/2), dann trennbar mit
  * dem Gauss-Kern falten. Das Raster deckt nur die Ziele samt Kernreichweite ab.
  */
-function densityField(pts: PreparedPoints, zoom: number): Field {
+function densityField(pts: PreparedPoints, zoom: number, res: Resolution = FINE): Field {
   const scale = TILE_PX * 2 ** zoom;
   const sigma = radiusPx(zoom) / 3;
   let minX = Infinity;
@@ -200,7 +219,7 @@ function densityField(pts: PreparedPoints, zoom: number): Field {
   const margin = 3 * sigma;
   const spanX = maxX - minX + 2 * margin;
   const spanY = maxY - minY + 2 * margin;
-  const cell = Math.max(sigma / 2, Math.sqrt((spanX * spanY) / MAX_CELLS), 0.5);
+  const cell = Math.max(sigma * res.cellPerSigma, Math.sqrt((spanX * spanY) / res.maxCells), 0.5);
   const cols = Math.max(1, Math.ceil(spanX / cell) + 1);
   const rows = Math.max(1, Math.ceil(spanY / cell) + 1);
   const x0 = minX - margin;
@@ -251,14 +270,16 @@ function densityField(pts: PreparedPoints, zoom: number): Field {
   return { zoom, cell, x0, y0, cols, rows, d, cellOf };
 }
 
-/** p-Quantil (0–1) der Dichte an den Zielen. */
-function quantileAtPoints(f: Field, pts: PreparedPoints, p: number): number {
-  if (pts.n === 0) return 0;
+/** Dichte an jedem Ziel (Zelle des Ziels), aufsteigend sortiert. */
+function sortedDensityAtPoints(f: Field, pts: PreparedPoints): Float32Array {
   const vals = new Float32Array(pts.n);
   for (let i = 0; i < pts.n; i++) vals[i] = f.d[f.cellOf[i]];
   vals.sort();
-  return vals[Math.min(pts.n - 1, Math.max(0, Math.round(p * (pts.n - 1))))];
+  return vals;
 }
+
+const quantile = (sorted: Float32Array, p: number): number =>
+  sorted.length === 0 ? 0 : sorted[Math.min(sorted.length - 1, Math.max(0, Math.round(p * (sorted.length - 1))))];
 
 // ── Normalisierung ───────────────────────────────────────────────────────────
 
@@ -275,27 +296,93 @@ function intensityFor(robustMax: number): number {
   return Math.min(MAX_INTENSITY, Math.max(MIN_INTENSITY, 1 / robustMax));
 }
 
+/** Intensität bei Zoom z (linear zwischen den Stützstellen, wie der Kartenausdruck). */
+export function intensityAt(stops: readonly [number, number][], zoom: number): number {
+  if (stops.length === 0) return MAX_INTENSITY;
+  if (zoom <= stops[0][0]) return stops[0][1];
+  for (let i = 1; i < stops.length; i++) {
+    if (zoom <= stops[i][0]) {
+      const [z0, v0] = stops[i - 1];
+      const [z1, v1] = stops[i];
+      return v0 + ((zoom - z0) / (z1 - z0)) * (v1 - v0);
+    }
+  }
+  return stops[stops.length - 1][1];
+}
+
+/** `heatmap-intensity` als Zoom-Ausdruck. */
+export function intensityExpression(stops: readonly [number, number][]): unknown[] {
+  if (stops.length === 0) return ['literal', MAX_INTENSITY] as unknown[];
+  if (stops.length === 1) return ['interpolate', ['linear'], ['zoom'], stops[0][0], stops[0][1], stops[0][0] + 1, stops[0][1]];
+  return ['interpolate', ['linear'], ['zoom'], ...stops.flatMap(([z, v]) => [z, Math.round(v * 10_000) / 10_000])];
+}
+
+// ── Farbstufen (aus den Daten) ───────────────────────────────────────────────
+
+/** Normalisierte Dichte (0–1) der fünf Farbstufen. */
+export interface DensityLevels {
+  veryLow: number;
+  low: number;
+  medium: number;
+  high: number;
+  veryHigh: number;
+}
+
+/** Stufen ohne Daten (und Rückfall): feste Werte. */
+export const DEFAULT_LEVELS: DensityLevels = { veryLow: 0.06, low: 0.16, medium: 0.46, high: 0.65, veryHigh: 0.9 };
+
+/**
+ * Anteil der Ziele, die mindestens diese Stufe erreichen: 97 % mindestens «sehr
+ * niedrig», 75 % «niedrig», 40 % «mittel», das oberste Siebtel «hoch», 3 % «sehr
+ * hoch». So bleibt auch Dünnes sichtbar und echte Zentren heben sich ab.
+ */
+const LEVEL_QUANTILES: DensityLevels = { veryLow: 0.03, low: 0.25, medium: 0.6, high: 0.86, veryHigh: 0.97 };
+/** Zoomstufen, über die die Stufen gemittelt werden (Übersicht bis Region). */
+const LEVEL_ZOOMS = [6, 7, 8];
+/** Benachbarte Stufen liegen mindestens um diesen Faktor auseinander. */
+const LEVEL_STEP = 1.3;
+
+/**
+ * Stufen aus der Verteilung der Dichte an den Zielen (Quantile, gemittelt über
+ * Übersicht und Region). Bedingungen:
+ *  - ein einzelnes Ziel erreicht in der Übersicht mindestens «sehr niedrig»,
+ *  - nie «mittel» (keine künstlichen Hotspots),
+ *  - Stufen streng aufsteigend mit Abstand, «sehr hoch» höchstens 1.
+ */
+function computeLevels(pts: PreparedPoints, intensity: [number, number][], atPoints: Map<number, Float32Array>): DensityLevels {
+  if (pts.n < 20) return DEFAULT_LEVELS;
+  const sum: DensityLevels = { veryLow: 0, low: 0, medium: 0, high: 0, veryHigh: 0 };
+  for (const z of LEVEL_ZOOMS) {
+    const vals = atPoints.get(z) ?? sortedDensityAtPoints(densityField(pts, z, COARSE), pts);
+    const i = intensityAt(intensity, z);
+    for (const k of Object.keys(sum) as (keyof DensityLevels)[]) sum[k] += quantile(vals, LEVEL_QUANTILES[k]) * i;
+  }
+  const n = LEVEL_ZOOMS.length;
+  // Dichte eines allein stehenden Ziels in der Übersicht (schwächste Intensität).
+  const single = GAUSS_COEF * Math.min(...LEVEL_ZOOMS.map((z) => intensityAt(intensity, z)));
+  // 1. Quantile, nach oben mit Mindestabstand; Einzelziel sichtbar, aber nie «mittel».
+  const l: DensityLevels = { veryLow: Math.min(sum.veryLow / n, single * 0.8), low: 0, medium: 0, high: 0, veryHigh: 0 };
+  l.low = Math.max(sum.low / n, l.veryLow * LEVEL_STEP);
+  l.medium = Math.max(sum.medium / n, l.low * LEVEL_STEP, single * 1.3);
+  l.high = Math.max(sum.high / n, l.medium * LEVEL_STEP);
+  l.veryHigh = Math.max(sum.veryHigh / n, l.high * LEVEL_STEP);
+  // 2. Über 1 gibt es keine Farbe mehr: von oben her zusammenrücken. «Mittel» bleibt
+  //    dabei über einem Einzelziel (≤ 0,34 · 1,3 < 1 / 1,3²).
+  l.veryHigh = Math.min(1, l.veryHigh);
+  l.high = Math.min(l.high, l.veryHigh / LEVEL_STEP);
+  l.medium = Math.min(l.medium, l.high / LEVEL_STEP);
+  l.low = Math.min(l.low, l.medium / LEVEL_STEP);
+  l.veryLow = Math.min(l.veryLow, l.low / LEVEL_STEP);
+  return l;
+}
+
 // ── Hotspots ─────────────────────────────────────────────────────────────────
 
-/**
- * Stufen der normalisierten Dichte (0–1) – gemeinsam für die Farbskala der
- * Heatmap und die Hotspot-Erkennung. Gesetzt nach der gemessenen Verteilung an
- * den Zielen (Suchindex 11/2026, über Zoom 6–10 und Datenmengen stabil): Median
- * ≈ 0,4 → «niedrig», oberstes Viertel → «mittel», oberste 10 % → «hoch»,
- * oberste 2 % → «sehr hoch». So bleibt das Grundleuchten schwach, echte
- * Konzentrationen heben sich ab.
- */
-export const DENSITY_LEVELS = { veryLow: 0.18, low: 0.4, medium: 0.6, high: 0.8, veryHigh: 1 } as const;
+/** Nebenmaxima, die weniger als so viel (normalisiert) über dem Sattel liegen, gehören zum Nachbarn. */
+const PERSISTENCE = 0.1;
 
-/** Ab hier wird das Leuchten wahrnehmbar (etwa halbe erste Farbstufe) – Grenze eines Hotspots. */
-export const VISIBLE_DENSITY = 0.1;
-/**
- * Ein Hotspot (zum Antippen) braucht am Maximum mindestens «niedrig» – ein
- * einzelnes Ziel (≈ 0,34) nie. Zahlen bekommen nur Hotspots ab «hoch» (hotspotLayer).
- */
-const RELEVANT_DENSITY = DENSITY_LEVELS.low;
-/** Nebenmaxima, die weniger als so viel über dem Sattel liegen, gehören zum Nachbarn. */
-const PERSISTENCE = 0.12;
+/** Ab hier wird das Leuchten wahrnehmbar – Grenze eines Hotspots (halbe erste Stufe). */
+export const visibleDensity = (levels: DensityLevels): number => levels.veryLow * 0.5;
 
 export interface Hotspot {
   /** Lage des Dichtemaximums. */
@@ -314,7 +401,7 @@ export interface Hotspot {
 export interface HotspotBand {
   /** Zoomstufe, für die das Feld gerechnet wurde. */
   zoom: number;
-  /** Hotspots, gross zuerst (nur relevante: Maximum mindestens «mittel»). */
+  /** Hotspots (Maximum mindestens «niedrig»), gross zuerst. */
   hotspots: Hotspot[];
   /**
    * Raster zum Nachschlagen beim Tippen: Zelle → Index in `hotspots`, −1 = kein
@@ -334,19 +421,48 @@ export function hotspotAt(band: HotspotBand, lng: number, lat: number): Hotspot 
   return i >= 0 ? (band.hotspots[i] ?? null) : null;
 }
 
-function detectHotspots(pts: PreparedPoints, f: Field, intensity: number): HotspotBand {
+/**
+ * Zellen mit Dichte ≥ Schwelle, absteigend sortiert. Schnell auch bei Hunderttausenden
+ * Zellen: Dichte (auf 2²⁰ Stufen der Spitze) und Zellindex als ein Float64-Schlüssel,
+ * native Zahlensortierung statt Vergleichsfunktion. Gleichstände innerhalb eines
+ * Millionstels der Spitze sind für die Hotspots ohne Belang.
+ */
+function cellsByDensityDesc(d: Float32Array, threshold: number): Uint32Array {
+  let m = 0;
+  let max = 0;
+  for (let i = 0; i < d.length; i++) {
+    if (d[i] >= threshold) {
+      m++;
+      if (d[i] > max) max = d[i];
+    }
+  }
+  const out = new Uint32Array(m);
+  if (m === 0) return out;
+  const LEVELS = 1 << 20;
+  if (d.length >= LEVELS) {
+    // Ausweichweg (sehr grosses Raster): Vergleichssortierung.
+    let k = 0;
+    for (let i = 0; i < d.length; i++) if (d[i] >= threshold) out[k++] = i;
+    return Uint32Array.from(Array.from(out).sort((a, b) => d[b] - d[a]));
+  }
+  const keys = new Float64Array(m);
+  let k = 0;
+  for (let i = 0; i < d.length; i++) {
+    if (d[i] >= threshold) keys[k++] = Math.floor((d[i] / max) * (LEVELS - 1)) * LEVELS + i;
+  }
+  keys.sort();
+  for (let j = 0; j < m; j++) out[j] = keys[m - 1 - j] % LEVELS;
+  return out;
+}
+
+function detectHotspots(pts: PreparedPoints, f: Field, intensity: number, levels: DensityLevels): HotspotBand {
   const { cols, rows, d } = f;
   const n = cols * rows;
-  const visible = VISIBLE_DENSITY / intensity;
+  const visible = visibleDensity(levels) / intensity;
   const tau = PERSISTENCE / intensity;
 
   // Zellen im leuchtenden Bereich, dichteste zuerst.
-  let m = 0;
-  for (let i = 0; i < n; i++) if (d[i] >= visible) m++;
-  const order = new Uint32Array(m);
-  m = 0;
-  for (let i = 0; i < n; i++) if (d[i] >= visible) order[m++] = i;
-  const sorted = Array.from(order).sort((a, b) => d[b] - d[a]);
+  const sorted = cellsByDensityDesc(d, visible);
 
   // Union-Find über die Zellen: jede Zelle schliesst sich dem Nachbarn mit dem
   // höchsten Maximum an; flache Nebenmaxima werden dabei zusammengelegt.
@@ -455,7 +571,8 @@ function detectHotspots(pts: PreparedPoints, f: Field, intensity: number): Hotsp
     all.push(h);
   }
 
-  const relevant = all.filter((h) => h.peak >= RELEVANT_DENSITY).sort((a, b) => b.count - a.count || b.peak - a.peak);
+  // Zum Antippen: Maximum mindestens «niedrig» (ein einzelnes Ziel liegt darunter).
+  const relevant = all.filter((h) => h.peak >= levels.low).sort((a, b) => b.count - a.count || b.peak - a.peak);
 
   // Nachschlage-Raster: jede leuchtende Zelle → ihr relevanter Hotspot.
   const indexOf = new Map<Hotspot, number>();
@@ -482,6 +599,8 @@ export interface DensityModel {
   points: number;
   /** [Zoom, heatmap-intensity] – aufsteigend. */
   intensity: [number, number][];
+  /** Farbstufen (normalisierte Dichte), aus den Daten. */
+  levels: DensityLevels;
   /** Hotspots je Zoomband, aufsteigend nach Zoom. */
   bands: HotspotBand[];
   /** Rechenzeit in ms (zur Kontrolle auf schwachen Geräten). */
@@ -499,39 +618,19 @@ export function buildDensityModel(
   const pts = 'mx' in points ? points : preparePoints(points);
   const bandZooms = opts.bandZooms ?? BAND_ZOOMS;
   if (pts.n === 0) {
-    return { points: 0, intensity: INTENSITY_ZOOMS.map((z) => [z, MAX_INTENSITY]), bands: [], ms: 0 };
+    return { points: 0, intensity: INTENSITY_ZOOMS.map((z) => [z, MAX_INTENSITY]), levels: DEFAULT_LEVELS, bands: [], ms: 0 };
   }
-  const intensity: [number, number][] = INTENSITY_ZOOMS.map((z) => [
-    z,
-    intensityFor(quantileAtPoints(densityField(pts, z), pts, ROBUST_QUANTILE)),
-  ]);
-  const bands = bandZooms.map((z) => {
-    const f = densityField(pts, z);
-    return detectHotspots(pts, f, intensityAt(intensity, z));
+  // Dichte an den Zielen je Zoomstufe: einmal rechnen, für Intensität und Stufen.
+  const atPoints = new Map<number, Float32Array>();
+  const intensity: [number, number][] = INTENSITY_ZOOMS.map((z) => {
+    const vals = sortedDensityAtPoints(densityField(pts, z, COARSE), pts);
+    atPoints.set(z, vals);
+    return [z, intensityFor(quantile(vals, ROBUST_QUANTILE))];
   });
+  const levels = computeLevels(pts, intensity, atPoints);
+  const bands = bandZooms.map((z) => detectHotspots(pts, densityField(pts, z), intensityAt(intensity, z), levels));
   const t1 = typeof performance !== 'undefined' ? performance.now() : Date.now();
-  return { points: pts.n, intensity, bands, ms: Math.round(t1 - t0) };
-}
-
-/** Intensität bei Zoom z (linear zwischen den Stützstellen, wie der Kartenausdruck). */
-export function intensityAt(stops: readonly [number, number][], zoom: number): number {
-  if (stops.length === 0) return MAX_INTENSITY;
-  if (zoom <= stops[0][0]) return stops[0][1];
-  for (let i = 1; i < stops.length; i++) {
-    if (zoom <= stops[i][0]) {
-      const [z0, v0] = stops[i - 1];
-      const [z1, v1] = stops[i];
-      return v0 + ((zoom - z0) / (z1 - z0)) * (v1 - v0);
-    }
-  }
-  return stops[stops.length - 1][1];
-}
-
-/** `heatmap-intensity` als Zoom-Ausdruck. */
-export function intensityExpression(stops: readonly [number, number][]): unknown[] {
-  if (stops.length === 0) return ['literal', MAX_INTENSITY] as unknown[];
-  if (stops.length === 1) return ['interpolate', ['linear'], ['zoom'], stops[0][0], stops[0][1], stops[0][0] + 1, stops[0][1]];
-  return ['interpolate', ['linear'], ['zoom'], ...stops.flatMap(([z, v]) => [z, Math.round(v * 10_000) / 10_000])];
+  return { points: pts.n, intensity, levels, bands, ms: Math.round(t1 - t0) };
 }
 
 /** Normalisierte Dichte (wie auf der Karte) an einem Ort bei Zoom z – für Tests und Diagnose. */

@@ -13,7 +13,7 @@
  */
 import type * as maplibregl from 'maplibre-gl';
 import type { ExpressionSpecification, GeoJSONSource } from 'maplibre-gl';
-import { DENSITY_LEVELS, hotspotAt, type DensityModel, type Hotspot, type HotspotBand } from './densityEngine';
+import { DEFAULT_LEVELS, hotspotAt, type DensityLevels, type DensityModel, type Hotspot, type HotspotBand } from './densityEngine';
 import { KIND_META } from '@/lib/peakr';
 
 export const HOTSPOT_SOURCE = 'hotspots';
@@ -69,12 +69,18 @@ export function hotspotBreakdown(h: Pick<Hotspot, 'kinds'>, max = 3): string {
 
 /**
  * Welche Hotspots eines Bands eine Zahl bekommen: Maximum mindestens «hoch»
- * (oberste 10 % der Dichte) und genug Ziele. Kleinere bleiben reine Heatmap.
+ * (Stufe aus den Daten) und genug Ziele. Kleinere bleiben reine Heatmap.
  */
-export function labelledHotspots(band: HotspotBand, bandIndex: number, total: number, compact: boolean): Hotspot[] {
+export function labelledHotspots(
+  band: HotspotBand,
+  bandIndex: number,
+  total: number,
+  compact: boolean,
+  levels: DensityLevels = DEFAULT_LEVELS,
+): Hotspot[] {
   const share = LABEL_SHARE[Math.min(bandIndex, LABEL_SHARE.length - 1)] * (compact ? 1.5 : 1);
   const min = Math.max(LABEL_MIN, Math.ceil(total * share));
-  return band.hotspots.filter((h) => h.count >= min && h.peak >= DENSITY_LEVELS.high).slice(0, LABEL_MAX_PER_BAND);
+  return band.hotspots.filter((h) => h.count >= min && h.peak >= levels.high).slice(0, LABEL_MAX_PER_BAND);
 }
 
 function fade(r: BandRange): ExpressionSpecification {
@@ -197,7 +203,7 @@ export class PeakrSmartHotspotLayer {
     const compact = this.opts.compact();
     const features: GeoJSON.Feature<GeoJSON.Point>[] = [];
     model.bands.forEach((band, i) => {
-      for (const h of labelledHotspots(band, i, model.points, compact)) {
+      for (const h of labelledHotspots(band, i, model.points, compact, model.levels)) {
         features.push({
           type: 'Feature',
           geometry: { type: 'Point', coordinates: [h.lng, h.lat] },
