@@ -194,31 +194,94 @@ animiert wird im Browser (`apps/frontend/lib/weatherEngine.ts`, `weatherField.ts
 `weatherParticles.ts`). Regeln, Quellen und Grenzen:
 [VERFUEGBARKEIT_UND_WETTER.md](VERFUEGBARKEIT_UND_WETTER.md).
 
-## Karte: Sammelmarkierungen («Pulse Cluster»)
+## Karte: Dichte der Ziele (Heatmap) und Hotspots
 
-Weit herausgezoomt fasst die Kartenquelle nahe Ziele zu Zählern zusammen (MapLibre-Clustering der
-GeoJSON-Quelle `dests`, bis Zoom 9, Radius 60 px). Gezählt werden je Zähler auch die Arten der Ziele
-(`clusterProperties`: Gipfel, Aussicht, Hütte, See, Pass, Skigebiet) – aus den echten Daten.
+Die Karte zeigt, wo sich die Ziele der aktuellen Suche häufen. Das geschieht als organische Dichte
+statt mit Kreisen. Sie zeigt nur die Dichte, keine Beliebtheit und keine erfundenen Aktivitätsdaten.
+Drei Zustände gehen stufenlos ineinander über:
 
-- **Darstellung:** schlanke HTML-Marker (`apps/frontend/lib/clusterMarkers.ts`), weil nur so
-  Lichtschein, Tiefe, Topo-Ringe, App-Schrift und weiche Übergänge möglich sind. Es sind immer nur
-  wenige Dutzend Zähler gleichzeitig; die einzelnen Ziele bleiben WebGL. Eine unsichtbare
-  WebGL-Ebene (`clusters`) liefert, welche Zähler MapLibre gerade zeigt. Der Abgleich läuft
-  gedrosselt (höchstens alle 140 ms) und blendet neue Zähler ein, aufgelöste aus.
-- **Logik** (`apps/frontend/lib/clusterStyle.ts`, getestet):
-  - **Grösse:** logarithmisch und fest verankert (2 Ziele → klein, ab 1000 → gross), Desktop 42–70 px,
-    Handy 36–58 px, in 2-px-Stufen. Sie hängt nur von der Anzahl ab, nicht vom Zoom.
-  - **Stufen:**
-    - klein (nur Zahl);
-    - mittel (+ Bergsymbol);
-    - gross (+ Topo-Ring; die zwei häufigsten Arten beim Überfahren);
-    - sehr gross (+ zweiter Ring).
-- **Zustände:**
-  - Überfahren: leicht grösser, hellerer Rand, stärkerer Glow.
-  - Antippen: kurz gedrückt; dann wie bisher bis zur Auflösung hineinzoomen.
-  - Ausgewählt: Der Zähler, der das gewählte Ziel enthält, bekommt einen hellen Rand, einen Hof und
-    einen sanften Puls.
-  - Bei «Bewegung reduzieren» gibt es keine Animationen.
+| Zoom | Zustand | Was zu sehen ist |
+|---|---|---|
+| unter 7,4 (ganze Schweiz) | A | nur die Heatmap: keine Kreise, keine Punkte, keine Zahlen |
+| 7,4–10,3 (Mittelland, Alpentäler) | B | Hotspots werden enger; über grossen Hotspots schwebt die echte Anzahl («530 Ziele») |
+| ab 9,8 (nah) | C | Die Heatmap blendet bis 11,3 aus, die Einzelziele blenden bis 10,6 ein. Es sind kleine Punkte mit Mint-Schein, ab 11,6 mit Symbol und Namen. |
+
+### Dichte
+
+Code: `apps/frontend/lib/density/densityEngine.ts`, getestet.
+
+- **Kern:** derselbe Gauss-Kern wie die MapLibre-Heatmap auf der GPU (σ = Radius/3), gerechnet in
+  Bildschirmpixeln der jeweiligen Zoomstufe. Die Hotspots der Engine liegen dort, wo die Karte
+  leuchtet.
+- **Radius:** geografisch festgelegt (15 km bei Zoom 6, 6,7 km bei 8, 2,8 km bei 10) und dann in
+  Pixel umgerechnet. Beim Hineinzoomen wächst er auf dem Bildschirm mit der Karte mit und wird
+  dabei geografisch enger.
+- **Normalisierung:** je Zoomstufe erreicht das 98. Perzentil der Dichte an den Zielen die oberste
+  Farbe. Dichtere Stellen werden dort abgeschnitten. Ein einzelnes Ziel bleibt unter «niedrig»; es
+  gibt also keine künstlichen Hotspots.
+- **Farbstufen:** gesetzt nach der gemessenen Verteilung der Dichte an den Zielen. Sie ist über
+  Zoom 6–10 und verschiedene Datenmengen stabil.
+
+  | Stufe | normalisierte Dichte | entspricht |
+  |---|---|---|
+  | sehr niedrig | 0,18 | – |
+  | niedrig | 0,4 | Median |
+  | mittel | 0,6 | oberstes Viertel |
+  | hoch | 0,8 | oberste 10 % |
+  | sehr hoch | 1 | oberste 2 % |
+
+  So bleibt das Grundleuchten schwach, und echte Konzentrationen heben sich ab.
+- **Doppelte:** gleiche ID nur einmal; gleicher Ort mit gleichem Namen nur einmal.
+- **Gewicht:** Treffer 1; «knapp ausserhalb» und Ziele ohne Angabe 0,5, wie ihre Punkte.
+
+### Hotspot-Zahlen
+
+- **Einzugsgebiete:** Die Rasterzellen schliessen sich dem Nachbarn mit dem höchsten Maximum an.
+  Nebenmaxima, die weniger als 0,12 über dem Sattel liegen, werden zusammengelegt.
+- **Zählung:** Gezählt werden die Ziele im wahrnehmbar leuchtenden Teil (normalisierte Dichte ab
+  0,1). Jedes Ziel zählt höchstens einmal. Die Zahl ist genau die Anzahl Ziele, deren Ort im Bereich
+  des Hotspots liegt; ein Test prüft das.
+- **Wann eine Zahl erscheint:**
+  - das Maximum erreicht mindestens «hoch», gehört also zu den oberen 10 %;
+  - der Hotspot enthält einen Mindestanteil aller Ziele: 2 %, 0,8 % bzw. 0,4 % je Band, mindestens
+    8 Ziele; auf dem Handy das 1,5-Fache.
+- **Bänder:** drei Bänder bei Zoom 7,5, 8,5 und 9,5, mit kurzer Überblendung dazwischen. Grosse
+  Hotspots werden zuerst platziert; überlappende kleine fallen weg.
+
+### Darstellung
+
+Alles sind MapLibre-Ebenen auf der GPU, es gibt keine DOM-Marker.
+
+- **`density-heat`** (`heatmapLayer.ts`): liegt über Relief, Wald und Wasser der Grundkarte und
+  unter Strassen, Wegen, Höhenlinien und Namen. So wirkt die Heatmap wie Licht unter der Topografie.
+- **`hotspot-0` bis `hotspot-2`** (`hotspotLayer.ts`): Symbole mit kleiner dunkler Fläche und feiner
+  Mint-Kontur.
+- **`points-halo`, `points`, `point-icons`, `point-name`** (`destinationLayer.ts`): die Einzelziele.
+
+### Farben
+
+Nur Mint und Grün.
+- **Dunkle Karte:** genau die fünf Stufen der Vorgabe, von «sehr niedrig» `rgba(87,159,119,0.08)` bis
+  «sehr hoch» `rgba(160,238,187,0.65)`.
+- **Helle Karte:** dieselben Grüntöne, aber dichter = dunkler, weil helleres Mint auf weissem Grund
+  schwächer wirken würde.
+- **Wetterbild:** halbe Deckkraft.
+
+### Bedienung
+
+- **Antippen oder Klicken:** Eine Zahl, oder bis Zoom 10,3 auch eine leuchtende Fläche mit Maximum
+  ab «niedrig», zoomt auf die Ziele dieses Hotspots, mindestens eine Zoomstufe tiefer.
+- **Überfahren:** zeigt die Arten, z. B. «180 Gipfel · 140 Aussicht · 90 Seen».
+- **Einzelziele:** wie bisher. Ein Klick wählt aus; Liste und Detailansicht sind unverändert.
+
+### Leistung
+
+- **Web Worker:** Das Dichtemodell rechnet ein Web Worker (`density.worker.ts`). Für alle 12'755 Ziele
+  mit Route brauchte er auf einem aktuellen Mac etwa 70 ms. Die Heatmap blendet ein, sobald das
+  Modell fertig ist.
+- **Schwache Geräte** (höchstens 4 Kerne, höchstens 2 GB Speicher oder Datensparmodus): ein
+  Hotspot-Band statt drei, kein Mint-Schein.
+- **«Bewegung reduzieren»:** keine Überblendungen, Zoom ohne Animation.
 
 ## Worker
 
