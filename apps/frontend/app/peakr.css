@@ -691,6 +691,9 @@ body {
 .sec-head { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
 .sec-hint { margin: 0 2px; font: 500 11.5px/1.35 var(--font-sans); color: var(--ink-3); }
 .panel-extra { margin: 6px 0 0; font: 500 12px/1.3 var(--font-sans); color: var(--ink-3); }
+.panel-hidden { display: flex; align-items: center; gap: 6px; margin: 5px 0 0; font: 500 12px/1.3 var(--font-sans); color: var(--ink-3); }
+.panel-hidden svg { flex: none; }
+.panel-hidden .btn-link { padding: 4px 2px; margin: -4px 0; }
 .panel-more { display: flex; justify-content: center; padding: 6px 0; }
 .panel-scroll.is-loading .rcard { opacity: .55; transition: opacity .2s; }
 .page-pad { padding: 40px 20px; }

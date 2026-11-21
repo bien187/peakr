@@ -17,8 +17,6 @@ import { hhmm, zurichParts, zurichToUtc } from './time';
 
 /** Sperrungsmeldungen älter als das gelten als nicht verfügbar. */
 export const CLOSURES_MAX_AGE_H = 48;
-/** Unter diesem Anteil amtlicher Wanderwege fehlen für den Rest der Route Sperrungsmeldungen. */
-export const MIN_OFFICIAL_SHARE = 0.5;
 
 /** Stationen in diesem Umkreis um das Ziel zählen für die Schneelage. */
 export const SNOW_RADIUS_KM = 25;
@@ -115,21 +113,22 @@ export function assessClosures(
       'official', CLOSURE_SOURCE, fetchedAt, c.url,
     );
   }
-  const pct = Math.round(officialShare * 100);
-  if (officialShare < MIN_OFFICIAL_SHARE) {
-    return check(
-      'closure', 'uncertain',
-      `Nur ${pct} % der Route liegen auf amtlichen Wanderwegen. Für die übrigen Wege gibt es keine Sperrungsmeldungen.`,
-      'official', CLOSURE_SOURCE, fetchedAt,
-    );
+  // Für Wege ausserhalb des amtlichen Wanderwegnetzes gibt es grundsätzlich keine
+  // Sperrungsmeldungen – das ist kein vorübergehender Datenmangel wie veraltete
+  // Meldungen. Der Anteil steht deshalb offen im Text, macht die Route aber nicht
+  // «unsicher» (sonst wäre rund ein Drittel aller Ziele das ganze Jahr ausgeblendet).
+  return check('closure', 'available', closureCoverageText(officialShare), 'official', CLOSURE_SOURCE, fetchedAt);
+}
+
+/** Text ohne gemeldete Sperrung: sagt, für welchen Teil der Route es überhaupt Meldungen gibt. */
+export function closureCoverageText(officialShare: number): string {
+  const pct = Math.round(Math.max(0, Math.min(1, officialShare)) * 100);
+  if (pct >= 90) return 'Keine Sperrung auf der Route gemeldet.';
+  if (pct >= 50) return `Keine Sperrung gemeldet. ${pct} % der Route liegen auf amtlichen Wanderwegen; nur für diese gibt es Meldungen.`;
+  if (pct > 0) {
+    return `Keine Sperrung gemeldet. Nur ${pct} % der Route liegen auf amtlichen Wanderwegen – für die übrigen Wege gibt es keine Sperrungsmeldungen.`;
   }
-  return check(
-    'closure', 'available',
-    pct >= 90
-      ? 'Keine Sperrung auf der Route gemeldet.'
-      : `Keine Sperrung gemeldet. ${pct} % der Route liegen auf amtlichen Wanderwegen; nur für diese gibt es Meldungen.`,
-    'official', CLOSURE_SOURCE, fetchedAt,
-  );
+  return 'Die Route liegt abseits amtlicher Wanderwege. Dafür gibt es keine Sperrungsmeldungen – Wegzustand vor Ort prüfen.';
 }
 
 // ── Schnee (Sommerrouten) ────────────────────────────────────────────────────
