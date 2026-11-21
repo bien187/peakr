@@ -6,7 +6,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { useEffect, useRef, useState } from 'react';
 import type { ExpressionSpecification, GeoJSONSource, MapGeoJSONFeature } from 'maplibre-gl';
 import { DensityComputer } from '@/lib/density/densityClient';
-import type { DensityPoint } from '@/lib/density/densityEngine';
+import { uniquePoints, type DensityPoint } from '@/lib/density/densityEngine';
 import {
   DEST_SOURCE,
   destinationLayers,
@@ -74,6 +74,9 @@ const selRadius = (extra: number): ExpressionSpecification => ['interpolate', ['
 
 const reducedMotion = (): boolean =>
   typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+/** Kamerafahrten kurz und ruhig (≈ 0,3 s); bei «Bewegung reduzieren» sofort. */
+const CAMERA_MS = 300;
+const cameraMs = (): number => (reducedMotion() ? 0 : CAMERA_MS);
 
 /**
  * Vereinfachter Modus für schwache Geräte: ein Hotspot-Band statt drei, kein
@@ -185,7 +188,7 @@ function viewPadding(): maplibregl.PaddingOptions {
  */
 function zoomIntoHotspot(map: maplibregl.Map, bbox: [number, number, number, number], peak: [number, number]): void {
   const z = map.getZoom();
-  const duration = reducedMotion() ? 0 : 650;
+  const duration = cameraMs();
   const cam = map.cameraForBounds(
     [
       [bbox[0], bbox[1]],
@@ -372,7 +375,7 @@ export function PeakrMap({
       maxZoom: 18,
       attributionControl: { compact: true },
       // Zahlen und Namen blenden weich über; bei «Bewegung reduzieren» sofort.
-      fadeDuration: motion ? 300 : 0,
+      fadeDuration: motion ? 200 : 0,
     });
     mapRef.current = map;
     // Nur in der Entwicklung: Browsertests setzen Zoom und Ausschnitt direkt (fällt im Build weg).
@@ -515,7 +518,8 @@ export function PeakrMap({
     if (!map || !ready) return;
     (map.getSource(DEST_SOURCE) as GeoJSONSource | undefined)?.setData(pointsToFeatures(points));
     // Dichte im Web Worker; Heatmap und Zahlen wechseln erst mit dem fertigen Modell.
-    const dens = densityPoints(points);
+    // Dieselbe bereinigte Liste für GPU-Heatmap und Engine (keine Doppelten).
+    const dens = uniquePoints(densityPoints(points));
     const hotspots = hotspotsRef.current;
     let current = true;
     densityRef.current?.compute(dens, hotspots?.bandZooms ?? []).then((model) => {
@@ -535,8 +539,8 @@ export function PeakrMap({
       bounds.extend([originPt.lng, originPt.lat]);
       // Der Ausschnitt richtet sich nach dem, was erreichbar ist – Ziele ohne Fahrzeit ziehen ihn nicht auf.
       for (const p of points) if (p.driveMin != null) bounds.extend([p.lng, p.lat]);
-      if (points.length > 0) map.fitBounds(bounds, { padding: viewPadding(), maxZoom: 12, duration: 500 });
-      else map.flyTo({ center: [originPt.lng, originPt.lat], zoom: 9, duration: 500 });
+      if (points.length > 0) map.fitBounds(bounds, { padding: viewPadding(), maxZoom: 12, duration: cameraMs() });
+      else map.flyTo({ center: [originPt.lng, originPt.lat], zoom: 9, duration: cameraMs() });
     }
     return () => {
       current = false;
@@ -586,8 +590,8 @@ export function PeakrMap({
     const bounds = new (mapLib().LngLatBounds)(dest, dest);
     if (selTh) bounds.extend([selTh.location.lng, selTh.location.lat]);
     if (selLine) for (const c of selLine) bounds.extend(c);
-    if (selTh || selLine) map.fitBounds(bounds, { padding: viewPadding(), maxZoom: 14, duration: 500 });
-    else map.flyTo({ center: dest, zoom: Math.max(map.getZoom(), 11.5), duration: 500 });
+    if (selTh || selLine) map.fitBounds(bounds, { padding: viewPadding(), maxZoom: 14, duration: cameraMs() });
+    else map.flyTo({ center: dest, zoom: Math.max(map.getZoom(), 11.5), duration: cameraMs() });
   }, [selId, selLine, selTh, ready]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Neues Ziel ausgewählt: ein Ring breitet sich einmal aus.

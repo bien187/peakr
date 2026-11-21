@@ -1005,8 +1005,8 @@ body {
 /* Legende: Verlauf der Heatmap-Farben (hell: dichter = dunkler, dunkel: dichter = heller). */
 .pk-legend i.pk-legend-heat {
   width: 22px; height: 11px; border-radius: 6px; border: none; box-shadow: none;
-  background: linear-gradient(90deg, rgba(107,211,153,.12), rgba(72,170,115,.32), rgba(42,128,82,.58));
+  background: linear-gradient(90deg, rgba(98,182,134,.32), rgba(50,140,94,.6), rgba(14,92,56,.86));
 }
 .app[data-mode="dark"] .pk-legend i.pk-legend-heat {
-  background: linear-gradient(90deg, rgba(87,159,119,.18), rgba(107,211,153,.38), rgba(160,238,187,.75));
+  background: linear-gradient(90deg, rgba(46,116,80,.45), rgba(84,184,128,.7), rgba(198,252,220,.95));
 }

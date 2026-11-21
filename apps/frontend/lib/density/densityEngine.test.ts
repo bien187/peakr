@@ -11,7 +11,8 @@ import {
   radiusExpression,
   radiusKm,
   radiusPx,
-  VISIBLE_DENSITY,
+  uniquePoints,
+  visibleDensity,
   type DensityPoint,
 } from './densityEngine';
 
@@ -74,11 +75,15 @@ describe('Radius: geografisch, nicht als feste Pixelgrösse', () => {
     for (let z = 4; z < 13; z += 0.25) {
       expect(radiusKm(z + 0.25)).toBeLessThan(radiusKm(z));
       const grow = radiusPx(z + 1) / radiusPx(z);
-      expect(grow).toBeGreaterThan(1); // wächst mit der Karte mit …
-      expect(grow).toBeLessThan(2); // … aber weniger als der Massstab: präzisere Hotspots
+      expect(grow).toBeGreaterThan(1.3); // wächst fast mit der Karte mit (ruhig, kein «Fliessen») …
+      expect(grow).toBeLessThan(2); // … aber etwas weniger als der Massstab: präzisere Hotspots
     }
-    expect(radiusKm(6.5)).toBeGreaterThan(10); // ganze Schweiz: Regionen
-    expect(radiusKm(10)).toBeLessThan(3.5); // nah: Täler und Gebiete
+  });
+
+  it('wenig Glättung (2.1): Übersicht 4–7 km statt 15 km, nah unter 2 km', () => {
+    expect(radiusKm(6)).toBeGreaterThan(4);
+    expect(radiusKm(6)).toBeLessThan(7);
+    expect(radiusKm(10)).toBeLessThan(2);
   });
 
   it('Ausdruck mit streng aufsteigenden Stützstellen', () => {
@@ -119,12 +124,14 @@ describe('Doppelte vermeiden', () => {
 // ── Normalisierung ───────────────────────────────────────────────────────────
 
 describe('Intensität: normalisiert, Extremwerte begrenzt', () => {
-  it('ein einzelnes Ziel ist nie ein Hotspot (höchstens knapp über «niedrig»)', () => {
+  it('ein einzelnes Ziel ist nie ein Hotspot (sichtbar, aber unter «mittel»)', () => {
     const m = buildDensityModel([{ id: 'x', name: 'x', lat: 46.8, lng: 8.2, kind: 'peak', weight: 1 }]);
     for (const [, v] of m.intensity) expect(v).toBe(MAX_INTENSITY);
     const pts = preparePoints([{ id: 'x', name: 'x', lat: 46.8, lng: 8.2, kind: 'peak', weight: 1 }]);
-    expect(densityAt(pts, MAX_INTENSITY, 8, 8.2, 46.8)).toBeLessThan(0.35);
-    for (const b of m.bands) expect(b.hotspots).toEqual([]); // Maximum unter «mittel»
+    const d = densityAt(pts, MAX_INTENSITY, 8, 8.2, 46.8);
+    expect(d).toBeLessThan(m.levels.medium);
+    expect(d).toBeGreaterThanOrEqual(m.levels.veryLow);
+    for (const b of m.bands) for (const h of b.hotspots) expect(h.peak).toBeLessThan(m.levels.medium);
   });
 
   it('die dichtesten 2 % erreichen die oberste Farbe – unabhängig von der Datenmenge', () => {
@@ -212,19 +219,78 @@ describe('Hotspots: echte Anzahl, jedes Ziel höchstens einmal', () => {
     // Genau dort, wo die Karte nicht mehr leuchtet, endet auch der Hotspot.
     const pts = preparePoints([...cluster('a', INTERLAKEN.lat, INTERLAKEN.lng, 200, 2, rng(1))]);
     const i = intensityAt(only.intensity, band.zoom);
-    for (let km = 0; km < 30; km += 0.5) {
+    const visible = visibleDensity(only.levels);
+    let checkedIn = 0;
+    let checkedOut = 0;
+    for (let km = 0; km < 30; km += 0.25) {
       const lng = INTERLAKEN.lng + km * KM_LNG;
       const dens = densityAt(pts, i, band.zoom, lng, INTERLAKEN.lat);
       const hit = hotspotAt(band, lng, INTERLAKEN.lat);
-      if (dens < VISIBLE_DENSITY * 0.7) expect(hit).toBeNull();
-      if (dens > VISIBLE_DENSITY * 1.5) expect(hit).not.toBeNull();
+      if (dens < visible * 0.7) {
+        expect(hit).toBeNull();
+        checkedOut++;
+      }
+      if (dens > visible * 1.5) {
+        expect(hit).not.toBeNull();
+        checkedIn++;
+      }
     }
+    // Beide Seiten der Grenze wirklich geprüft (kein leerer Test).
+    expect(checkedIn).toBeGreaterThan(3);
+    expect(checkedOut).toBeGreaterThan(3);
   });
 
   it('leere Eingabe: keine Bänder, keine Hotspots', () => {
     const m = buildDensityModel([]);
     expect(m.points).toBe(0);
     expect(m.bands).toEqual([]);
+  });
+});
+
+// ── Farbstufen aus den Daten (2.1) ──────────────────────────────────────────
+
+describe('Farbstufen aus den Daten: ganze Verteilung sichtbar', () => {
+  // Dichtes «Mittelland» und dünnes «Tessin» wie in den echten Daten.
+  const rand = rng(11);
+  const dense = cluster('mittelland', 47.4, 8.3, 1500, 8, rand);
+  const sparse = Array.from({ length: 60 }, (_, i) => ({
+    id: `ti-${i}`, name: `Tessin ${i}`, lat: 46.1 + rand() * 0.35, lng: 8.7 + rand() * 0.45, kind: 'hut', weight: 1,
+  }));
+  const all = [...dense, ...sparse];
+  const model = buildDensityModel(all);
+  const pts = preparePoints(all);
+  const lv = model.levels;
+
+  it('Stufen streng aufsteigend mit Abstand, oberste höchstens 1', () => {
+    const v = [lv.veryLow, lv.low, lv.medium, lv.high, lv.veryHigh];
+    for (let i = 1; i < v.length; i++) expect(v[i] / v[i - 1]).toBeGreaterThanOrEqual(1.3 - 1e-9);
+    expect(lv.veryHigh).toBeLessThanOrEqual(1);
+    expect(lv.veryLow).toBeGreaterThan(0);
+  });
+
+  it('auch das dünne Gebiet ist in der Übersicht vollständig sichtbar (Fehlerbild Tessin)', () => {
+    for (const z of [6, 7, 8]) {
+      const i = intensityAt(model.intensity, z);
+      for (const p of sparse) expect(densityAt(pts, i, z, p.lng, p.lat)).toBeGreaterThanOrEqual(lv.veryLow);
+    }
+  });
+
+  it('Stufen teilen die Ziele: fast alle sichtbar, nur ein kleiner Teil «sehr hoch»', () => {
+    const i = intensityAt(model.intensity, 7);
+    const d = Array.from({ length: pts.n }, (_, k) => densityAt(pts, i, 7, pts.lng[k], pts.lat[k]));
+    const share = (t: number) => d.filter((v) => v >= t).length / d.length;
+    expect(share(lv.veryLow)).toBeGreaterThan(0.95);
+    expect(share(lv.medium)).toBeGreaterThan(0.2);
+    expect(share(lv.medium)).toBeLessThan(0.65);
+    expect(share(lv.veryHigh)).toBeLessThan(0.15);
+  });
+
+  it('GPU-Heatmap und Engine bekommen dieselbe Liste (Doppelte einmal)', () => {
+    const withDup = [...all, { ...all[0] }, { ...all[1], id: 'neu-1' }];
+    const u = uniquePoints(withDup);
+    expect(u.length).toBe(all.length);
+    expect(preparePoints(withDup).n).toBe(u.length);
+    expect(preparePoints(withDup).ids).toEqual(u.map((p) => p.id));
   });
 });
 

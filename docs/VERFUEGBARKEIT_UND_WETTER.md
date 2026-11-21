@@ -242,6 +242,10 @@ Es entstehen keine Kosten.
   gleich viel wie ein signalisierter Weg. So führt die Trübsee-Route ab Gerschnialp zu 71 % über
   OSM-Pfade (T2), bis 365 m neben dem amtlichen Weg.
 - Die Wetterprüfung nutzt die Zelle des Ziels. Auf Graten können Böen deutlich stärker sein.
+- Für die Schneelage zählt jede Station im Umkreis von 25 km, auch jenseits des Alpenhauptkamms.
+  Am 21.11.2026 entschied für Tessiner Ziele in der oberen Leventina teils die Station Göschenen
+  (1099 m, Nordseite). Nord- und Südseite können sich deutlich unterscheiden; eine Beschränkung auf
+  dieselbe Seite bzw. Klimaregion ist noch offen.
 - Exposition (Schnee, Lawinen) und Steinschlag werden nicht beurteilt.
 - Ohne Live-Betriebsstatus sind alle Skigebiete «unsicher». Die Ski-Suche zeigt dann einen
   erklärenden Hinweis mit Schalter.
