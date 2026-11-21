@@ -5,8 +5,19 @@ import { mapLib } from '@/lib/map';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useEffect, useRef, useState } from 'react';
 import type { ExpressionSpecification, GeoJSONSource, MapGeoJSONFeature } from 'maplibre-gl';
-import { ClusterMarkers } from '@/lib/clusterMarkers';
-import { CLUSTER_KINDS } from '@/lib/clusterStyle';
+import { DensityComputer } from '@/lib/density/densityClient';
+import type { DensityPoint } from '@/lib/density/densityEngine';
+import {
+  DEST_SOURCE,
+  destinationLayers,
+  HIKE_GREEN,
+  MUTED,
+  setDestinationTheme,
+  SKI_BLUE,
+  type IconForKind,
+} from '@/lib/density/destinationLayer';
+import { heatmapBeforeId, PeakrHeatmapLayer } from '@/lib/density/heatmapLayer';
+import { bboxOfFeature, HOTSPOT_TAP_MAX_ZOOM, PeakrSmartHotspotLayer } from '@/lib/density/hotspotLayer';
 import { mapShade } from '@/lib/mapShade';
 import { fmtDrive, KIND_META, trailheadLabel, type MapSelection, type PPoint } from '@/lib/peakr';
 import { useSettings } from '@/lib/theme';
@@ -42,28 +53,13 @@ const OVERPASS_DEBOUNCE = 800;
 /** Feuerstellen werden je Kartenkachel dieser Zoomstufe genau einmal pro Sitzung geladen. */
 const POI_TILE_ZOOM = 12;
 
-/** Bis zu dieser Zoomstufe werden nahe Ziele zu einem Zähler zusammengefasst. */
-const CLUSTER_MAX_ZOOM = 9;
 const FONT = ['Frutiger Neue Regular'];
 
-// Ziel-Farbe nach Art: Wandern grün, Ski blau. Ziele ohne berechnete Anreise grau.
-const HIKE_GREEN = '#3f9457';
-const SKI_BLUE = '#3a72b0';
-const MUTED = '#8a94a0';
 const ROUTE_COLOR = '#c8452f';
 const PARK_BLUE = '#2563a8';
-const POINT_COLOR: ExpressionSpecification = [
-  'case',
-  ['in', ['get', 'section'], ['literal', ['sac_unknown', 'unrouted']]],
-  MUTED,
-  ['==', ['get', 'type'], 'ski'],
-  SKI_BLUE,
-  HIKE_GREEN,
-];
 const CASING_COLOR = 'rgba(255,255,255,0.9)';
 const NAME_DARK = { text: '#e6ebf2', halo: 'rgba(10,16,24,0.85)' };
 const NAME_LIGHT = { text: '#1f2933', halo: '#ffffff' };
-const IS_CLUSTER: ExpressionSpecification = ['has', 'point_count'];
 
 /** Farbe entlang der Route bis zum Anteil p (0–1); dahinter durchsichtig – zum Nachzeichnen. */
 function routeGradient(color: string, p: number): ExpressionSpecification {
@@ -74,13 +70,25 @@ function routeGradient(color: string, p: number): ExpressionSpecification {
 }
 
 /** Radius des Auswahlrings je Zoom, um `extra` Pixel vergrössert (Zoom-Ausdruck muss zuoberst stehen). */
-const selRadius = (extra: number): ExpressionSpecification => ['interpolate', ['linear'], ['zoom'], 6, 9 + extra, 14, 17 + extra];
+const selRadius = (extra: number): ExpressionSpecification => ['interpolate', ['linear'], ['zoom'], 6, 8 + extra, 14, 14 + extra];
 
 const reducedMotion = (): boolean =>
   typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-const NOT_CLUSTER: ExpressionSpecification = ['!', ['has', 'point_count']];
 
-// Weisse Typ-Symbole (sitzen auf dem farbigen Kreis) – als Map-Images registriert.
+/**
+ * Vereinfachter Modus für schwache Geräte: ein Hotspot-Band statt drei, kein
+ * Mint-Schein unter den Punkten. Rechnen tut ohnehin der Web Worker.
+ */
+function liteDevice(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const nav = navigator as Navigator & { deviceMemory?: number; connection?: { saveData?: boolean } };
+  return (nav.hardwareConcurrency ?? 8) <= 4 || (nav.deviceMemory ?? 8) <= 2 || nav.connection?.saveData === true;
+}
+
+const compactView = (): boolean => typeof window !== 'undefined' && window.innerWidth <= 860;
+
+// Typ-Symbole (sitzen auf dem farbigen Punkt) – als Map-Images registriert: weiss
+// für die helle Karte, dunkel auf Mint für die dunkle.
 const ICON_SVGS: Record<string, string> = {
   'ic-peak': '<path d="M2 21 L9 6 L13 13 L16 8 L22 21 Z" fill="white"/>',
   'ic-lake':
@@ -93,23 +101,15 @@ const ICON_SVGS: Record<string, string> = {
   'ic-ski':
     '<g stroke="white" stroke-width="2.2" stroke-linecap="round"><path d="M12 2.5v19M3.7 7.2l16.6 9.6M20.3 7.2 3.7 16.8"/></g>',
 };
-const ICON_FOR_KIND: ExpressionSpecification = [
-  'match',
-  ['get', 'kind'],
-  'peak',
-  'ic-peak',
-  'lake',
-  'ic-lake',
-  'hut',
-  'ic-hut',
-  'viewpoint',
-  'ic-viewpoint',
-  'pass',
-  'ic-pass',
-  'ski',
-  'ic-ski',
-  'ic-peak',
-];
+const ICON_DARK_INK = '#0b1410';
+const ICON_KINDS = ['peak', 'lake', 'hut', 'viewpoint', 'pass', 'ski'];
+const iconForKind: IconForKind = (dark) =>
+  [
+    'match',
+    ['get', 'kind'],
+    ...ICON_KINDS.flatMap((k) => [k, `ic-${k}${dark ? '-d' : ''}`]),
+    dark ? 'ic-peak-d' : 'ic-peak',
+  ] as unknown as ExpressionSpecification;
 
 const FLAME_SVG =
   '<circle cx="12" cy="12" r="11" fill="#ffffff" stroke="#e0623a" stroke-width="1.5"/>' +
@@ -154,10 +154,50 @@ function pointsToFeatures(points: PPoint[]): GeoJSON.FeatureCollection<GeoJSON.P
   };
 }
 
+/** Beitrag zur Heatmap: Treffer voll, «knapp ausserhalb» und Ziele ohne Angabe halb (wie ihre Punkte). */
+function densityPoints(points: PPoint[]): DensityPoint[] {
+  return points.map((p) => ({
+    id: p.id,
+    name: p.name,
+    lat: p.lat,
+    lng: p.lng,
+    kind: p.kind,
+    weight: p.section === 'result' ? 1 : 0.5,
+  }));
+}
+
+function densityFeatures(points: DensityPoint[]): GeoJSON.FeatureCollection<GeoJSON.Point> {
+  return {
+    type: 'FeatureCollection',
+    features: points.map((p) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [p.lng, p.lat] }, properties: { w: p.weight } })),
+  };
+}
+
 /** Rand, damit Ziele nicht unter der Trefferliste (Desktop links, Mobile unten) liegen. */
 function viewPadding(): maplibregl.PaddingOptions {
   const mobile = typeof window !== 'undefined' && window.innerWidth <= 860;
   return mobile ? { top: 40, bottom: 170, left: 36, right: 36 } : { top: 70, bottom: 70, left: 440, right: 70 };
+}
+
+/**
+ * In einen Hotspot hineinzoomen: auf die Ausdehnung seiner Ziele, mindestens aber
+ * gut eine Zoomstufe tiefer (sonst um das Dichtemaximum).
+ */
+function zoomIntoHotspot(map: maplibregl.Map, bbox: [number, number, number, number], peak: [number, number]): void {
+  const z = map.getZoom();
+  const duration = reducedMotion() ? 0 : 650;
+  const cam = map.cameraForBounds(
+    [
+      [bbox[0], bbox[1]],
+      [bbox[2], bbox[3]],
+    ],
+    { padding: viewPadding(), maxZoom: 13 },
+  );
+  if (cam && typeof cam.zoom === 'number' && cam.zoom >= z + 1) {
+    map.easeTo({ ...cam, duration });
+    return;
+  }
+  map.easeTo({ center: peak, zoom: Math.min(13, z + 1.6), duration });
 }
 
 function lngLatToTile(lng: number, lat: number, z: number): [number, number] {
@@ -207,30 +247,22 @@ export function PeakrMap({
   const [wxOn, setWxOn] = useState(false);
   const routeAnim = useRef(0);
   const rippleAnim = useRef(0);
-  const clustersRef = useRef<ClusterMarkers | null>(null);
+  const heatRef = useRef<PeakrHeatmapLayer | null>(null);
+  const hotspotsRef = useRef<PeakrSmartHotspotLayer | null>(null);
+  const densityRef = useRef<DensityComputer | null>(null);
   const dark = useSettings().s.mode === 'dark';
 
   // Quellen + Layer installieren (idempotent; auch nach Style-Fallback erneut aufrufbar).
   const installLayers = (map: maplibregl.Map) => {
-    for (const [id, inner] of Object.entries(ICON_SVGS)) registerImage(map, id, inner);
+    for (const [id, inner] of Object.entries(ICON_SVGS)) {
+      registerImage(map, id, inner);
+      registerImage(map, `${id}-d`, inner.replaceAll('white', ICON_DARK_INK));
+    }
     registerImage(map, 'poi-fire', FLAME_SVG);
     registerImage(map, 'ic-park', PARK_SVG);
 
-    if (!map.getSource('dests')) {
-      map.addSource('dests', {
-        type: 'geojson',
-        data: EMPTY,
-        // Weit herausgezoomt fassen Zähler nahe Ziele zusammen; ab Zoom 10 liegt jedes Ziel an seinem Ort.
-        cluster: true,
-        clusterMaxZoom: CLUSTER_MAX_ZOOM,
-        // Etwas grösser als früher (46): die Zähler sind grösser und sollen sich nicht überdecken.
-        clusterRadius: 60,
-        // Anzahl je Art (Gipfel, Aussicht, Hütte, See, Pass, Skigebiet) – für Farbe und Zusatzzeile.
-        clusterProperties: Object.fromEntries(
-          CLUSTER_KINDS.map((k) => [k, ['+', ['case', ['==', ['get', 'kind'], k], 1, 0]]]),
-        ),
-      });
-    }
+    // Einzelziele ohne Zusammenfassen: weit heraus übernimmt die Heatmap.
+    if (!map.getSource(DEST_SOURCE)) map.addSource(DEST_SOURCE, { type: 'geojson', data: EMPTY });
     for (const id of ['sel', 'origin', 'pois', 'trailhead']) {
       if (!map.getSource(id)) map.addSource(id, { type: 'geojson', data: EMPTY });
     }
@@ -289,56 +321,10 @@ export function PeakrMap({
         'circle-stroke-color': '#1f2933',
       },
     });
-    // Zähler: gezeichnet als HTML-Marker («Pulse Cluster», lib/clusterMarkers.ts). Diese
-    // unsichtbare Ebene liefert nur, welche Zähler MapLibre gerade zeigt – samt Lage.
-    add({
-      id: 'clusters',
-      type: 'circle',
-      source: 'dests',
-      filter: IS_CLUSTER,
-      paint: { 'circle-radius': 20, 'circle-opacity': 0, 'circle-stroke-width': 0 },
-    });
-    add({
-      id: 'points',
-      type: 'circle',
-      source: 'dests',
-      filter: NOT_CLUSTER,
-      paint: {
-        'circle-color': POINT_COLOR,
-        // Vorschläge («knapp ausserhalb») heller als die eigentlichen Treffer.
-        'circle-opacity': ['match', ['get', 'section'], 'result', 1, 0.5],
-        'circle-radius': ['interpolate', ['linear'], ['zoom'], 6, 4, 10, 8, 14, 13],
-        'circle-stroke-width': 1.6,
-        'circle-stroke-color': '#ffffff',
-      },
-    });
-    add({
-      id: 'point-icons',
-      type: 'symbol',
-      source: 'dests',
-      filter: NOT_CLUSTER,
-      minzoom: 10,
-      layout: {
-        'icon-image': ICON_FOR_KIND,
-        'icon-size': ['interpolate', ['linear'], ['zoom'], 10, 0.42, 14, 0.6],
-        'icon-allow-overlap': false,
-      },
-    });
-    add({
-      id: 'point-name',
-      type: 'symbol',
-      source: 'dests',
-      filter: NOT_CLUSTER,
-      minzoom: 11.5,
-      layout: {
-        'text-field': ['get', 'name'],
-        'text-size': 11,
-        'text-offset': [0, 1.3],
-        'text-anchor': 'top',
-        'text-font': FONT,
-      },
-      paint: { 'text-color': '#1f2933', 'text-halo-color': '#ffffff', 'text-halo-width': 1.4 },
-    });
+    // Zustand C: Einzelziele (blenden ab mittlerem Zoom ein).
+    for (const layer of destinationLayers({ lite: liteDevice(), font: FONT, iconForKind })) add(layer);
+    // Zustand B: schwebende Zahlen über den grossen Hotspots.
+    hotspotsRef.current?.install();
     add({
       id: 'poi-fire',
       type: 'symbol',
@@ -370,11 +356,14 @@ export function PeakrMap({
       source: 'origin',
       paint: { 'circle-radius': 7, 'circle-color': '#1f2933', 'circle-stroke-width': 3, 'circle-stroke-color': '#ffffff' },
     });
+    // Zustand A/B: organische Heatmap – unter Linien und Beschriftungen der Grundkarte.
+    heatRef.current?.install(heatmapBeforeId(map, 'trails'));
   };
 
   // Karte einmalig initialisieren
   useEffect(() => {
     if (!wrapRef.current || mapRef.current) return;
+    const motion = !reducedMotion();
     const map = new (mapLib().Map)({
       container: wrapRef.current,
       style: STYLE_URL,
@@ -382,9 +371,16 @@ export function PeakrMap({
       zoom: 6.6,
       maxZoom: 18,
       attributionControl: { compact: true },
+      // Zahlen und Namen blenden weich über; bei «Bewegung reduzieren» sofort.
+      fadeDuration: motion ? 300 : 0,
     });
     mapRef.current = map;
+    // Nur in der Entwicklung: Browsertests setzen Zoom und Ausschnitt direkt (fällt im Build weg).
+    if (process.env.NODE_ENV !== 'production') (window as unknown as { __peakrMap?: maplibregl.Map }).__peakrMap = map;
     map.addControl(new (mapLib().NavigationControl)({ showCompass: false }), 'bottom-right');
+    heatRef.current = new PeakrHeatmapLayer(map, { reducedMotion: !motion });
+    hotspotsRef.current = new PeakrSmartHotspotLayer(map, { lite: liteDevice(), compact: compactView });
+    densityRef.current = new DensityComputer();
 
     let fellBack = false;
     let styleLoaded = false;
@@ -403,29 +399,42 @@ export function PeakrMap({
     map.on('load', () => {
       styleLoaded = true;
       installLayers(map);
-      clustersRef.current = new ClusterMarkers(map, 'dests', 'clusters', CLUSTER_MAX_ZOOM);
       map.resize();
       setReady(true);
       setMapObj(map);
     });
 
+    const hotspotLayers = hotspotsRef.current.layerIds();
     const selectFromEvent = (e: maplibregl.MapLayerMouseEvent) => {
       const id = e.features?.[0]?.properties?.id;
       if (typeof id === 'string') onSelectRef.current(id);
     };
     map.on('click', 'points', selectFromEvent);
     map.on('click', 'point-icons', selectFromEvent);
-    // Tippen ins Leere (nicht auf Ziel, Zähler, Feuerstelle, Ausgangspunkt) bzw. Karte ziehen.
+
+    // Zahl angetippt: in den Hotspot hineinzoomen.
+    const zoomFromLabel = (e: maplibregl.MapLayerMouseEvent) => {
+      const f = e.features?.[0];
+      const bbox = f ? bboxOfFeature(f) : null;
+      if (!f || !bbox) return;
+      zoomIntoHotspot(map, bbox, (f.geometry as GeoJSON.Point).coordinates as [number, number]);
+    };
+    for (const id of hotspotLayers) map.on('click', id, zoomFromLabel);
+
+    // Tippen ins Leere: auf einer leuchtenden Fläche hineinzoomen; sonst (und zusätzlich)
+    // gilt es als Tippen auf die Karte (Handy: Liste einklappen).
     map.on('click', (e) => {
-      const layers = ['points', 'point-icons', 'clusters', 'poi-fire', 'trailhead'].filter((id) => map.getLayer(id));
+      const layers = ['points', 'point-icons', 'poi-fire', 'trailhead', ...hotspotLayers].filter((id) => map.getLayer(id));
       if (layers.length > 0 && map.queryRenderedFeatures(e.point, { layers }).length > 0) return;
+      const h = hotspotsRef.current?.hotspotAt(e.lngLat.lng, e.lngLat.lat, map.getZoom());
+      if (h) zoomIntoHotspot(map, h.bbox, [h.lng, h.lat]);
       onBackgroundRef.current?.();
     });
     map.on('dragstart', (e) => {
       if (e.originalEvent) onBackgroundRef.current?.();
     });
 
-    // Kurzinfo beim Überfahren: Name, Art und Fahrzeit.
+    // Kurzinfo beim Überfahren: Name, Art und Fahrzeit bzw. Arten eines Hotspots.
     const hover = new (mapLib().Popup)({ offset: 12, closeButton: false, closeOnClick: false, className: 'pk-hover' });
     hoverRef.current = hover;
     map.on('mousemove', 'points', (e) => {
@@ -440,6 +449,18 @@ export function PeakrMap({
         .addTo(map);
     });
     map.on('mouseleave', 'points', () => hover.remove());
+    for (const id of hotspotLayers) {
+      map.on('mousemove', id, (e) => {
+        const f = e.features?.[0];
+        const p = f?.properties as { n?: string; unit?: string; info?: string } | undefined;
+        if (!f || !p?.info) return;
+        hover
+          .setLngLat((f.geometry as GeoJSON.Point).coordinates as [number, number])
+          .setHTML(`<div class="poi-pop"><strong>${escapeHtml(`${p.n} ${p.unit}`)}</strong><span>${escapeHtml(p.info)} · zum Hineinzoomen klicken</span></div>`)
+          .addTo(map);
+      });
+      map.on('mouseleave', id, () => hover.remove());
+    }
 
     map.on('click', 'poi-fire', (e) => {
       const f = e.features?.[0] as MapGeoJSONFeature | undefined;
@@ -453,18 +474,33 @@ export function PeakrMap({
         .addTo(map);
     });
 
-    for (const layer of ['points', 'point-icons', 'poi-fire']) {
+    for (const layer of ['points', 'point-icons', 'poi-fire', ...hotspotLayers]) {
       map.on('mouseenter', layer, () => (map.getCanvas().style.cursor = 'pointer'));
       map.on('mouseleave', layer, () => (map.getCanvas().style.cursor = ''));
     }
+    // Leuchtende Fläche unter der Maus (Desktop): Lupe als Hinweis aufs Hineinzoomen.
+    let hoverFrame = 0;
+    map.on('mousemove', (e) => {
+      cancelAnimationFrame(hoverFrame);
+      hoverFrame = requestAnimationFrame(() => {
+        const canvas = map.getCanvas();
+        if (canvas.style.cursor === 'pointer') return;
+        const z = map.getZoom();
+        const h = z < HOTSPOT_TAP_MAX_ZOOM ? hotspotsRef.current?.hotspotAt(e.lngLat.lng, e.lngLat.lat, z) : null;
+        canvas.style.cursor = h ? 'zoom-in' : '';
+      });
+    });
     const ro = new ResizeObserver(() => map.resize());
     ro.observe(wrapRef.current);
 
     return () => {
       ro.disconnect();
+      cancelAnimationFrame(hoverFrame);
       if (poiTimer.current) clearTimeout(poiTimer.current);
-      clustersRef.current?.destroy();
-      clustersRef.current = null;
+      densityRef.current?.destroy();
+      densityRef.current = null;
+      heatRef.current = null;
+      hotspotsRef.current = null;
       hover.remove();
       setMapObj(null);
       map.remove();
@@ -477,22 +513,34 @@ export function PeakrMap({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
-    (map.getSource('dests') as GeoJSONSource | undefined)?.setData(pointsToFeatures(points));
-    clustersRef.current?.dataChanged();
+    (map.getSource(DEST_SOURCE) as GeoJSONSource | undefined)?.setData(pointsToFeatures(points));
+    // Dichte im Web Worker; Heatmap und Zahlen wechseln erst mit dem fertigen Modell.
+    const dens = densityPoints(points);
+    const hotspots = hotspotsRef.current;
+    let current = true;
+    densityRef.current?.compute(dens, hotspots?.bandZooms ?? []).then((model) => {
+      if (!current || !model || mapRef.current !== map) return;
+      heatRef.current?.setData(densityFeatures(dens), model);
+      hotspots?.setModel(model);
+    });
     (map.getSource('origin') as GeoJSONSource | undefined)?.setData({
       type: 'FeatureCollection',
       features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [originPt.lng, originPt.lat] }, properties: {} }],
     });
 
     const key = `${fitToken}|${originPt.lat},${originPt.lng}`;
-    if (fitted.current === key) return;
-    fitted.current = key;
-    const bounds = new (mapLib().LngLatBounds)();
-    bounds.extend([originPt.lng, originPt.lat]);
-    // Der Ausschnitt richtet sich nach dem, was erreichbar ist – Ziele ohne Fahrzeit ziehen ihn nicht auf.
-    for (const p of points) if (p.driveMin != null) bounds.extend([p.lng, p.lat]);
-    if (points.length > 0) map.fitBounds(bounds, { padding: viewPadding(), maxZoom: 12, duration: 500 });
-    else map.flyTo({ center: [originPt.lng, originPt.lat], zoom: 9, duration: 500 });
+    if (fitted.current !== key) {
+      fitted.current = key;
+      const bounds = new (mapLib().LngLatBounds)();
+      bounds.extend([originPt.lng, originPt.lat]);
+      // Der Ausschnitt richtet sich nach dem, was erreichbar ist – Ziele ohne Fahrzeit ziehen ihn nicht auf.
+      for (const p of points) if (p.driveMin != null) bounds.extend([p.lng, p.lat]);
+      if (points.length > 0) map.fitBounds(bounds, { padding: viewPadding(), maxZoom: 12, duration: 500 });
+      else map.flyTo({ center: [originPt.lng, originPt.lat], zoom: 9, duration: 500 });
+    }
+    return () => {
+      current = false;
+    };
   }, [points, fitToken, originPt.lat, originPt.lng, ready]);
 
   // Auswahl hervorheben: Ring ums Ziel, Ausgangspunkt als «P», Route als Linie.
@@ -542,14 +590,6 @@ export function PeakrMap({
     else map.flyTo({ center: dest, zoom: Math.max(map.getZoom(), 11.5), duration: 500 });
   }, [selId, selLine, selTh, ready]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Zähler, der das gewählte Ziel enthält, hervorheben (weit herausgezoomt).
-  const selLat = selection?.lat ?? null;
-  const selLng = selection?.lng ?? null;
-  useEffect(() => {
-    if (!ready) return;
-    clustersRef.current?.setSelection(selId && selLat != null && selLng != null ? { id: selId, lngLat: [selLng, selLat] } : null);
-  }, [selId, selLat, selLng, ready]);
-
   // Neues Ziel ausgewählt: ein Ring breitet sich einmal aus.
   useEffect(() => {
     const map = mapRef.current;
@@ -557,13 +597,15 @@ export function PeakrMap({
     ripple(map, rippleAnim);
   }, [selId, ready]);
 
-  // Auf dunkler Karte (Wetter oder dunkler Modus) sind Auswahlring und Welle hell.
+  // Auf dunkler Karte (Wetter oder dunkler Modus) sind Auswahlring und Welle hell;
+  // die Heatmap tritt im Wetterbild zurück.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
     for (const id of ['sel-ring', 'sel-ripple']) {
       if (map.getLayer(id)) map.setPaintProperty(id, 'circle-stroke-color', wxOn || dark ? '#ffffff' : '#1f2933');
     }
+    heatRef.current?.setTheme(dark, wxOn);
   }, [wxOn, dark, ready]);
 
   // Dunkler Modus: dunkle Variante der Grundkarte – Flächen dunkel, Strassen, Wege und
@@ -573,10 +615,7 @@ export function PeakrMap({
     if (!map || !ready) return;
     mapShade(map, 'trails').setDark(dark);
     const names = dark ? NAME_DARK : NAME_LIGHT;
-    if (map.getLayer('point-name')) {
-      map.setPaintProperty('point-name', 'text-color', names.text);
-      map.setPaintProperty('point-name', 'text-halo-color', names.halo);
-    }
+    setDestinationTheme(map, dark, names, iconForKind);
     if (map.getLayer('trailhead')) {
       map.setPaintProperty('trailhead', 'text-color', dark ? '#9ec2f5' : PARK_BLUE);
       map.setPaintProperty('trailhead', 'text-halo-color', names.halo);
@@ -655,6 +694,9 @@ export function PeakrMap({
       <div className="pk-map" ref={wrapRef} />
       <WeatherLayer map={mapObj} onActiveChange={setWxOn} />
       <div className="pk-legend" aria-hidden>
+        <span>
+          <i className="pk-legend-heat" /> Dichte der Ziele
+        </span>
         <span>
           <i style={{ background: HIKE_GREEN }} /> Wandern
         </span>
