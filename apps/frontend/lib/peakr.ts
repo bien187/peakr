@@ -310,6 +310,8 @@ export interface PPoint {
   section: SearchSection;
   score: number;
   driveMin: number | null;
+  /** Verfügbarkeit (nicht verfügbare erscheinen nur auf Wunsch); null = nicht geprüft. */
+  status: 'available' | 'uncertain' | 'unavailable' | null;
 }
 
 /** Auf der Karte hervorgehobenes Ziel samt Ausgangspunkt und Route. */
@@ -324,7 +326,10 @@ export interface MapSelection {
 
 export function adaptPoint(p: MapPoint): PPoint {
   const kind = (p[4] in KIND_META ? p[4] : 'peak') as DestKind;
-  return { id: p[0], name: p[1], lat: p[2], lng: p[3], kind, type: kind === 'ski' ? 'ski' : 'hike', section: p[5], score: p[6], driveMin: p[7] };
+  return {
+    id: p[0], name: p[1], lat: p[2], lng: p[3], kind, type: kind === 'ski' ? 'ski' : 'hike', section: p[5], score: p[6], driveMin: p[7],
+    status: p[8] ?? null,
+  };
 }
 
 /** Favorit (ohne Suchkontext) → Karten-Form fürs Dashboard. */

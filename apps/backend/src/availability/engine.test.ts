@@ -141,6 +141,37 @@ describe('Sommer: Schnee entlang der Route', () => {
     expect(assessSnow(at, 2100, idx, null, now).status).toBe('unavailable');
   });
 
+  it('Beleg ist die nächste Station, die das Urteil trägt – nicht eine ferne aus einem anderen Tal (Trübsee 22.11.2026)', () => {
+    const km = (dLat: number, dLng: number) => ({ lat: at.lat + dLat / 111, lng: at.lng + dLng / 76 });
+    const idx = new StationIndex([
+      station({ id: 'mch:GOE', source: 'meteoswiss', name: 'Göschenen', elevationM: 1099, snowCm: 6, ...km(-14, 15) }),
+      station({ id: 'mch:GAD', source: 'meteoswiss', name: 'Gadmen', elevationM: 1190, snowCm: 7, ...km(-5, -4.8) }),
+      station({ id: 'imis:SCB', name: 'Schönbüel', elevationM: 1777, snowCm: 27, ...km(-2, -21.8) }),
+      station({ id: 'imis:TIT', name: 'Titlisboden', elevationM: 2149, snowCm: 4, ...km(-1.2, -1.2) }),
+    ]);
+    const c = assessSnow(at, 1783, idx, null, now);
+    expect(c.status).toBe('unavailable'); // Urteil unverändert: Schnee 600 m unter dem höchsten Punkt
+    expect(c.text).toContain('Gadmen');
+    expect(c.text).not.toContain('Göschenen');
+  });
+
+  it('Urteil wie bisher (tiefste Station ≥ 300 m darunter oder irgendwo ≥ 20 cm) – nur der zitierte Beleg ist neu', () => {
+    let seed = 7;
+    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    for (let k = 0; k < 300; k++) {
+      const maxElev = 1500 + Math.round(rnd() * 1300);
+      const list = Array.from({ length: 1 + Math.floor(rnd() * 5) }, (_, i) =>
+        station({ id: `s${k}-${i}`, elevationM: 900 + Math.round(rnd() * 2200), snowCm: Math.round(rnd() * 30), lat: at.lat + (rnd() - 0.5) * 0.3, lng: at.lng + (rnd() - 0.5) * 0.4 }),
+      );
+      const near = new StationIndex(list).near(at.lat, at.lng, 25).map((x) => x.station);
+      const snowy = near.filter((x) => x.elevationM <= maxElev + 100 && (x.snowCm ?? 0) >= 5);
+      if (snowy.length === 0) continue;
+      const lowest = [...snowy].sort((a, b) => a.elevationM - b.elevationM)[0];
+      const old = snowy.some((x) => (x.snowCm ?? 0) >= 20) || lowest.elevationM <= maxElev - 300 ? 'unavailable' : 'uncertain';
+      expect(assessSnow(at, maxElev, new StationIndex(list), null, now).status).toBe(old);
+    }
+  });
+
   it('schneefrei gemessen auf Routenhöhe → verfügbar', () => {
     const idx = new StationIndex([station({ elevationM: 2300, snowCm: 0 })]);
     const c = assessSnow(at, 2100, idx, null, now);

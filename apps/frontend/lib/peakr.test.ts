@@ -71,6 +71,9 @@ describe('Adapter', () => {
     const p = adaptPoint(['id', 'Säntis', 47.25, 9.34, 'peak', 'suggestion', 60, 95]);
     expect(p).toMatchObject({ name: 'Säntis', kind: 'peak', type: 'hike', section: 'suggestion', driveMin: 95 });
     expect(adaptPoint(['id', 'X', 46, 9, 'ski', 'result', 50, null]).type).toBe('ski');
+    // Verfügbarkeit als optionales letztes Element (ältere Antworten ohne: null).
+    expect(adaptPoint(['id', 'X', 46, 9, 'lake', 'result', 50, 30]).status).toBeNull();
+    expect(adaptPoint(['id', 'Trübsee', 46.79, 8.39, 'lake', 'result', 50, 30, 'unavailable']).status).toBe('unavailable');
   });
 });
 

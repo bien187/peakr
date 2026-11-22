@@ -707,6 +707,10 @@ body {
 .pk-legend span { display: inline-flex; align-items: center; gap: 7px; }
 .pk-legend i { width: 11px; height: 11px; border-radius: 50%; border: 1.5px solid #fff; box-shadow: 0 0 0 1px var(--line-2); }
 .pk-legend i.pk-legend-p { border-radius: 3px; }
+.pk-legend i.pk-legend-off { background: transparent; border: 1.5px solid #8a94a0; box-shadow: none; opacity: .8; }
+/* Nicht verfügbare Ziele (nur auf Wunsch): gedämpft, aber lesbar */
+.rcard.is-unavailable { opacity: .72; }
+.rcard.is-unavailable:hover, .rcard.is-unavailable.is-sel { opacity: 1; }
 .maplibregl-popup.pk-hover { pointer-events: none; }
 /* Dunkler Modus: Symbole der Kartenknöpfe und Quellenangabe hell auf dunkel */
 .app[data-mode="dark"] .maplibregl-ctrl-group { background: var(--surface); }

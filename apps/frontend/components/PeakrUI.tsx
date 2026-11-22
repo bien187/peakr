@@ -201,7 +201,12 @@ export const ResultCard = memo(function ResultCard({
 
   return (
     <article
-      className={'rcard' + (selected ? ' is-sel' : '') + (r.section !== 'result' ? ' is-sug' : '')}
+      className={
+        'rcard' +
+        (selected ? ' is-sel' : '') +
+        (r.section !== 'result' ? ' is-sug' : '') +
+        (r.availability?.status === 'unavailable' ? ' is-unavailable' : '')
+      }
       onClick={() => onSelect(r.id)}
     >
       <div className="rcard-top">
@@ -362,7 +367,9 @@ export function ResultsPanel({
   sheetOpen,
   onSheetChange,
   includeUncertain,
+  includeUnavailable,
   onIncludeUncertain,
+  onIncludeUnavailable,
 }: {
   items: PCard[];
   /** Ausgewähltes Ziel – steht zuoberst, auch wenn seine Seite noch nicht geladen ist. */
@@ -389,7 +396,10 @@ export function ResultsPanel({
   sheetOpen: boolean;
   onSheetChange: (open: boolean) => void;
   includeUncertain: boolean;
+  /** Auch nicht verfügbare Ziele zeigen (schliesst unsichere ein). */
+  includeUnavailable: boolean;
   onIncludeUncertain: (v: boolean) => void;
+  onIncludeUnavailable: (v: boolean) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -517,6 +527,12 @@ export function ResultsPanel({
   const total = totals ? totals.results + totals.suggestions + totals.sacUnknown + totals.unrouted : 0;
   const hiddenUncertain = totals?.hiddenUncertain ?? 0;
   const excluded = totals?.excludedUnavailable ?? 0;
+  // Ausgeblendete im Kopf (Issue #20): am Ende der Liste sieht sie niemand, und auf dem
+  // Handy ist bei eingeklappter Liste nur der Kopf sichtbar.
+  const hiddenOnHead = {
+    uncertain: includeUncertain ? 0 : hiddenUncertain,
+    unavailable: includeUnavailable ? 0 : excluded,
+  };
 
   const rows: ReactNode[] = [];
   let lastSection: string | null = pinned ? 'pinned' : null;
@@ -622,19 +638,27 @@ export function ResultsPanel({
           {extra.length > 0 && <p className="panel-extra">+ {extra.join(' · ')}</p>}
           {/* Ausgeblendete gehören nach oben: am Ende der Liste (nach «Weitere laden») sieht sie
               niemand, und auf dem Handy ist bei eingeklappter Liste nur der Kopf sichtbar (Issue #20). */}
-          {!includeUncertain && hiddenUncertain > 0 && total > 0 && (
+          {total > 0 && (hiddenOnHead.uncertain > 0 || hiddenOnHead.unavailable > 0) && (
             <p className="panel-hidden">
               <Icon name="CircleHelp" size={13} stroke={2} />
               <span>
-                {nf.format(hiddenUncertain)} {hiddenUncertain === 1 ? 'unsicheres Ziel' : 'unsichere Ziele'} ausgeblendet
+                {[
+                  hiddenOnHead.uncertain > 0 ? `${nf.format(hiddenOnHead.uncertain)} unsicher` : null,
+                  hiddenOnHead.unavailable > 0 ? `${nf.format(hiddenOnHead.unavailable)} nicht verfügbar` : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}{' '}
+                ausgeblendet
               </span>
               <button
                 type="button"
                 className="btn-link"
                 onClick={(e) => {
                   // Nicht zusätzlich die Liste aufklappen: die neuen Punkte erscheinen auf der Karte.
+                  // Schrittweise: zuerst die unsicheren, dann die nicht verfügbaren.
                   e.stopPropagation();
-                  onIncludeUncertain(true);
+                  if (hiddenOnHead.uncertain > 0) onIncludeUncertain(true);
+                  else onIncludeUnavailable(true);
                 }}
               >
                 Zeigen
@@ -708,6 +732,11 @@ export function ResultsPanel({
                 ? `${nf.format(excluded)} Ziele in Reichweite sind zur geplanten Zeit nicht verfügbar (${reasonSummary(totals?.hiddenReasons)}).`
                 : 'Erhöhe die Fahrzeit oder lockere die Filter, um mehr zu sehen.'}
             </p>
+            {excluded > 0 && (
+              <button type="button" className="btn btn-sm" onClick={() => onIncludeUnavailable(true)} style={{ marginTop: 10 }}>
+                Nicht verfügbare zeigen
+              </button>
+            )}
           </div>
         ) : (
           <>
@@ -729,14 +758,21 @@ export function ResultsPanel({
               Ausgeblendet{hiddenUncertain > 0 ? `: ${nf.format(hiddenUncertain)} unsicher` : ''}
               {excluded > 0 ? `${hiddenUncertain > 0 ? ',' : ':'} ${nf.format(excluded)} nicht verfügbar` : ''}
               {totals?.hiddenReasons && Object.keys(totals.hiddenReasons).length > 0 ? ` (${reasonSummary(totals.hiddenReasons)})` : ''}.
-              {hiddenUncertain > 0 && (
+              {hiddenUncertain > 0 ? (
                 <>
                   {' '}
                   <button type="button" className="btn-link" onClick={() => onIncludeUncertain(true)}>
                     Unsichere zeigen
                   </button>
                 </>
-              )}
+              ) : excluded > 0 ? (
+                <>
+                  {' '}
+                  <button type="button" className="btn-link" onClick={() => onIncludeUnavailable(true)}>
+                    Nicht verfügbare zeigen
+                  </button>
+                </>
+              ) : null}
             </span>
           </div>
         )}
@@ -744,8 +780,9 @@ export function ResultsPanel({
           <p className="panel-foot">
             <Icon name="Info" size={13} stroke={2} />
             <span>
-              Unsichere Ziele werden angezeigt (Symbol «?»). Nicht verfügbare – gesperrt, verschneit, Sturm, zu wenig
-              Tageslicht – bleiben ausgeblendet.{' '}
+              {includeUnavailable
+                ? 'Auch nicht verfügbare Ziele werden angezeigt – gesperrt, verschneit, Sturm oder zu wenig Tageslicht. Sie stehen grau am Ende jedes Abschnitts, mit Grund, und sind nicht empfohlen.'
+                : 'Unsichere Ziele werden angezeigt (Symbol «?»). Nicht verfügbare – gesperrt, verschneit, Sturm, zu wenig Tageslicht – bleiben ausgeblendet.'}{' '}
               <button type="button" className="btn-link" onClick={() => onIncludeUncertain(false)}>
                 Nur verfügbare
               </button>

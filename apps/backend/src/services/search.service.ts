@@ -84,6 +84,8 @@ export interface AvailabilitySettings {
   plan: TourPlan;
   now: Date;
   includeUncertain: boolean;
+  /** Auch nicht verfügbare (und damit auch unsichere) Ziele zeigen. */
+  includeUnavailable?: boolean;
 }
 
 export interface AssembleContext {
@@ -95,10 +97,19 @@ export interface AssembleContext {
 
 const emptyHidden = (): HiddenCounts => ({ uncertain: 0, unavailable: 0, reasons: {} });
 
-/** Sichtbar: verfügbar, oder unsicher mit includeUncertain. Ohne Prüfung immer. */
+/**
+ * Sichtbar: verfügbar; unsicher mit includeUncertain; nicht verfügbar nur auf
+ * ausdrücklichen Wunsch (includeUnavailable, schliesst unsichere ein). Ohne Prüfung immer.
+ */
 function isVisible(a: Availability | null, s: AvailabilitySettings | undefined): boolean {
-  return !a || !s || a.status === 'available' || (a.status === 'uncertain' && s.includeUncertain);
+  if (!a || !s || a.status === 'available') return true;
+  if (s.includeUnavailable) return true;
+  return a.status === 'uncertain' && s.includeUncertain;
 }
+
+/** Nicht verfügbare (nur auf Wunsch gezeigt) stehen in jedem Abschnitt hinten. */
+const unavailableLast = (a: SearchResult, b: SearchResult): number =>
+  Number(a.availability?.status === 'unavailable') - Number(b.availability?.status === 'unavailable');
 
 /** Zählt ein ausgeblendetes Ziel mit seinem massgebenden Grund. */
 function countHidden(h: HiddenCounts, a: Availability): void {
@@ -304,6 +315,7 @@ function buildHikeResult(
 function sortResults(list: SearchResult[]): void {
   list.sort(
     (a, b) =>
+      unavailableLast(a, b) ||
       Number(a.blocked) - Number(b.blocked) ||
       b.score - a.score ||
       (a.driveMinutes ?? Infinity) - (b.driveMinutes ?? Infinity) ||
@@ -314,6 +326,7 @@ function sortResults(list: SearchResult[]): void {
 function sortSuggestions(list: SearchResult[]): void {
   list.sort(
     (a, b) =>
+      unavailableLast(a, b) ||
       Number(a.blocked) - Number(b.blocked) ||
       (a.overBudgetMinutes ?? 0) - (b.overBudgetMinutes ?? 0) ||
       b.score - a.score ||
@@ -559,7 +572,7 @@ export function searchCacheKey(input: SearchInput, dataVersion: string | null, p
     [...(input.kinds ?? [])].sort(), input.maxSac ?? null, input.includeUnknownSac, input.maxHikeMinutes ?? null,
     input.includeUnrouted, input.minElevationM ?? null, input.minSnowCm ?? null, dataVersion,
     // Verfügbarkeit hängt von Planung und Uhrzeit ab (Alter der Daten, Tageslicht).
-    plan ? `${plan.date}T${plan.startHour}` : null, input.includeUncertain, timeBucket,
+    plan ? `${plan.date}T${plan.startHour}` : null, input.includeUncertain, input.includeUnavailable ?? false, timeBucket,
   ]);
 }
 
@@ -579,7 +592,7 @@ function sortSection(list: SearchResult[], sort: Sort): SearchResult[] {
         : sort === 'elevation'
           ? (r) => -(r.elevationTopM ?? -1)
           : (r) => -(r.live?.snowDepthTopCm ?? -1);
-  return [...list].sort((a, b) => key(a) - key(b) || b.score - a.score || a.name.localeCompare(b.name));
+  return [...list].sort((a, b) => unavailableLast(a, b) || key(a) - key(b) || b.score - a.score || a.name.localeCompare(b.name));
 }
 
 /** Schneidet aus dem Gesamtergebnis die angeforderte Seite und baut die Kartenpunkte. */
@@ -627,7 +640,7 @@ export function pageResponse(full: FullSearch, input: SearchInput, cached: boole
       for (const r of list) {
         points.push([
           r.id, r.name, r.location.lat, r.location.lng, r.type === 'ski_resort' ? 'ski' : (r.poiKind ?? 'peak'),
-          section, r.score, r.driveMinutes,
+          section, r.score, r.driveMinutes, r.availability?.status ?? null,
         ]);
       }
     }
@@ -676,6 +689,7 @@ export async function search(input: SearchInput, opts: SearchOptions = {}): Prom
     plan,
     now,
     includeUncertain: input.includeUncertain,
+    includeUnavailable: input.includeUnavailable,
   }, opts.skipAvailability === true);
   // Ohne Strassennetz/Index nichts merken: sobald die Daten da sind, soll die Suche sofort funktionieren.
   if (full.meta.routing.status !== 'unavailable') {

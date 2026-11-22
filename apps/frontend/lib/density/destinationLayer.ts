@@ -23,9 +23,15 @@ export const MUTED = '#8a94a0';
 export const MINT = '#7fe0a6';
 const SKI_BLUE_DARK = '#7aa9e6';
 
-const IS_MUTED: ExpressionSpecification = ['in', ['get', 'section'], ['literal', ['sac_unknown', 'unrouted']]];
-/** «Knapp ausserhalb» und Ziele ohne Angabe heller als die eigentlichen Treffer. */
-const SECTION_ALPHA: ExpressionSpecification = ['match', ['get', 'section'], 'result', 1, 0.5];
+const IS_UNAVAILABLE: ExpressionSpecification = ['==', ['get', 'status'], 'unavailable'];
+/** Grau: Ziele ohne Angabe und – nur auf Wunsch gezeigt – nicht verfügbare. */
+const IS_MUTED: ExpressionSpecification = [
+  'any',
+  ['in', ['get', 'section'], ['literal', ['sac_unknown', 'unrouted']]],
+  IS_UNAVAILABLE,
+];
+/** «Knapp ausserhalb» und Ziele ohne Angabe heller als die eigentlichen Treffer; nicht verfügbare blass. */
+const SECTION_ALPHA: ExpressionSpecification = ['case', IS_UNAVAILABLE, 0.45, ['match', ['get', 'section'], 'result', 1, 0.5]];
 
 const fadeIn = (to: ExpressionSpecification | number, [a, b] = DEST_FADE): ExpressionSpecification =>
   ['interpolate', ['linear'], ['zoom'], a, 0, b, to] as ExpressionSpecification;

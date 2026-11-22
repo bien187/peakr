@@ -213,7 +213,9 @@ Liste und Karte nutzen dieselbe Antwort von `/api/search`:
 - die Karte filtert nichts heraus;
 - GPU-Heatmap und Engine bekommen dieselbe bereinigte Liste (`uniquePoints`).
 
-Unsichere Ziele sind nur enthalten, wenn «unsichere zeigen» aktiv ist; nicht verfügbare nie.
+Unsichere Ziele sind nur enthalten, wenn «unsichere zeigen» aktiv ist. Nicht verfügbare sind nur
+mit «nicht verfügbare zeigen» enthalten (Status im Kartenpunkt); dann erscheinen sie als graue
+Einzelziele, aber nicht in Heatmap und Hotspot-Zahlen.
 
 Audit vom 21.11.2026 (Produktion; ab Zürich, Bern und Luzern; ≤ 4 h + 50 min):
 
