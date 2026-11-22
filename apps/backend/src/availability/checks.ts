@@ -218,17 +218,19 @@ export function assessSnow(
     .near(dest.lat, dest.lng, SNOW_RADIUS_KM)
     .filter(({ station: s }) => s.snowCm !== null && hoursSince(s.measuredAt, now) <= SNOW_MAX_AGE_H);
 
-  const snowy = fresh
-    .filter(({ station: s }) => s.elevationM <= maxElevM + 100 && (s.snowCm ?? 0) >= SNOW_PRESENT_CM)
-    .sort((a, b) => a.station.elevationM - b.station.elevationM);
+  const snowy = fresh.filter(({ station: s }) => s.elevationM <= maxElevM + 100 && (s.snowCm ?? 0) >= SNOW_PRESENT_CM);
   if (snowy.length > 0) {
-    // Tiefste eingeschneite Station: der deutlichste Beleg.
-    const { station: s, km } = snowy[0];
-    const deep = snowy.some(({ station: x }) => (x.snowCm ?? 0) >= SNOW_BLOCK_CM);
-    const wellBelow = s.elevationM <= maxElevM - 300;
+    // Nicht verfügbar, wenn eine Station ≥ 20 cm misst oder Schnee schon 300 m und mehr
+    // unter dem höchsten Routenpunkt liegt. Als Beleg steht die nächstgelegene Station,
+    // die das Urteil trägt – nicht eine ferne aus einem anderen Tal.
+    const decisive = snowy.filter(
+      ({ station: x }) => (x.snowCm ?? 0) >= SNOW_BLOCK_CM || x.elevationM <= maxElevM - 300,
+    );
+    const pool = decisive.length > 0 ? decisive : snowy;
+    const { station: s, km } = pool.reduce((best, x) => (x.km < best.km ? x : best));
     return check(
       'snow',
-      deep || wellBelow ? 'unavailable' : 'uncertain',
+      decisive.length > 0 ? 'unavailable' : 'uncertain',
       `Schnee: ${stationText(s, km)}. Die Route führt bis ${m(maxElevM)}.`,
       'measured', SOURCE_LABEL[s.source], s.measuredAt,
     );

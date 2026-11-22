@@ -152,14 +152,18 @@ function pointsToFeatures(points: PPoint[]): GeoJSON.FeatureCollection<GeoJSON.P
     features: points.map((p) => ({
       type: 'Feature',
       geometry: { type: 'Point', coordinates: [p.lng, p.lat] },
-      properties: { id: p.id, name: p.name, type: p.type, kind: p.kind, section: p.section, drive: p.driveMin },
+      properties: { id: p.id, name: p.name, type: p.type, kind: p.kind, section: p.section, drive: p.driveMin, status: p.status },
     })),
   };
 }
 
-/** Beitrag zur Heatmap: Treffer voll, «knapp ausserhalb» und Ziele ohne Angabe halb (wie ihre Punkte). */
+/**
+ * Beitrag zur Heatmap: Treffer voll, «knapp ausserhalb» und Ziele ohne Angabe halb (wie
+ * ihre Punkte). Nicht verfügbare (nur auf Wunsch gezeigt) zählen nicht zur Dichte und zu
+ * keinem Hotspot – sie erscheinen nur als graue Einzelziele.
+ */
 function densityPoints(points: PPoint[]): DensityPoint[] {
-  return points.map((p) => ({
+  return points.filter((p) => p.status !== 'unavailable').map((p) => ({
     id: p.id,
     name: p.name,
     lat: p.lat,
@@ -712,6 +716,9 @@ export function PeakrMap({
         </span>
         <span>
           <i style={{ background: MUTED }} /> Angabe fehlt
+        </span>
+        <span>
+          <i className="pk-legend-off" /> nicht verfügbar
         </span>
         <span>
           <i className="pk-legend-p" style={{ background: PARK_BLUE }} /> Ausgangspunkt

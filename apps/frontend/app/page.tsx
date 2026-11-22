@@ -49,6 +49,7 @@ const DEFAULT_PARAMS: PParams = {
   planDay: null,
   planStart: 8,
   includeUncertain: false,
+  includeUnavailable: false,
 };
 
 /** Gespeicherte Parameter prüfen – ein veralteter oder beschädigter Eintrag darf die Suche nicht brechen. */
@@ -75,7 +76,8 @@ function sanitize(raw: unknown): PParams {
     minSnow: optNum(p.minSnow, 0, 500),
     planDay: optNum(p.planDay, 0, 2),
     planStart: num(p.planStart, 0, 23, DEFAULT_PARAMS.planStart),
-    includeUncertain: p.includeUncertain === true,
+    includeUncertain: p.includeUncertain === true || p.includeUnavailable === true,
+    includeUnavailable: p.includeUnavailable === true,
   };
 }
 
@@ -96,6 +98,7 @@ function toRequest(p: PParams, origin: LatLng, sort: SortKey): SearchRequest {
     // Ohne Angabe wählt der Server (heute ab der nächsten Stunde, nachmittags morgen).
     plan: p.planDay != null ? { date: planDate(p.planDay), startHour: hike ? p.planStart : 9 } : undefined,
     includeUncertain: p.includeUncertain,
+    includeUnavailable: p.includeUnavailable,
     sort,
   };
 }
@@ -390,7 +393,9 @@ export default function HomePage() {
           sheetOpen={sheetOpen}
           onSheetChange={setSheetOpen}
           includeUncertain={params.includeUncertain}
-          onIncludeUncertain={(v) => set({ includeUncertain: v })}
+          includeUnavailable={params.includeUnavailable}
+          onIncludeUncertain={(v) => set(v ? { includeUncertain: true } : { includeUncertain: false, includeUnavailable: false })}
+          onIncludeUnavailable={(v) => set(v ? { includeUnavailable: true, includeUncertain: true } : { includeUnavailable: false })}
         />
       </div>
       {loading && items.length > 0 && <div className="search-status">Suche läuft …</div>}

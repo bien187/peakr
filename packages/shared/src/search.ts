@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { availabilitySchema, tourPlanSchema } from './availability';
+import { availabilitySchema, availabilityStatusSchema, tourPlanSchema } from './availability';
 import { latLngSchema } from './geo';
 import { hikeKindSchema, modeSchema, routingStatusSchema, sacDifficultySchema } from './enums';
 import {
@@ -43,8 +43,13 @@ export const searchInputSchema = z.object({
   // ── Verfügbarkeit ──
   /** Geplante Tour (Datum heute bis übermorgen, Startstunde); ohne Angabe wählt der Server. */
   plan: tourPlanSchema.optional(),
-  /** Auch Ziele mit unsicherer Verfügbarkeit zeigen. Nicht verfügbare bleiben immer ausgeblendet. */
+  /** Auch Ziele mit unsicherer Verfügbarkeit zeigen. */
   includeUncertain: z.boolean().default(false),
+  /**
+   * Auch nicht verfügbare Ziele zeigen (gesperrt, verschneit, Sturm …) – samt unsicheren.
+   * Sie stehen am Ende jedes Abschnitts und tragen ihren Status samt Grund.
+   */
+  includeUnavailable: z.boolean().default(false),
 
   // ── Ausgabe ──
   /** Sortierung innerhalb jedes Abschnitts. */
@@ -118,19 +123,13 @@ export const searchItemSchema = searchResultSchema.extend({ section: searchSecti
 export type SearchItem = z.infer<typeof searchItemSchema>;
 
 /**
- * Kompakter Kartenpunkt: [id, Name, Breite, Länge, Art, Abschnitt, Score, Fahrminuten].
- * Als Tupel, damit auch mehrere tausend Treffer in eine Antwort passen.
+ * Kompakter Kartenpunkt: [id, Name, Breite, Länge, Art, Abschnitt, Score, Fahrminuten,
+ * Verfügbarkeit?]. Als Tupel, damit auch mehrere tausend Treffer in eine Antwort passen.
+ * Das letzte Element (Status der Verfügbarkeit, null = nicht geprüft) ist optional.
  */
-export const mapPointSchema = z.tuple([
-  z.string(),
-  z.string(),
-  z.number(),
-  z.number(),
-  z.string(),
-  searchSectionSchema,
-  z.number(),
-  z.number().nullable(),
-]);
+export const mapPointSchema = z
+  .tuple([z.string(), z.string(), z.number(), z.number(), z.string(), searchSectionSchema, z.number(), z.number().nullable()])
+  .rest(availabilityStatusSchema.nullable());
 export type MapPoint = z.infer<typeof mapPointSchema>;
 
 export const searchResponseSchema = z.object({
@@ -150,7 +149,7 @@ export const searchResponseSchema = z.object({
     unrouted: z.number().int(),
     /** In Reichweite, aber wegen unsicherer Verfügbarkeit ausgeblendet (ohne includeUncertain). */
     hiddenUncertain: z.number().int().default(0),
-    /** In Reichweite, aber nicht verfügbar (gesperrt, Schnee, Sturm …) – immer ausgeblendet. */
+    /** In Reichweite, aber nicht verfügbar (gesperrt, Schnee, Sturm …) – ausgeblendet ohne includeUnavailable. */
     excludedUnavailable: z.number().int().default(0),
     /** Häufigste Gründe der Ausblendung: Prüfung → Anzahl Ziele. */
     hiddenReasons: z.record(z.number().int()).default({}),

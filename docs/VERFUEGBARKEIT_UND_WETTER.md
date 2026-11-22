@@ -7,9 +7,17 @@ Stand 13.11.2026. Die Seite beschreibt:
 
 ## Grundsätze
 
-- **Standardmässig erscheinen nur verfügbare Ziele.** Unsichere lassen sich unter *Ziele & Anspruch
-  → «Auch unsichere Ziele zeigen»* einblenden. Nicht verfügbare bleiben immer ausgeblendet. Ihre Zahl
-  und die Gründe stehen am Ende der Trefferliste.
+- **Standardmässig erscheinen nur verfügbare Ziele.**
+  - Wie viele Ziele ausgeblendet sind, steht im Listenkopf («214 unsicher · 638 nicht verfügbar
+    ausgeblendet»).
+  - «Zeigen» blendet schrittweise ein: zuerst die unsicheren, dann die nicht verfügbaren. Dasselbe
+    geht unter *Ziele & Anspruch* mit «Auch unsichere Ziele zeigen» bzw. «Auch nicht verfügbare Ziele
+    zeigen».
+  - Nicht verfügbare stehen dann am Ende jedes Abschnitts, sind grau und tragen ihren Grund. Auf der
+    Karte erscheinen sie als graue Einzelziele; sie zählen nicht zur Heatmap und zu keiner
+    Hotspot-Zahl.
+  - So bleibt jedes Ziel mit seinen Routen auffindbar, ohne als empfohlen zu erscheinen (Issue #20:
+    Trübsee und Engstlensee am 22.11.2026, Schnee).
 - **Ein fehlender Bericht ist kein Nachweis für «offen».** Fehlen Daten für eine Prüfung oder sind sie
   veraltet, lautet das Ergebnis höchstens «unsicher».
   - Ausnahme: Wege ausserhalb des amtlichen Wanderwegnetzes. Für sie gibt es grundsätzlich keine
@@ -53,6 +61,13 @@ Prognose) und eine Startstunde.
 SLF-IMIS (1300–2950 m) sowie MeteoSchweiz (manuell und automatisch). Ohne passende Messung zählt die
 modellierte Schneehöhe der Wetterzelle, gekennzeichnet als Modellwert. Die Exposition (Nordhänge)
 kann Peakr nicht beurteilen. Der Hinweis steht im Text.
+
+Als Beleg im Text steht die nächstgelegene Station, die das Urteil trägt. Am 22.11.2026 hiess das
+für den Engstlensee: Gadmen (1190 m, 4 km, 7 cm) statt Göschenen (1099 m, 21 km, anderes Tal). Das
+Urteil selbst ist unverändert:
+- «nicht verfügbar», wenn irgendeine Station bis 100 m über dem höchsten Punkt ≥ 20 cm misst, oder
+  wenn Schnee schon 300 m und mehr darunter liegt;
+- sonst «unsicher».
 
 **Lawinen:** Im Schweizer Bulletin tragen die Lawinenprobleme die Kernzone, z. B. «Stufe 3 oberhalb
 2000 m, N–O». Ausserhalb der Kernzone ist die Gefahr laut SLF in der Regel eine Stufe tiefer. Peakr

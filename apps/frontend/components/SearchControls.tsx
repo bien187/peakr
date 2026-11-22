@@ -30,8 +30,10 @@ export interface PParams {
   planDay: number | null;
   /** Startstunde der Tour (Wandern). */
   planStart: number;
-  /** Ziele mit unsicherer Verfügbarkeit zeigen; nicht verfügbare bleiben ausgeblendet. */
+  /** Ziele mit unsicherer Verfügbarkeit zeigen. */
   includeUncertain: boolean;
+  /** Auch nicht verfügbare Ziele zeigen (grau, am Ende, mit Grund); schliesst unsichere ein. */
+  includeUnavailable: boolean;
 }
 
 const PLAN_DAYS: { value: number | null; label: string }[] = [
@@ -62,7 +64,8 @@ export function filterSummary(p: PParams): string {
   }
   if (p.mode === 'hike' && p.minElev != null) parts.push(`ab ${p.minElev} m`);
   if (p.planDay != null) parts.push(p.planDay === 0 ? 'heute' : p.planDay === 1 ? 'morgen' : 'übermorgen');
-  if (p.includeUncertain) parts.push('+ unsichere');
+  if (p.includeUnavailable) parts.push('+ nicht verfügbare');
+  else if (p.includeUncertain) parts.push('+ unsichere');
   return parts.join(' · ');
 }
 
@@ -337,13 +340,21 @@ export function SearchControls({
           </p>
           <Toggle
             on={params.includeUncertain}
-            onChange={(v) => set({ includeUncertain: v })}
+            // Ohne unsichere auch keine nicht verfügbaren.
+            onChange={(v) => set(v ? { includeUncertain: true } : { includeUncertain: false, includeUnavailable: false })}
             label="Auch unsichere Ziele zeigen"
             hint={
               isHike
-                ? 'Datenlage unvollständig oder ein Risiko ist möglich. Gesperrte, verschneite oder zu lange Touren bleiben ausgeblendet.'
+                ? 'Datenlage unvollständig oder ein Risiko ist möglich.'
                 : 'Ohne frei nutzbare Live-Quelle zum Betrieb gilt jedes Skigebiet als unsicher – Peakr zeigt keines als geöffnet an.'
             }
+          />
+          <Toggle
+            on={params.includeUnavailable}
+            // Nicht verfügbare schliessen die unsicheren ein.
+            onChange={(v) => set(v ? { includeUnavailable: true, includeUncertain: true } : { includeUnavailable: false })}
+            label="Auch nicht verfügbare Ziele zeigen"
+            hint="Gesperrt, verschneit, Sturm oder zu wenig Tageslicht: erscheinen grau am Ende der Liste, mit Grund. Nicht empfohlen."
           />
           <div className="pop-sep" />
           {isHike ? (
@@ -493,6 +504,7 @@ export function SearchControls({
                 planDay: null,
                 planStart: 8,
                 includeUncertain: false,
+                includeUnavailable: false,
               })
             }
           >

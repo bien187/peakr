@@ -205,7 +205,10 @@ describe('Verfügbarkeit in der Suche', () => {
     });
     return c;
   };
-  const withAv = (c: ConditionsContext, includeUncertain = false) => ({ ...ctx, availability: { conditions: c, plan, now, includeUncertain } });
+  const withAv = (c: ConditionsContext, includeUncertain = false, includeUnavailable = false) => ({
+    ...ctx,
+    availability: { conditions: c, plan, now, includeUncertain, includeUnavailable },
+  });
 
   it('wählt die verfügbare Variante, wenn die kürzere gesperrt ist', () => {
     const c = conditions();
@@ -218,7 +221,7 @@ describe('Verfügbarkeit in der Suche', () => {
     expect(out.results[0].availability?.status).toBe('available');
   });
 
-  it('blendet nicht verfügbare Ziele immer aus und zählt den Grund', () => {
+  it('blendet nicht verfügbare Ziele ohne includeUnavailable aus und zählt den Grund', () => {
     const c = conditions();
     const r = hikeRow({ id: 'q', rank: 1, th_id: 'a', weather_cell: 'c1' });
     c.closures.set('q:1', [{ id: 'x', title: 'Steg', reason: null, duration: null, url: null, hasDetour: false }]);
@@ -227,6 +230,26 @@ describe('Verfügbarkeit in der Suche', () => {
       expect(out.results).toHaveLength(0);
       expect(out.hidden).toEqual({ uncertain: 0, unavailable: 1, reasons: { closure: 1 } });
     }
+  });
+
+  it('nicht verfügbare auf Wunsch sichtbar (samt Grund), hinter den verfügbaren; Kartenpunkt trägt den Status', () => {
+    const c = conditions();
+    const closed = hikeRow({ id: 'q', name: 'Trübsee', rank: 1, th_id: 'a', weather_cell: 'c1' });
+    const open = hikeRow({ id: 'o', name: 'Zuger See', rank: 1, th_id: 'b', weather_cell: 'c1' });
+    c.closures.set('q:1', [{ id: 'x', title: 'Steg', reason: null, duration: null, url: null, hasDetour: false }]);
+    const out = assembleHike(input({ includeUnavailable: true }), [closed, open], drives({ a: 20, b: 60 }), withAv(c, false, true));
+    expect(out.results.map((r) => r.name)).toEqual(['Zuger See', 'Trübsee']); // nicht verfügbar hinten, trotz kürzerer Fahrt
+    expect(out.results[1].availability?.status).toBe('unavailable');
+    expect(out.results[1].availability?.reason).toContain('Steg');
+    expect(out.hidden).toEqual({ uncertain: 0, unavailable: 0, reasons: {} });
+
+    const full: FullSearch = { results: out.results, suggestions: [], sacUnknown: [], unrouted: [], hidden: out.hidden, meta: {} as FullSearch['meta'] };
+    const page = pageResponse(full, input({ includeUnavailable: true, sort: 'drive' }), false, 0);
+    expect(page.items.map((i) => i.name)).toEqual(['Zuger See', 'Trübsee']); // auch bei Sortierung nach Fahrzeit hinten
+    expect(page.points.map((p) => [p[1], p[8]])).toEqual([
+      ['Zuger See', 'available'],
+      ['Trübsee', 'unavailable'],
+    ]);
   });
 
   it('unsichere Ziele: standardmässig ausgeblendet, mit includeUncertain sichtbar', () => {
@@ -260,6 +283,7 @@ describe('Verfügbarkeit in der Suche', () => {
   it('Cache-Schlüssel unterscheidet Planung und «unsichere zeigen»', () => {
     const base = searchCacheKey(input(), 'v1', plan, 1);
     expect(searchCacheKey(input({ includeUncertain: true }), 'v1', plan, 1)).not.toBe(base);
+    expect(searchCacheKey(input({ includeUnavailable: true }), 'v1', plan, 1)).not.toBe(base);
     expect(searchCacheKey(input(), 'v1', { ...plan, startHour: 9 }, 1)).not.toBe(base);
     expect(searchCacheKey(input(), 'v1', plan, 2)).not.toBe(base);
   });
