@@ -212,6 +212,12 @@ Liste und Karte nutzen dieselbe Antwort von `/api/search`:
 - `points` enthält auf Seite 0 alle Treffer aller Abschnitte, ohne Seitenbegrenzung;
 - die Karte filtert nichts heraus;
 - GPU-Heatmap und Engine bekommen dieselbe bereinigte Liste (`uniquePoints`).
+- **Heatmap, Hotspot-Zahlen und Kartenausschnitt zeigen nur die Treffer innerhalb der gewählten
+  Fahrzeit** (`lib/density/mapInput.ts`).
+  - «Knapp ausserhalb» (Toleranz), Ziele ohne Route bzw. mit unbekannter Schwierigkeit und nicht
+    verfügbare stehen nur in der Liste und erscheinen als Einzelpunkte.
+  - Grund: Bis 22.11.2026 zählte die Toleranzzone mit. Bei «≤ 30 min +60» überstrahlten so 5174 Ziele
+    bis 90 min die 728 Treffer, und die Karte sah bei jeder Fahrzeit gleich aus.
 
 Unsichere Ziele sind nur enthalten, wenn «unsichere zeigen» aktiv ist. Nicht verfügbare sind nur
 mit «nicht verfügbare zeigen» enthalten (Status im Kartenpunkt); dann erscheinen sie als graue
@@ -256,7 +262,7 @@ Code: `apps/frontend/lib/density/densityEngine.ts`, getestet.
   - Ergebnis in der Übersicht: Alle Ziele jeder Region sind sichtbar; im Tessin erreichen zwei
     Drittel mindestens «niedrig» (vorher 0 %).
 - **Doppelte:** gleiche ID nur einmal; gleicher Ort mit gleichem Namen nur einmal.
-- **Gewicht:** Treffer 1; «knapp ausserhalb» und Ziele ohne Angabe 0,5, wie ihre Punkte.
+- **Gewicht:** jedes Ziel 1; in die Heatmap gehen nur Treffer innerhalb der Fahrzeit (siehe Datenbasis).
 
 ### Hotspot-Zahlen
 

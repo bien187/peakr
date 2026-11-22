@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ExpressionSpecification, GeoJSONSource, MapGeoJSONFeature } from 'maplibre-gl';
 import { DensityComputer } from '@/lib/density/densityClient';
 import { uniquePoints, type DensityPoint } from '@/lib/density/densityEngine';
+import { fitPoints, heatPoints } from '@/lib/density/mapInput';
 import {
   DEST_SOURCE,
   destinationLayers,
@@ -155,22 +156,6 @@ function pointsToFeatures(points: PPoint[]): GeoJSON.FeatureCollection<GeoJSON.P
       properties: { id: p.id, name: p.name, type: p.type, kind: p.kind, section: p.section, drive: p.driveMin, status: p.status },
     })),
   };
-}
-
-/**
- * Beitrag zur Heatmap: Treffer voll, «knapp ausserhalb» und Ziele ohne Angabe halb (wie
- * ihre Punkte). Nicht verfügbare (nur auf Wunsch gezeigt) zählen nicht zur Dichte und zu
- * keinem Hotspot – sie erscheinen nur als graue Einzelziele.
- */
-function densityPoints(points: PPoint[]): DensityPoint[] {
-  return points.filter((p) => p.status !== 'unavailable').map((p) => ({
-    id: p.id,
-    name: p.name,
-    lat: p.lat,
-    lng: p.lng,
-    kind: p.kind,
-    weight: p.section === 'result' ? 1 : 0.5,
-  }));
 }
 
 function densityFeatures(points: DensityPoint[]): GeoJSON.FeatureCollection<GeoJSON.Point> {
@@ -523,7 +508,7 @@ export function PeakrMap({
     (map.getSource(DEST_SOURCE) as GeoJSONSource | undefined)?.setData(pointsToFeatures(points));
     // Dichte im Web Worker; Heatmap und Zahlen wechseln erst mit dem fertigen Modell.
     // Dieselbe bereinigte Liste für GPU-Heatmap und Engine (keine Doppelten).
-    const dens = uniquePoints(densityPoints(points));
+    const dens = uniquePoints(heatPoints(points));
     const hotspots = hotspotsRef.current;
     let current = true;
     densityRef.current?.compute(dens, hotspots?.bandZooms ?? []).then((model) => {
@@ -541,8 +526,9 @@ export function PeakrMap({
       fitted.current = key;
       const bounds = new (mapLib().LngLatBounds)();
       bounds.extend([originPt.lng, originPt.lat]);
-      // Der Ausschnitt richtet sich nach dem, was erreichbar ist – Ziele ohne Fahrzeit ziehen ihn nicht auf.
-      for (const p of points) if (p.driveMin != null) bounds.extend([p.lng, p.lat]);
+      // Der Ausschnitt richtet sich nach den Treffern innerhalb der Fahrzeit – nicht nach der
+      // Toleranzzone («knapp ausserhalb») und nicht nach Zielen ohne Fahrzeit.
+      for (const p of fitPoints(points)) bounds.extend([p.lng, p.lat]);
       if (points.length > 0) map.fitBounds(bounds, { padding: viewPadding(), maxZoom: 12, duration: cameraMs() });
       else map.flyTo({ center: [originPt.lng, originPt.lat], zoom: 9, duration: cameraMs() });
     }
