@@ -123,17 +123,21 @@ describe('Suche ohne erreichbare Datenbank', () => {
     );
     setSearchIndexForTests(parseSearchIndex(sampleFile()));
 
+    // Feste Planung (morgen 8 Uhr): «jetzt» hinge von der Uhrzeit des Testlaufs ab (Tageslicht).
+    const { planDates } = await import('../availability/time');
+    const plan = { date: planDates(new Date())[1], startHour: 8 };
+
     // Ohne Datenbank fehlen die Grundlagen der Verfügbarkeitsprüfung: nichts gilt als «verfügbar»,
     // die Ziele sind aber gezählt und mit «unsichere zeigen» samt echter Fahrzeit abrufbar.
     const strict = await search(
-      searchInputSchema.parse({ origin: { lat: 47.37, lng: 8.54 }, mode: 'hike', maxMinutes: 30, toleranceMinutes: 0 }),
+      searchInputSchema.parse({ origin: { lat: 47.37, lng: 8.54 }, mode: 'hike', maxMinutes: 30, toleranceMinutes: 0, plan }),
     );
     expect(strict.meta.liveData).toBe('unavailable');
     expect(strict.totals.results).toBe(0);
     expect(strict.totals.hiddenUncertain).toBe(2);
 
     const hike = await search(
-      searchInputSchema.parse({ origin: { lat: 47.37, lng: 8.54 }, mode: 'hike', maxMinutes: 30, toleranceMinutes: 0, includeUncertain: true }),
+      searchInputSchema.parse({ origin: { lat: 47.37, lng: 8.54 }, mode: 'hike', maxMinutes: 30, toleranceMinutes: 0, includeUncertain: true, plan }),
     );
     expect(hike.meta.liveData).toBe('unavailable');
     expect(hike.meta.routing.status).toBe('ok');
@@ -148,7 +152,7 @@ describe('Suche ohne erreichbare Datenbank', () => {
     // Auch über den API-Einstieg: das Rate-Limit braucht die Datenbank, darf die Suche aber nicht blockieren.
     const { apiSearch } = await import('../server');
     const viaApi = await apiSearch(
-      { origin: { lat: 47.37, lng: 8.54 }, mode: 'hike', maxMinutes: 30, toleranceMinutes: 0, includeUncertain: true },
+      { origin: { lat: 47.37, lng: 8.54 }, mode: 'hike', maxMinutes: 30, toleranceMinutes: 0, includeUncertain: true, plan },
       '198.51.100.7',
     );
     expect(viaApi.totals.results).toBe(2);
