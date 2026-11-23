@@ -5,7 +5,8 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useState } from 'react';
 import { CompassLoader } from '@/components/PeakrUI';
 import { api, ApiError } from '@/lib/api';
-import { adaptDetail, type PDetail } from '@/lib/peakr';
+import { adaptDetail, savedOrigin, type PDetail } from '@/lib/peakr';
+import { useAuthStore } from '@/lib/store';
 import { useFavorites } from '@/lib/useFavorites';
 
 // Detailansicht enthält MapLibre (3D) → nur clientseitig laden.
@@ -35,8 +36,19 @@ function DestinationDetail() {
   const [d, setD] = useState<PDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const user = useAuthStore((s) => s.user);
   const originKey = searchParams.get('from') ?? `${searchParams.get('fromlat') ?? ''},${searchParams.get('fromlng') ?? ''}`;
-  const origin = useMemo(() => parseOrigin(new URLSearchParams(searchParams.toString())), [originKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const linkOrigin = useMemo(() => parseOrigin(new URLSearchParams(searchParams.toString())), [originKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Ohne Startort im Link (geteilter Link, Favoriten, Listen): Startort der letzten Suche,
+  // sonst der gespeicherte Heimatort. undefined = noch nicht nachgesehen (erst im Browser möglich).
+  const [fallback, setFallback] = useState<{ origin: { lat: number; lng: number }; label: string | null } | null | undefined>(undefined);
+  useEffect(() => {
+    if (linkOrigin) return;
+    const home = user?.homeLocation ? { origin: user.homeLocation, label: user.homeLabel ?? null } : null;
+    setFallback(savedOrigin() ?? home);
+  }, [linkOrigin, user?.homeLocation, user?.homeLabel]);
+  const origin = linkOrigin ?? fallback?.origin ?? null;
+  const ready = linkOrigin != null || fallback !== undefined;
   const routeParam = Number(searchParams.get('route'));
   const initialRouteId = Number.isInteger(routeParam) && routeParam > 0 ? routeParam : null;
   // Planung aus der Suche (Datum, Startstunde); ohne Angabe wählt der Server.
@@ -51,7 +63,7 @@ function DestinationDetail() {
   );
 
   useEffect(() => {
-    if (!params?.id) return;
+    if (!params?.id || !ready) return;
     const ctrl = new AbortController();
     setError(null);
     setD(null);
@@ -62,7 +74,7 @@ function DestinationDetail() {
         if (!ctrl.signal.aborted) setError(e instanceof ApiError ? e.message : 'Laden fehlgeschlagen.');
       });
     return () => ctrl.abort();
-  }, [params?.id, origin, plan]);
+  }, [params?.id, origin?.lat, origin?.lng, plan, ready]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (error) {
     return (
@@ -91,7 +103,7 @@ function DestinationDetail() {
       onFav={toggle}
       onBack={() => router.push('/')}
       origin={origin}
-      originLabel={searchParams.get('label')}
+      originLabel={linkOrigin ? searchParams.get('label') : (fallback?.label ?? null)}
       initialRouteId={initialRouteId}
     />
   );

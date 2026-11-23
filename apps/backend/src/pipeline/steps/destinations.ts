@@ -601,7 +601,7 @@ export async function importDestinations(): Promise<Record<string, unknown>> {
       `;
     }
 
-    // Zusammengeführte Altziele: Favoriten zum verbleibenden Ziel umhängen.
+    // Zusammengeführte Altziele: Favoriten und Listeneinträge zum verbleibenden Ziel umhängen.
     for (const { loser, winner } of absorbed) {
       await tx`
         INSERT INTO favorites (user_id, destination_id, created_at)
@@ -609,6 +609,12 @@ export async function importDestinations(): Promise<Record<string, unknown>> {
         ON CONFLICT DO NOTHING
       `;
       await tx`DELETE FROM favorites WHERE destination_id = ${loser}`;
+      await tx`
+        INSERT INTO list_items (list_id, destination_id, added_by, added_at)
+        SELECT list_id, ${winner}, added_by, added_at FROM list_items WHERE destination_id = ${loser}
+        ON CONFLICT DO NOTHING
+      `;
+      await tx`DELETE FROM list_items WHERE destination_id = ${loser}`;
     }
 
     for (const batch of chunks(sourceRows, 5000)) {

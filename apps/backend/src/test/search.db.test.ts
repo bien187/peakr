@@ -10,6 +10,7 @@
 import { searchInputSchema, type SearchResponse } from '@ch-alpineroute/shared';
 import { afterAll, describe, expect, it } from 'vitest';
 import { queryClient } from '../db';
+import { planDates } from '../availability/time';
 import { search } from '../services/search.service';
 import { getDestinationDetail } from '../repositories/destination.repo';
 
@@ -174,8 +175,10 @@ describe('Datenbestand', () => {
 
 describe('Verfügbarkeit mit echten Daten', () => {
   it('bewertet jeden Treffer und blendet nur nach Regel aus', async () => {
+    // Feste Planung (morgen 8 Uhr): mit «jetzt» wäre abends und nachts kaum etwas verfügbar.
+    const plan = { date: planDates(new Date())[1], startHour: 8 };
     const res = await search(
-      searchInputSchema.parse({ origin: { lat: 47.3769, lng: 8.5417 }, mode: 'hike', maxMinutes: 90, toleranceMinutes: 10 }),
+      searchInputSchema.parse({ origin: { lat: 47.3769, lng: 8.5417 }, mode: 'hike', maxMinutes: 90, toleranceMinutes: 10, plan }),
     );
     expect(res.items.length).toBeGreaterThan(0);
     for (const item of res.items) {
@@ -184,7 +187,7 @@ describe('Verfügbarkeit mit echten Daten', () => {
       expect(item.availability?.checks.map((c) => c.kind)).toEqual(['closure', 'avalanche', 'snow', 'weather', 'daylight']);
     }
     const all = await search(
-      searchInputSchema.parse({ origin: { lat: 47.3769, lng: 8.5417 }, mode: 'hike', maxMinutes: 90, toleranceMinutes: 10, includeUncertain: true }),
+      searchInputSchema.parse({ origin: { lat: 47.3769, lng: 8.5417 }, mode: 'hike', maxMinutes: 90, toleranceMinutes: 10, includeUncertain: true, plan }),
     );
     expect(all.totals.results + all.totals.suggestions).toBeGreaterThanOrEqual(res.totals.results + res.totals.suggestions);
     expect(all.totals.hiddenUncertain).toBe(0);

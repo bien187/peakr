@@ -24,7 +24,7 @@ import {
   type RouteClosure,
   StationIndex,
 } from './checks';
-import { zurichToUtc } from './time';
+import { planStart, zurichToUtc } from './time';
 
 /** Alle zeitabhängigen Grundlagen der Prüfung (aus der Datenbank geladen). */
 export interface ConditionsContext {
@@ -96,13 +96,19 @@ export interface HikeRouteFacts {
   officialShare: number;
   weatherCell: string | null;
   slfRegionId: string | null;
+  /** Fahrzeit vom Startort zum Ausgangspunkt; ohne Startort 0. */
+  driveMinutes?: number | null;
 }
 
-/** Sommerroute: Sperrungen, Schnee, Wetter zur Tourzeit, Lawinen, Tageslicht. */
+/**
+ * Sommerroute: Sperrungen, Schnee, Wetter zur Tourzeit, Lawinen, Tageslicht.
+ * Die Planung nennt die Abfahrt zu Hause; die Wanderung beginnt nach der Hinfahrt.
+ */
 export function evaluateHikeRoute(r: HikeRouteFacts, c: ConditionsContext, plan: TourPlan, now: Date): Availability {
   const total = r.durationUpMin + r.durationDownMin;
-  const daylight = assessDaylight({ lat: r.lat, lng: r.lng }, plan, total);
-  const from = new Date(Math.max(zurichToUtc(plan.date, plan.startHour).getTime(), now.getTime()));
+  const drive = r.driveMinutes ?? 0;
+  const daylight = assessDaylight({ lat: r.lat, lng: r.lng }, plan, total, drive);
+  const from = new Date(Math.max(planStart(plan).getTime() + drive * 60_000, now.getTime()));
   const to = daylight.endsAt && daylight.endsAt > from ? daylight.endsAt : new Date(from.getTime() + total * 60_000);
   const checks = [
     assessClosures(c.closures.get(`${r.destinationId}:${r.rank}`), r.officialShare, c.closuresAt, now),

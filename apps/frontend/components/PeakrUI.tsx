@@ -12,6 +12,7 @@ import {
   fmtDuration,
   KIND_META,
   planLabel,
+  tourTimes,
   reasonSummary,
   scoreColor,
   SORTS,
@@ -629,7 +630,9 @@ export function ResultsPanel({
         <div>
           <p className="panel-eyebrow">
             {mode === 'ski' ? 'Skigebiete' : 'Wanderziele'} · ab {originLabel}
-            {meta?.plan ? ` · ${planLabel(mode === 'ski' ? { ...meta.plan, startHour: 9 } : meta.plan)}` : ''}
+            {meta?.plan
+              ? ` · ${mode === 'ski' ? planLabel({ ...meta.plan, startHour: 9, startMinute: 0 }) : tourTimes(meta.plan, { driveMin: null, upMin: 0, downMin: 0 }, new Date()).isNow ? 'jetzt' : planLabel(meta.plan)}`
+              : ''}
           </p>
           <h2 className="panel-title">
             {loading && !totals ? '…' : nf.format(count)} {count === 1 ? 'Ziel' : 'Ziele'}{' '}

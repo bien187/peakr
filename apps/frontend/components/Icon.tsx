@@ -59,6 +59,17 @@ import {
   Waves,
   Wind,
   X,
+  ArrowDown,
+  ArrowUp,
+  DoorOpen,
+  Link,
+  List,
+  ListPlus,
+  Pencil,
+  Share2,
+  Trash2,
+  UserPlus,
+  Users,
   type LucideIcon,
 } from 'lucide-react';
 import type { CSSProperties } from 'react';
@@ -126,6 +137,17 @@ const ICONS: Record<string, LucideIcon> = {
   Waves,
   Wind,
   X,
+  ArrowDown,
+  ArrowUp,
+  DoorOpen,
+  Link,
+  List,
+  ListPlus,
+  Pencil,
+  Share2,
+  Trash2,
+  UserPlus,
+  Users,
 };
 
 export function Icon({

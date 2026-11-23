@@ -26,7 +26,7 @@ export interface PParams {
   minElev: number | null;
   /** Mindestschneehöhe am Berg in cm (Ski); null = egal. */
   minSnow: number | null;
-  /** Planungstag relativ zu heute (0–2); null = automatisch (heute bzw. ab 14 Uhr morgen). */
+  /** Planungstag relativ zu heute (0–2); null = jetzt (Ski: heutiger bzw. ab 14 Uhr morgiger Skitag). */
   planDay: number | null;
   /** Startstunde der Tour (Wandern). */
   planStart: number;
@@ -37,7 +37,7 @@ export interface PParams {
 }
 
 const PLAN_DAYS: { value: number | null; label: string }[] = [
-  { value: null, label: 'Automatisch' },
+  { value: null, label: 'Jetzt' },
   { value: 0, label: 'Heute' },
   { value: 1, label: 'Morgen' },
   { value: 2, label: 'Übermorgen' },
@@ -335,7 +335,7 @@ export function SearchControls({
           )}
           <p className="twk-hint" style={{ marginTop: 8 }}>
             {isHike
-              ? 'Geprüft werden Sperrungen, Schnee, Wetter zur Tourzeit, Lawinenbulletin und Tageslicht. «Automatisch»: heute ab der nächsten Stunde, ab 14 Uhr morgen ab 8 Uhr.'
+              ? 'Geprüft werden Sperrungen, Schnee, Wetter zur Tourzeit, Lawinenbulletin und Tageslicht – ab Abfahrt mit Hin- und Rückfahrt.'
               : 'Geprüft werden Betriebsstatus, Schnee, Wetter am Skitag und Lawinenbulletin.'}
           </p>
           <Toggle

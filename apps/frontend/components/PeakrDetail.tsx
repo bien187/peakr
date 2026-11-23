@@ -7,12 +7,16 @@ import { useSettings } from '@/lib/theme';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Icon } from './Icon';
+import { AddToListButton } from './Lists';
 import { AvailabilityBadge, AvalancheTag, WeatherChip } from './PeakrUI';
+import { ShareButton } from './Share';
+import { useMinuteClock } from '@/lib/useNow';
 import {
   classLabel,
   fetchForecast,
   fetchHourlyTemps,
   fmtAge,
+  fmtClock,
   fmtDate,
   fmtDrive,
   fmtDuration,
@@ -20,6 +24,7 @@ import {
   PISTE_LABEL,
   planLabel,
   PISTE_ORDER,
+  tourTimes,
   trailheadHint,
   trailheadLabel,
   weatherInfo,
@@ -31,7 +36,6 @@ import {
 import {
   AVAILABILITY_LABEL,
   CHECK_LABEL,
-  EVIDENCE_LABEL,
   routeGpx,
   routeGpxAppPath,
   routeGpxPath,
@@ -401,7 +405,7 @@ export function WeatherWindow({
           })}
         </div>
       )}
-      <p className="wx-pop-foot mono">Quelle: Open-Meteo · für die Tourenplanung MeteoSchweiz beachten</p>
+      <p className="wx-pop-foot mono">Quelle: Open-Meteo</p>
     </div>
   );
 }
@@ -521,68 +525,97 @@ const MEDIA_TABS: { value: MediaVariant; label: string; icon: string }[] = [
 
 /** Fahrzeit-Angabe mit ehrlichem Text, wenn sie fehlt. */
 function driveText(drive: DriveInfo | null, hasOrigin: boolean): { main: string; note: string | null } {
-  if (!hasOrigin || !drive) return { main: '–', note: 'Für die Fahrzeit einen Startort in der Suche wählen.' };
+  if (!hasOrigin || !drive) return { main: '–', note: 'Für die Fahrzeit einen Startort wählen.' };
   if (drive.minutes == null) {
     return {
       main: '–',
       note:
         drive.status === 'unavailable'
-          ? 'Fahrzeit derzeit nicht berechenbar (Strassennetz nicht geladen).'
-          : 'Vom Startort aus wurde keine Strassenverbindung gefunden. Es wird keine Fahrzeit geschätzt.',
+          ? 'Fahrzeit derzeit nicht berechenbar.'
+          : 'Keine Strassenverbindung vom Startort gefunden.',
     };
   }
   return {
     main: `${fmtDrive(drive.minutes)}${drive.distanceKm != null ? ` · ${nf.format(Math.round(drive.distanceKm))} km` : ''}`,
-    note: drive.status === 'partial' ? 'Die Strasse endet vor dem Ziel der Anreise (autofreier Ort) – das letzte Stück mit Bahn oder zu Fuss.' : null,
+    note: drive.status === 'partial' ? 'Autofreier Ort: das letzte Stück mit Bahn oder zu Fuss.' : null,
   };
 }
 
 const AV_DOT: Record<string, string> = { available: 'Check', uncertain: 'CircleHelp', unavailable: 'X' };
-const CONF_LABEL = { high: 'hoch', medium: 'mittel', low: 'gering' } as const;
-const CONF_HINT = {
-  high: 'amtliche Meldungen, Messungen und Berechnungen',
-  medium: 'Prognose oder Modellwerte beteiligt',
-  low: 'für mindestens eine Prüfung fehlen Daten',
-} as const;
 
-/** Verfügbarkeit mit allen Einzelprüfungen: Status, Begründung, Belegart, Quelle, Stand. */
-function AvailabilityCard({ a, isSki }: { a: Availability | null; isSki: boolean }) {
-  if (!a) {
+/**
+ * Ablauf der Tour ab jetzt bzw. ab der gewählten Abfahrt: Hinfahrt, Aufstieg,
+ * Abstieg, Rückfahrt und die Gesamtdauer. Läuft minütlich mit.
+ */
+function TourTimeline({ plan, route }: { plan: Availability['plan'] | null; route: PRoute }) {
+  const now = useMinuteClock();
+  const drive = route.drive?.minutes ?? null;
+  const t = tourTimes(plan, { driveMin: drive, upMin: route.minUp, downMin: route.minDown }, now);
+  const when = t.isNow ? `Tour jetzt ${fmtClock(t.start)} Uhr` : `Tour ${planLabel(plan)}`;
+  return (
+    <>
+      <p className="tour-head">
+        <b>{when}</b>
+        <span>
+          {drive != null ? 'zurück gegen' : 'zurück am Ausgangspunkt gegen'} <b>{fmtClock(t.back)} Uhr</b> ({fmtDuration(t.totalMin)})
+        </span>
+      </p>
+      <div className="tour-legs">
+        {t.driveThere != null && (
+          <span className="tour-leg">
+            <Icon name="Car" size={13} stroke={2} /> Hinfahrt <b>{fmtDuration(t.driveThere)}</b>
+          </span>
+        )}
+        <span className="tour-leg">
+          <Icon name="ArrowUp" size={13} stroke={2.2} /> Aufstieg <b>{fmtDuration(t.up)}</b>
+        </span>
+        <span className="tour-leg">
+          <Icon name="ArrowDown" size={13} stroke={2.2} /> Abstieg <b>{fmtDuration(t.down)}</b>
+        </span>
+        {t.driveBack != null && (
+          <span className="tour-leg">
+            <Icon name="Car" size={13} stroke={2} /> Rückfahrt <b>{fmtDuration(t.driveBack)}</b>
+          </span>
+        )}
+      </div>
+    </>
+  );
+}
+
+/** Verfügbarkeit mit den Einzelprüfungen und – beim Wandern – dem Ablauf der Tour. */
+function AvailabilityCard({ a, isSki, route }: { a: Availability | null; isSki: boolean; route: PRoute | null }) {
+  if (!a && !route) {
     return (
       <section className="detail-card av-card">
         <h2 className="detail-h2">Verfügbarkeit</h2>
         <p className="detail-note is-plain">
           <Icon name="CircleHelp" size={13} stroke={2} />
-          {isSki
-            ? 'Die Verfügbarkeit konnte nicht geprüft werden.'
-            : 'Ohne berechnete Route lässt sich die Verfügbarkeit nicht prüfen.'}
+          {isSki ? 'Verfügbarkeit nicht prüfbar.' : 'Ohne Route nicht prüfbar.'}
         </p>
       </section>
     );
   }
-  const plan = a.plan ? planLabel(a.plan) : null;
-  const back = a.plan?.endsAt ? new Intl.DateTimeFormat('de-CH', { timeZone: 'Europe/Zurich', hour: '2-digit', minute: '2-digit' }).format(new Date(a.plan.endsAt)) : null;
+  const plan = a?.plan ? planLabel(a.plan) : null;
   return (
     <section className="detail-card av-card">
       <h2 className="detail-h2">Verfügbarkeit</h2>
-      <div className="av-summary">
-        <AvailabilityBadge a={a} />
-        {plan && (
-          <span className="av-summary-plan">
-            {isSki ? `Skitag ${plan.replace(/ ab \d+ Uhr$/, '')} (9–16 Uhr)` : `Tour ${plan}${back ? `, zurück gegen ${back} Uhr` : ''}`}
-          </span>
-        )}
-      </div>
-      <ul className="av-list">
-        {a.checks.map((c) => (
-          <li key={c.kind} className={'av-item is-' + c.status}>
-            <span className="av-dot" aria-hidden>
-              <Icon name={AV_DOT[c.status]} size={13} stroke={2.6} />
-            </span>
-            <span className="av-item-head">
-              {CHECK_LABEL[c.kind]} <span className="av-item-state">{AVAILABILITY_LABEL[c.status]}</span>
-            </span>
-            <div>
+      {a && (
+        <div className="av-summary">
+          <AvailabilityBadge a={a} />
+          {isSki && plan && <span className="av-summary-plan">Skitag {plan.replace(/ ab [\d:]+ Uhr$/, '')} (9–16 Uhr)</span>}
+        </div>
+      )}
+      {!isSki && route && <TourTimeline plan={a?.plan ?? null} route={route} />}
+      {a && (
+        <ul className="av-list">
+          {a.checks.map((c) => (
+            <li key={c.kind} className={'av-item is-' + c.status}>
+              <span className="av-dot" aria-hidden>
+                <Icon name={AV_DOT[c.status]} size={13} stroke={2.6} />
+              </span>
+              <span className="av-item-head">
+                {CHECK_LABEL[c.kind]} <span className="av-item-state">{AVAILABILITY_LABEL[c.status]}</span>
+              </span>
               <p className="av-item-text">
                 {c.text}
                 {c.url && (
@@ -594,22 +627,37 @@ function AvailabilityCard({ a, isSki }: { a: Availability | null; isSki: boolean
                   </>
                 )}
               </p>
-              <p className="av-item-meta">
-                {EVIDENCE_LABEL[c.evidence]}
-                {c.source ? ` · ${c.source}` : ''}
-                {c.observedAt ? ` · Stand ${fmtAge(c.observedAt) ?? fmtDate(c.observedAt)}` : ''}
-              </p>
-            </div>
-          </li>
-        ))}
-      </ul>
-      <p className="detail-note">
-        <Icon name="Info" size={13} stroke={2} />
-        Vertrauen {CONF_LABEL[a.confidence]} ({CONF_HINT[a.confidence]}). Automatische Prüfung – massgebend sind Signalisation
-        vor Ort, das SLF-Bulletin und die Meldungen der Betreiber.
-      </p>
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   );
+}
+
+/** Kurzform der Quellenangaben (Lizenzen verlangen die Nennung, nicht mehr). */
+const SOURCE_SHORT: Record<string, string> = {
+  open_meteo: 'Open-Meteo',
+  osm: '© OpenStreetMap-Mitwirkende',
+  swissnames3d: '© swisstopo',
+  swisstlm3d_wanderwege: '© swisstopo',
+  terrain_tiles: 'Mapzen, Copernicus, NASA',
+};
+const CHECK_SOURCES: [RegExp, string][] = [
+  [/swisstopo|ASTRA|Wanderwege/, 'ASTRA, Schweizer Wanderwege'],
+  [/SLF/, 'SLF'],
+  [/MeteoSchweiz/, 'MeteoSchweiz'],
+  [/Open-Meteo/, 'Open-Meteo'],
+];
+
+function credits(d: PDetail): string[] {
+  const out = new Set<string>();
+  for (const s of d.sources) out.add(SOURCE_SHORT[s.id] ?? s.attribution ?? s.name);
+  const checks = [d.availability, ...d.routes.map((r) => r.src.availability)].flatMap((a) => a?.checks ?? []);
+  for (const c of checks) {
+    for (const [re, label] of CHECK_SOURCES) if (c.source && re.test(c.source)) out.add(label);
+  }
+  return [...out];
 }
 
 type Platform = 'ios' | 'android' | 'desktop';
@@ -647,8 +695,6 @@ function RouteExport({ d, route }: { d: PDetail; route: PRoute }) {
   const appUrl = env && env.platform !== 'desktop' ? swisstopoAppUrl(`${env.origin}${routeGpxAppPath(d.id, route.rank)}`) : null;
   const platform = appUrl ? env!.platform : 'desktop';
   const openHref = platform === 'android' ? swisstopoAndroidIntent(appUrl!, link.url) : platform === 'ios' ? appUrl! : link.url;
-  const withElevation = route.src.elevations?.some((z) => z != null) ?? false;
-  const places = route.src.waypoints?.length ?? 0;
 
   const download = () => {
     setError(null);
@@ -694,23 +740,11 @@ function RouteExport({ d, route }: { d: PDetail; route: PRoute }) {
       </div>
       {platform === 'ios' && (
         <p className="route-export-alt">
-          Ohne swisstopo-App:{' '}
           <a href={link.url} target="_blank" rel="noopener noreferrer">
-            im Browser öffnen
+            Im Browser öffnen
           </a>
         </p>
       )}
-      <p className="route-export-hint">
-        {platform === 'android'
-          ? 'Öffnet die Route in der swisstopo-App – ist sie nicht installiert, auf der swisstopo-Webkarte mit Landeskarte und Wanderwegnetz.'
-          : platform === 'ios'
-            ? 'Öffnet die Route in der swisstopo-App. Ist sie nicht installiert, bietet swisstopo die App an – oder oben «im Browser öffnen» für die Webkarte.'
-            : link.withRoute
-              ? 'Swisstopo zeigt die Route auf der Landeskarte mit dem Wanderwegnetz.'
-              : 'Swisstopo öffnet den Kartenausschnitt der Route. Die Route selbst lädt swisstopo nur von der veröffentlichten Peakr-Adresse – hier die GPX-Datei im Viewer über «Import» hinzufügen.'}{' '}
-        GPX 1.1 mit Track, Start, Ziel{places > 0 ? ` und ${places} ${places === 1 ? 'Ort' : 'Orten'} am Weg` : ''}
-        {withElevation ? ', mit Höhen.' : ' – ohne Höhenangaben (werden mit dem nächsten Datenaufbau ergänzt).'}
-      </p>
       {error && (
         <p className="detail-note is-plain route-export-err" role="alert">
           <Icon name="CircleAlert" size={13} stroke={2} /> {error}
@@ -828,6 +862,10 @@ export function DetailView({
     line: route?.line ?? null,
   };
   const pisteTotal = Object.values(d.pisteKmByDifficulty).reduce((a, b) => a + b, 0);
+  // Geteilter Link führt direkt zu diesem Ziel; Startort und Planung wählt, wer ihn öffnet.
+  const [shareUrl, setShareUrl] = useState('');
+  useEffect(() => setShareUrl(`${window.location.origin}/destinations/${d.id}`), [d.id]);
+  const shareText = `${d.name}${d.topM ? ` (${nf.format(d.topM)} m)` : ''} auf Peakr`;
 
   return (
     <div className="detail">
@@ -872,6 +910,7 @@ export function DetailView({
             <Icon name="Star" size={16} stroke={2} style={{ fill: isFav ? 'currentColor' : 'none' } as CSSProperties} />
             {isFav ? 'Gemerkt' : 'Merken'}
           </button>
+          <AddToListButton destinationId={d.id} />
           <div style={{ position: 'relative' }}>
             <button type="button" className="btn btn-soft" onClick={() => setMapsOpen((v) => !v)} aria-expanded={mapsOpen}>
               <Icon name="Navigation" size={16} stroke={2} /> {trailhead ? 'Navigation zum Ausgangspunkt' : 'In Karten öffnen'}
@@ -893,16 +932,7 @@ export function DetailView({
               </>
             )}
           </div>
-          {d.wikipedia && (
-            <a
-              className="btn btn-soft"
-              href={`https://de.wikipedia.org/wiki/${encodeURIComponent(d.wikipedia.replace(/ /g, '_'))}`}
-              target="_blank"
-              rel="noreferrer"
-            >
-              <Icon name="ExternalLink" size={15} stroke={2} /> Wikipedia
-            </a>
-          )}
+          <ShareButton url={shareUrl} title={`${d.name} – Peakr`} text={shareText} />
         </div>
 
         <div className="facts">
@@ -932,7 +962,7 @@ export function DetailView({
           )}
         </div>
 
-        <AvailabilityCard a={isSki ? d.availability : (route?.src.availability ?? null)} isSki={isSki} />
+        <AvailabilityCard a={isSki ? d.availability : (route?.src.availability ?? null)} isSki={isSki} route={isSki ? null : route} />
 
         <section className="detail-card">
           <h2 className="detail-h2">Anreise mit dem Auto</h2>
@@ -964,16 +994,14 @@ export function DetailView({
           ) : (
             <p className="detail-note is-plain">
               <Icon name="CircleAlert" size={13} stroke={2} />
-              {isSki
-                ? 'Für dieses Skigebiet ist keine Talstation mit Strassenanschluss bekannt. Es wird keine Fahrzeit angegeben.'
-                : 'Ohne bekannte Wanderroute gibt es keinen Ausgangspunkt – und damit keine Fahrzeit.'}
+              {isSki ? 'Keine Talstation mit Strassenanschluss bekannt.' : 'Ohne Wanderroute kein Ausgangspunkt.'}
             </p>
           )}
         </section>
 
         {!isSki && (
           <section className="detail-card">
-            <h2 className="detail-h2">Wanderroute{d.routes.length > 1 ? ` · ${d.routes.length} Varianten` : ''}</h2>
+            <h2 className="detail-h2">Wanderroute</h2>
             {route ? (
               <>
                 <div className="route-list">
@@ -1003,22 +1031,14 @@ export function DetailView({
                 {route.endGapM > 60 && (
                   <p className="detail-note">
                     <Icon name="Info" size={13} stroke={2} />
-                    Der erfasste Weg endet rund {nf.format(Math.round(route.endGapM / 10) * 10)} m vor dem Zielpunkt. Das
-                    letzte Stück ist im Wegnetz nicht verzeichnet.
+                    Letzte {nf.format(Math.round(route.endGapM / 10) * 10)} m ohne erfassten Weg.
                   </p>
                 )}
-                <p className="detail-note">
-                  <Icon name="TriangleAlert" size={13} stroke={2} />
-                  Aus dem Wegnetz berechnet (swisstopo-Wanderwege und OpenStreetMap), nicht begangen. Gehzeit nach DIN 33466
-                  ohne Pausen. Verhältnisse, Sperrungen und Ausrüstung selbst prüfen.
-                </p>
               </>
             ) : (
               <p className="detail-note is-plain">
                 <Icon name="CircleAlert" size={13} stroke={2} />
-                {d.routeStatus === 'unrouted'
-                  ? 'Für dieses Ziel wurde noch keine Route berechnet.'
-                  : 'Zu diesem Ziel wurde im Wegnetz keine durchgehende Wanderroute ab einem Parkplatz gefunden. Peakr zeigt deshalb keine Route – das Ziel selbst existiert.'}
+                {d.routeStatus === 'unrouted' ? 'Noch keine Route berechnet.' : 'Keine durchgehende Wanderroute ab einem Parkplatz gefunden.'}
               </p>
             )}
           </section>
@@ -1053,13 +1073,6 @@ export function DetailView({
                 })}
               </div>
             )}
-            <p className="detail-note">
-              <Icon name="Info" size={13} stroke={2} />
-              Anlagen und Pistenlängen stammen aus OpenStreetMap und sind Bestandsdaten.{' '}
-              {d.liftsOpen == null
-                ? 'Für dieses Gebiet gibt es keine frei nutzbare Live-Quelle zum Betriebsstatus – er wird deshalb nicht angezeigt.'
-                : 'Der Betriebsstatus stammt vom Betreiber.'}
-            </p>
           </section>
         )}
 
@@ -1090,12 +1103,6 @@ export function DetailView({
               <WeatherWindow d={d} onClose={() => setWxOpen(false)} preloadDays={wxDays} preloadErr={wxErr} />
             </>
           )}
-          {(isSki || d.avalanche != null) && (
-            <p className="detail-note">
-              <Icon name="TriangleAlert" size={13} stroke={2} />
-              Die Lawinenstufe ist die höchste Stufe der SLF-Warnregion und ersetzt nicht das Bulletin auf whiterisk.ch.
-            </p>
-          )}
         </section>
 
         <section className="detail-card">
@@ -1103,25 +1110,7 @@ export function DetailView({
           {isSki ? <Sparkline pts={d.history.map((h) => h.snow)} unit=" cm" /> : <TempChart pts={wxHours} />}
         </section>
 
-        <section className="detail-card">
-          <h2 className="detail-h2">Datenquellen</h2>
-          <ul className="src-list">
-            {d.sources.map((s) => (
-              <li key={s.id}>
-                <span className="src-name">{s.name}</span>
-                <span className="src-meta">
-                  {s.attribution ?? ''}
-                  {s.version ? ` · Stand ${fmtDate(s.version)}` : ''}
-                </span>
-              </li>
-            ))}
-          </ul>
-          <p className="detail-note">
-            <Icon name="Info" size={13} stroke={2} />
-            {d.quality != null ? `Datenlage ${d.quality}/100 (Vollständigkeit der Angaben). ` : ''}
-            {d.updatedAt ? `Stammdaten zuletzt aktualisiert am ${fmtDate(d.updatedAt)}.` : ''}
-          </p>
-        </section>
+        <p className="detail-credits">Daten: {credits(d).join(' · ')}</p>
       </div>
     </div>
   );

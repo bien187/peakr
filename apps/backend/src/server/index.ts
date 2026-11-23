@@ -6,8 +6,12 @@
  * Favoriten; lokale Entwicklung und Produktion verhalten sich gleich.
  */
 import {
+  addListItemSchema,
+  createListSchema,
+  inviteTokenSchema,
   isInSwitzerland,
   latLngSchema,
+  updateListSchema,
   loginInputSchema,
   registerInputSchema,
   routeGpx,
@@ -22,6 +26,9 @@ import {
   type GeocodeResult,
   type HealthResponse,
   type LatLng,
+  type ListDetail,
+  type ListInvite,
+  type ListSummary,
   type PublicUser,
   type SearchResponse,
 } from '@ch-alpineroute/shared';
@@ -33,7 +40,8 @@ import { getDestinationDetail } from '../repositories/destination.repo';
 import { listRadarFrames, parseStamp, radarCoordinates, radarDataPng, radarPng, stampOf } from '../services/radar.service';
 import { addFavorite, listFavorites, removeFavorite } from '../repositories/favorites.repo';
 import { getPublicUser, updateProfile } from '../repositories/user.repo';
-import { login, rateLimit, register, requireUser } from '../services/auth.service';
+import { login, rateLimit, register, requireUser, verifyToken } from '../services/auth.service';
+import * as lists from '../services/lists.service';
 import { destinationDetail } from '../services/destination.service';
 import { geocode } from '../services/geocode.service';
 import { health } from '../services/health.service';
@@ -215,6 +223,72 @@ export async function apiRemoveFavorite(authorization: string | null, destinatio
   const { sub } = await requireUser(authorization);
   await removeFavorite(sub, validate(uuid, destinationId));
   return { message: 'Favorit entfernt.' };
+}
+
+// ── Geteilte Listen ──────────────────────────────────────────────────────────
+
+/** Angemeldete Person, falls ein gültiges Token mitkommt – sonst null (kein 401). */
+async function optionalUser(authorization: string | null): Promise<string | null> {
+  const token = authorization?.startsWith('Bearer ') ? authorization.slice(7).trim() : '';
+  if (!token) return null;
+  try {
+    return (await verifyToken(token)).sub;
+  } catch {
+    return null;
+  }
+}
+
+/** Eigene Listen; mit `destination` zusätzlich, ob dieses Ziel jeweils schon enthalten ist. */
+export async function apiLists(authorization: string | null, destinationId?: string | null): Promise<ListSummary[]> {
+  const { sub } = await requireUser(authorization);
+  return lists.myLists(sub, destinationId ? validate(uuid, destinationId) : undefined);
+}
+
+export async function apiCreateList(authorization: string | null, body: unknown, clientIp: string): Promise<ListDetail> {
+  const { sub } = await requireUser(authorization);
+  const input = validate(createListSchema, body);
+  await rateLimit('list-create', clientIp, 30, 3600);
+  return lists.newList(sub, input);
+}
+
+export async function apiList(authorization: string | null, id: string): Promise<ListDetail> {
+  const { sub } = await requireUser(authorization);
+  return lists.listDetail(validate(uuid, id), sub);
+}
+
+export async function apiUpdateList(authorization: string | null, id: string, body: unknown): Promise<ListDetail> {
+  const { sub } = await requireUser(authorization);
+  return lists.rename(validate(uuid, id), sub, validate(updateListSchema, body).name);
+}
+
+/** Besitzer löscht die Liste, Mitglieder verlassen sie. */
+export async function apiDeleteList(authorization: string | null, id: string): Promise<{ message: string }> {
+  const { sub } = await requireUser(authorization);
+  return lists.removeOrLeave(validate(uuid, id), sub);
+}
+
+export async function apiAddListItem(authorization: string | null, id: string, body: unknown): Promise<{ message: string }> {
+  const { sub } = await requireUser(authorization);
+  return lists.addItem(validate(uuid, id), sub, validate(addListItemSchema, body).destinationId);
+}
+
+export async function apiRemoveListItem(authorization: string | null, id: string, destinationId: string): Promise<{ message: string }> {
+  const { sub } = await requireUser(authorization);
+  return lists.removeItem(validate(uuid, id), sub, validate(uuid, destinationId));
+}
+
+/** Vorschau einer Einladung – auch ohne Anmeldung, damit der Link zeigt, worum es geht. */
+export async function apiListInvite(authorization: string | null, token: string, clientIp: string): Promise<ListInvite> {
+  const valid = validate(inviteTokenSchema, token);
+  await rateLimit('list-invite', clientIp, 60, 600);
+  return lists.invite(valid, await optionalUser(authorization));
+}
+
+export async function apiJoinList(authorization: string | null, token: string, clientIp: string): Promise<{ id: string }> {
+  const { sub } = await requireUser(authorization);
+  const valid = validate(inviteTokenSchema, token);
+  await rateLimit('list-invite', clientIp, 60, 600);
+  return lists.join(valid, sub);
 }
 
 export async function apiHealth(): Promise<HealthResponse> {

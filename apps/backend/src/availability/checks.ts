@@ -8,10 +8,10 @@
  *  - Prognosen und Modellwerte sind als solche gekennzeichnet (evidence).
  *  - Schwellen stehen als Konstanten oben und sind in docs/VERFUEGBARKEIT_UND_WETTER.md beschrieben.
  */
-import type { AvailabilityCheck, AvailabilityStatus } from '@ch-alpineroute/shared';
+import type { AvailabilityCheck, AvailabilityStatus, TourPlan } from '@ch-alpineroute/shared';
 import { haversineM } from '../geo/lv95';
 import { sunTimes } from './sun';
-import { hhmm, zurichParts, zurichToUtc } from './time';
+import { hhmm, planStart, zurichParts } from './time';
 
 // ── Schwellen ────────────────────────────────────────────────────────────────
 
@@ -416,21 +416,23 @@ export interface DaylightResult {
 }
 
 /**
- * Hin- und Rückweg (DIN 33466, ohne Pausen) müssen vor dem Ende der bürgerlichen
- * Dämmerung abgeschlossen sein. Beginnt die Tour vor der Morgendämmerung, zählt
+ * Auf- und Abstieg (DIN 33466, ohne Pausen) müssen vor dem Ende der bürgerlichen
+ * Dämmerung abgeschlossen sein. Die Wanderung beginnt nach der Hinfahrt
+ * (`driveMinutes`, ab der geplanten Abfahrt); vor der Morgendämmerung zählt
  * der Start ab Dämmerungsbeginn.
  */
 export function assessDaylight(
   dest: { lat: number; lng: number },
-  plan: { date: string; startHour: number },
+  plan: TourPlan,
   totalMinutes: number,
+  driveMinutes = 0,
 ): DaylightResult {
   const sun = sunTimes(plan.date, dest.lat, dest.lng);
   if (!sun.sunset || !sun.dusk || !sun.dawn) {
     return { check: check('daylight', 'uncertain', 'Sonnenzeiten nicht berechenbar.', 'none', null, null), endsAt: null };
   }
-  const planned = zurichToUtc(plan.date, plan.startHour);
-  const start = new Date(Math.max(planned.getTime(), sun.dawn.getTime()));
+  const atTrailhead = planStart(plan).getTime() + driveMinutes * 60_000;
+  const start = new Date(Math.max(atTrailhead, sun.dawn.getTime()));
   const endsAt = new Date(start.getTime() + totalMinutes * 60_000);
   const daylightMin = (sun.dusk.getTime() - sun.dawn.getTime()) / 60_000;
   const info = `Sonnenuntergang ${hhmm(sun.sunset)} Uhr`;
@@ -439,15 +441,15 @@ export function assessDaylight(
     endsAt,
   });
   if (totalMinutes > daylightMin) {
-    return say('unavailable', `Hin- und Rückweg (${Math.round(totalMinutes / 60)} h) dauern länger als das Tageslicht (${Math.round(daylightMin / 60)} h).`);
+    return say('unavailable', `Auf- und Abstieg (${Math.round(totalMinutes / 60)} h) dauern länger als das Tageslicht (${Math.round(daylightMin / 60)} h).`);
   }
   if (endsAt > sun.dusk) {
-    return say('unavailable', `Rückkehr erst gegen ${hhmm(endsAt)} Uhr – nach Einbruch der Dunkelheit (${info}). Früher starten.`);
+    return say('unavailable', `Zurück am Ausgangspunkt erst gegen ${hhmm(endsAt)} Uhr – nach Einbruch der Dunkelheit (${info}).`);
   }
   if (endsAt > sun.sunset) {
-    return say('uncertain', `Rückkehr gegen ${hhmm(endsAt)} Uhr, in der Dämmerung (${info}).`);
+    return say('uncertain', `Zurück am Ausgangspunkt gegen ${hhmm(endsAt)} Uhr, in der Dämmerung (${info}).`);
   }
-  return say('available', `Rückkehr gegen ${hhmm(endsAt)} Uhr (ohne Pausen), ${info}.`);
+  return say('available', `Zurück am Ausgangspunkt gegen ${hhmm(endsAt)} Uhr, ${info}.`);
 }
 
 // ── Skigebiet: Betrieb und Schnee ────────────────────────────────────────────

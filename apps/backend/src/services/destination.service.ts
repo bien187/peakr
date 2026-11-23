@@ -21,8 +21,7 @@ export async function destinationDetail(id: string, origin?: LatLng, wantedPlan?
   const found = await getDestinationDetail(id);
   if (!found) return null;
   const { drivePoints } = found;
-  const detail = await withAvailability(found.detail, found.weatherCell, wantedPlan);
-  if (!origin) return detail;
+  if (!origin) return withAvailability(found.detail, found.weatherCell, wantedPlan);
 
   const drive = computeDriveContext(origin, DETAIL_MAX_MINUTES);
   const none = (status: DriveInfo['status']): DriveInfo => ({ minutes: null, distanceKm: null, status });
@@ -39,11 +38,13 @@ export async function destinationDetail(id: string, origin?: LatLng, wantedPlan?
     };
   };
 
-  return {
-    ...detail,
-    routes: detail.routes.map((r) => ({ ...r, drive: driveFor(r.trailhead.id, null) })),
-    accessDrive: detail.access ? driveFor(detail.access.id, detail.access.roadGapM) : null,
+  // Erst die Fahrzeit: die Wanderung beginnt nach der Hinfahrt (Tageslicht, Wetter zur Tourzeit).
+  const withDrive: DestinationDetail = {
+    ...found.detail,
+    routes: found.detail.routes.map((r) => ({ ...r, drive: driveFor(r.trailhead.id, null) })),
+    accessDrive: found.detail.access ? driveFor(found.detail.access.id, found.detail.access.roadGapM) : null,
   };
+  return withAvailability(withDrive, found.weatherCell, wantedPlan);
 }
 
 /**
@@ -53,7 +54,7 @@ export async function destinationDetail(id: string, origin?: LatLng, wantedPlan?
 async function withAvailability(detail: DestinationDetail, weatherCell: string | null, wanted?: TourPlan): Promise<DestinationDetail> {
   try {
     const now = new Date();
-    const plan = resolvePlan(wanted, now);
+    const plan = resolvePlan(wanted, now, detail.type === 'ski_resort' ? 'ski' : 'hike');
     const { conditions } = await getConditions();
     if (detail.type === 'ski_resort') {
       const live = detail.live;
@@ -78,6 +79,7 @@ async function withAvailability(detail: DestinationDetail, weatherCell: string |
             destinationId: detail.id, rank: r.rank, lat: detail.location.lat, lng: detail.location.lng,
             minElevM: r.minElevM, maxElevM: r.maxElevM ?? detail.elevationTopM, durationUpMin: r.durationUpMin,
             durationDownMin: r.durationDownMin, officialShare: r.officialShare, weatherCell, slfRegionId: detail.slfRegionId,
+            driveMinutes: r.drive?.minutes ?? null,
           },
           conditions, plan, now,
         ),

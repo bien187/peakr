@@ -13,6 +13,7 @@ import {
   adaptResult,
   DEFAULT_ORIGIN,
   HIKE_KINDS,
+  PARAMS_KEY,
   planDate,
   SAC,
   type MapSelection,
@@ -30,7 +31,6 @@ const PeakrMap = dynamic(() => import('@/components/PeakrMap').then((m) => m.Pea
   loading: () => <div className="map-wrap" />,
 });
 
-const PARAMS_KEY = 'peakr-params-v2';
 const PAGE_SIZE = 60;
 
 const DEFAULT_PARAMS: PParams = {
@@ -95,7 +95,7 @@ function toRequest(p: PParams, origin: LatLng, sort: SortKey): SearchRequest {
     includeUnrouted: hike && p.includeUnrouted,
     minElevationM: p.minElev ?? undefined,
     minSnowCm: !hike && p.minSnow != null ? p.minSnow : undefined,
-    // Ohne Angabe wählt der Server (heute ab der nächsten Stunde, nachmittags morgen).
+    // Ohne Angabe wählt der Server: Wandern ab jetzt, Ski der heutige bzw. ab 14 Uhr der morgige Skitag.
     plan: p.planDay != null ? { date: planDate(p.planDay), startHour: hike ? p.planStart : 9 } : undefined,
     includeUncertain: p.includeUncertain,
     includeUnavailable: p.includeUnavailable,
@@ -342,15 +342,14 @@ export default function HomePage() {
       const q = new URLSearchParams({ from: `${originPt.lat.toFixed(5)},${originPt.lng.toFixed(5)}` });
       if (params.originLabel) q.set('label', params.originLabel);
       if (card?.hike) q.set('route', String(card.hike.routeId));
-      // Verfügbarkeit in der Detailansicht für dieselbe Planung wie in der Suche.
-      const plan = card?.availability?.plan ?? meta?.plan ?? null;
-      if (plan) {
-        q.set('date', plan.date);
-        q.set('start', String(plan.startHour));
+      // Gewählter Tag bzw. Start gilt auch in der Detailansicht; ohne Wahl beginnt die Tour dort jetzt.
+      if (params.planDay != null) {
+        q.set('date', planDate(params.planDay));
+        q.set('start', String(params.mode === 'hike' ? params.planStart : 9));
       }
       router.push(`/destinations/${id}?${q.toString()}`);
     },
-    [router, originPt.lat, originPt.lng, params.originLabel, pinned, meta],
+    [router, originPt.lat, originPt.lng, params.originLabel, params.planDay, params.planStart, params.mode, pinned],
   );
 
   return (

@@ -361,7 +361,7 @@ export function assembleHike(
     const drive = driveOf(row);
     // Ohne berechnete Strassenroute zählt eine Variante nicht – keine Schätzung.
     if (!drive || round1(drive.minutes) > limit) continue;
-    const availability = av ? evaluateHikeRoute(routeFacts(row), av.conditions, av.plan, av.now) : null;
+    const availability = av ? evaluateHikeRoute({ ...routeFacts(row), driveMinutes: drive.minutes }, av.conditions, av.plan, av.now) : null;
     const list = byDest.get(row.id);
     if (list) list.push({ row, drive, availability });
     else byDest.set(row.id, [{ row, drive, availability }]);
@@ -572,7 +572,7 @@ export function searchCacheKey(input: SearchInput, dataVersion: string | null, p
     [...(input.kinds ?? [])].sort(), input.maxSac ?? null, input.includeUnknownSac, input.maxHikeMinutes ?? null,
     input.includeUnrouted, input.minElevationM ?? null, input.minSnowCm ?? null, dataVersion,
     // Verfügbarkeit hängt von Planung und Uhrzeit ab (Alter der Daten, Tageslicht).
-    plan ? `${plan.date}T${plan.startHour}` : null, input.includeUncertain, input.includeUnavailable ?? false, timeBucket,
+    plan ? `${plan.date}T${plan.startHour}:${plan.startMinute ?? 0}` : null, input.includeUncertain, input.includeUnavailable ?? false, timeBucket,
   ]);
 }
 
@@ -672,7 +672,7 @@ export async function search(input: SearchInput, opts: SearchOptions = {}): Prom
   const now = new Date();
   const index = getSearchIndex();
   const [live, cond] = await Promise.all([getLiveContext(input.mode === 'ski'), getConditions()]);
-  const plan = resolvePlan(input.plan, now);
+  const plan = resolvePlan(input.plan, now, input.mode);
   // Datenstand = Suchindex + letzter Worker-Lauf; ohne Live-Daten eigener Schlüssel,
   // damit eine Antwort ohne Wetter nicht nach der Störung weiter ausgeliefert wird.
   const dataVersion = index

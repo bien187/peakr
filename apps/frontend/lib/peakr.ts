@@ -556,11 +556,93 @@ export function planDate(offset: number, now = new Date()): string {
 
 const dayFmt = new Intl.DateTimeFormat('de-CH', { timeZone: 'UTC', weekday: 'short', day: 'numeric', month: 'numeric' });
 
-/** «heute ab 10 Uhr», «morgen ab 8 Uhr», «Mo 16.11. ab 8 Uhr». */
-export function planLabel(plan: { date: string; startHour: number } | null | undefined, now = new Date()): string | null {
+export interface PlanLike {
+  date: string;
+  startHour: number;
+  startMinute?: number;
+}
+
+/** «heute ab 10 Uhr», «morgen ab 8 Uhr», «Mo 16.11. ab 8:30 Uhr». */
+export function planLabel(plan: PlanLike | null | undefined, now = new Date()): string | null {
   if (!plan) return null;
   const day = plan.date === planDate(0, now) ? 'heute' : plan.date === planDate(1, now) ? 'morgen' : dayFmt.format(new Date(`${plan.date}T12:00:00Z`));
-  return `${day} ab ${plan.startHour} Uhr`;
+  const min = plan.startMinute ? `:${String(plan.startMinute).padStart(2, '0')}` : '';
+  return `${day} ab ${plan.startHour}${min} Uhr`;
+}
+
+const zurichClock = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Europe/Zurich', hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+});
+
+function zurichOffsetMin(at: number): number {
+  const p = Object.fromEntries(zurichClock.formatToParts(new Date(at)).map((x) => [x.type, x.value]));
+  const asUtc = Date.parse(`${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:00Z`);
+  return Math.round((asUtc - Math.floor(at / 60_000) * 60_000) / 60_000);
+}
+
+/** Zeitpunkt einer Schweizer Ortszeit (Sommer- und Winterzeit über Intl). */
+export function zurichTime(date: string, hour: number, minute = 0): Date {
+  const local = Date.parse(`${date}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00Z`);
+  let guess = local - zurichOffsetMin(local) * 60_000;
+  guess = local - zurichOffsetMin(guess) * 60_000;
+  return new Date(guess);
+}
+
+const hhmmFmt = new Intl.DateTimeFormat('de-CH', { timeZone: 'Europe/Zurich', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+
+/** «14:20» in Schweizer Zeit. */
+export function fmtClock(d: Date): string {
+  return hhmmFmt.format(d);
+}
+
+export interface TourTimes {
+  /** Die Tour beginnt jetzt (keine Planung oder Start bereits vorbei). */
+  isNow: boolean;
+  start: Date;
+  back: Date;
+  /** Einzelne Abschnitte in Minuten; Fahrten null ohne Startort. */
+  driveThere: number | null;
+  up: number;
+  down: number;
+  driveBack: number | null;
+  totalMin: number;
+}
+
+/**
+ * Ablauf der Tour: Hinfahrt, Aufstieg, Abstieg, Rückfahrt (ohne Pausen).
+ * Liegt die geplante Abfahrt nicht in der Zukunft, beginnt die Tour jetzt.
+ */
+export function tourTimes(
+  plan: PlanLike | null | undefined,
+  legs: { driveMin: number | null; upMin: number; downMin: number },
+  now: Date,
+): TourTimes {
+  const planned = plan ? zurichTime(plan.date, plan.startHour, plan.startMinute ?? 0) : null;
+  const isNow = !planned || planned.getTime() <= now.getTime();
+  const start = isNow ? now : planned;
+  const drive = legs.driveMin != null ? Math.round(legs.driveMin) : null;
+  const up = Math.round(legs.upMin);
+  const down = Math.round(legs.downMin);
+  const totalMin = (drive ?? 0) * 2 + up + down;
+  return {
+    isNow, start, back: new Date(start.getTime() + totalMin * 60_000),
+    driveThere: drive, up, down, driveBack: drive, totalMin,
+  };
+}
+
+/** Gespeicherte Suchparameter der Startseite (localStorage). */
+export const PARAMS_KEY = 'peakr-params-v2';
+
+/** Startort der letzten Suche – für Detailseiten, die ohne Startort geöffnet werden (geteilter Link, Favoriten). */
+export function savedOrigin(): { origin: LatLng; label: string | null } | null {
+  try {
+    const p = JSON.parse(localStorage.getItem(PARAMS_KEY) ?? 'null') as { origin?: LatLng; originLabel?: string } | null;
+    const o = p?.origin;
+    if (o && Number.isFinite(o.lat) && Number.isFinite(o.lng)) return { origin: { lat: o.lat, lng: o.lng }, label: p?.originLabel ?? null };
+  } catch {
+    /* ignore */
+  }
+  return null;
 }
 
 /** Kurzform der Gründe für ausgeblendete Ziele, z. B. «Schnee 250 · Tageslicht 78». */
