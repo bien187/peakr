@@ -71,24 +71,36 @@ export function planDates(now: Date): string[] {
   return [today, addDays(today, 1), addDays(today, 2)];
 }
 
-/** Ab dieser Stunde schlägt Peakr den nächsten Tag vor. */
-const LATE_HOUR = 14;
-const DEFAULT_START = 8;
+/** Skigebiete: ab dieser Stunde gilt der nächste Skitag. */
+const SKI_LATE_HOUR = 14;
+const SKI_START = 9;
+
+/** Jetzt, auf 5 Minuten abgerundet (hält den Suchcache einige Minuten gültig). */
+export function nowPlan(now: Date): TourPlan {
+  const z = zurichParts(now);
+  return { date: z.date, startHour: z.hour, startMinute: z.minute - (z.minute % 5) };
+}
 
 /**
- * Wirksame Planung: ohne Angabe heute ab der nächsten vollen Stunde (frühestens
- * 7 Uhr), am Nachmittag morgen ab 8 Uhr. Ein Start in der Vergangenheit wird auf
- * die nächste volle Stunde gesetzt; Tage ausserhalb der Prognose auf den Standard.
+ * Wirksame Planung. Wandern: ohne Angabe beginnt die Tour jetzt; ein Start in
+ * der Vergangenheit ebenfalls. Skigebiete: ohne Angabe der heutige Skitag, ab
+ * 14 Uhr der morgige. Tage ausserhalb der Prognose gelten als «ohne Angabe».
  */
-export function resolvePlan(plan: TourPlan | undefined, now: Date): TourPlan {
+export function resolvePlan(plan: TourPlan | undefined, now: Date, mode: 'hike' | 'ski' = 'hike'): TourPlan {
   const z = zurichParts(now);
   const days = planDates(now);
-  const nextHour = Math.min(23, z.hour + 1);
   if (!plan || !days.includes(plan.date)) {
-    return z.hour < LATE_HOUR ? { date: z.date, startHour: Math.max(7, nextHour) } : { date: days[1], startHour: DEFAULT_START };
+    if (mode === 'ski') return { date: z.hour < SKI_LATE_HOUR ? z.date : days[1], startHour: SKI_START };
+    return nowPlan(now);
   }
-  if (plan.date === z.date && plan.startHour <= z.hour) return { date: plan.date, startHour: nextHour };
+  const startsAt = zurichToUtc(plan.date, plan.startHour, plan.startMinute ?? 0);
+  if (mode === 'hike' && startsAt.getTime() <= now.getTime()) return nowPlan(now);
   return plan;
+}
+
+/** Abfahrt der geplanten Tour (UTC). */
+export function planStart(plan: TourPlan): Date {
+  return zurichToUtc(plan.date, plan.startHour, plan.startMinute ?? 0);
 }
 
 /** Uhrzeit «HH:MM» in Schweizer Zeit. */

@@ -11,17 +11,23 @@ describe('Schweizer Zeit', () => {
     expect(zurichParts(new Date('2026-11-13T23:30:00Z'))).toEqual({ date: '2026-11-14', hour: 0, minute: 30 });
   });
 
-  it('plant ohne Angabe heute ab der nächsten Stunde, nachmittags morgen ab 8 Uhr', () => {
-    expect(resolvePlan(undefined, new Date('2026-11-13T08:20:00Z'))).toEqual({ date: '2026-11-13', startHour: 10 });
-    expect(resolvePlan(undefined, new Date('2026-11-13T04:10:00Z'))).toEqual({ date: '2026-11-13', startHour: 7 });
-    expect(resolvePlan(undefined, new Date('2026-11-13T14:00:00Z'))).toEqual({ date: '2026-11-14', startHour: 8 });
+  it('plant Wanderungen ohne Angabe ab jetzt (auf 5 Minuten abgerundet)', () => {
+    expect(resolvePlan(undefined, new Date('2026-11-13T08:23:00Z'))).toEqual({ date: '2026-11-13', startHour: 9, startMinute: 20 });
+    expect(resolvePlan(undefined, new Date('2026-11-13T13:20:00Z'))).toEqual({ date: '2026-11-13', startHour: 14, startMinute: 20 });
+    expect(resolvePlan(undefined, new Date('2026-11-13T22:58:00Z'))).toEqual({ date: '2026-11-13', startHour: 23, startMinute: 55 });
   });
 
-  it('setzt einen vergangenen Start auf die nächste Stunde und begrenzt auf drei Tage', () => {
+  it('Skigebiete ohne Angabe: heutiger Skitag, ab 14 Uhr der morgige', () => {
+    expect(resolvePlan(undefined, new Date('2026-11-13T08:20:00Z'), 'ski')).toEqual({ date: '2026-11-13', startHour: 9 });
+    expect(resolvePlan(undefined, new Date('2026-11-13T14:00:00Z'), 'ski')).toEqual({ date: '2026-11-14', startHour: 9 });
+  });
+
+  it('setzt einen vergangenen Start auf jetzt und begrenzt auf drei Tage', () => {
     const now = new Date('2026-11-13T10:30:00Z'); // 11:30 Schweizer Zeit
-    expect(resolvePlan({ date: '2026-11-13', startHour: 8 }, now)).toEqual({ date: '2026-11-13', startHour: 12 });
+    expect(resolvePlan({ date: '2026-11-13', startHour: 8 }, now)).toEqual({ date: '2026-11-13', startHour: 11, startMinute: 30 });
+    expect(resolvePlan({ date: '2026-11-13', startHour: 13 }, now)).toEqual({ date: '2026-11-13', startHour: 13 });
     expect(resolvePlan({ date: '2026-11-15', startHour: 6 }, now)).toEqual({ date: '2026-11-15', startHour: 6 });
-    expect(resolvePlan({ date: '2026-11-20', startHour: 9 }, now)).toEqual({ date: '2026-11-13', startHour: 12 });
+    expect(resolvePlan({ date: '2026-11-20', startHour: 9 }, now)).toEqual({ date: '2026-11-13', startHour: 11, startMinute: 30 });
     expect(planDates(now)).toEqual(['2026-11-13', '2026-11-14', '2026-11-15']);
   });
 });

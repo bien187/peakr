@@ -42,10 +42,14 @@ export const availabilityCheckSchema = z.object({
 });
 export type AvailabilityCheck = z.infer<typeof availabilityCheckSchema>;
 
-/** Geplante Tour: Datum (Schweizer Zeit) und Startstunde. */
+/**
+ * Geplante Tour: Datum (Schweizer Zeit) und Abfahrt zu Hause. Ohne Planung
+ * beginnt die Tour jetzt (Minute auf 5 abgerundet).
+ */
 export const tourPlanSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   startHour: z.number().int().min(0).max(23),
+  startMinute: z.number().int().min(0).max(59).optional(),
 });
 export type TourPlan = z.infer<typeof tourPlanSchema>;
 
@@ -57,7 +61,7 @@ export const availabilitySchema = z.object({
   confidence: z.enum(['high', 'medium', 'low']),
   /** Zeitpunkt der Bewertung. */
   checkedAt: z.string(),
-  /** Planung, für die bewertet wurde; Ende = Rückkehr nach Gehzeit hin und zurück (ohne Pausen). */
+  /** Planung, für die bewertet wurde; Ende = zurück am Ausgangspunkt (Hinfahrt und Gehzeit, ohne Pausen). */
   plan: tourPlanSchema.extend({ endsAt: z.string().nullable() }).nullable(),
   checks: z.array(availabilityCheckSchema),
 });

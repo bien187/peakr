@@ -4,6 +4,9 @@ import {
   destinationWithStatusSchema,
   geocodeResponseSchema,
   healthResponseSchema,
+  listDetailSchema,
+  listInviteSchema,
+  listSummarySchema,
   messageResponseSchema,
   publicUserSchema,
   searchInputSchema,
@@ -97,4 +100,30 @@ export const api = {
   removeFavorite: (id: string) => request(`/api/favorites/${id}`, messageResponseSchema, { method: 'DELETE' }),
 
   health: () => request('/api/health', healthResponseSchema),
+
+  // Geteilte Listen
+  lists: (destinationId?: string) =>
+    request(`/api/lists${destinationId ? `?destination=${destinationId}` : ''}`, z.array(listSummarySchema)),
+
+  createList: (name: string, destinationId?: string) =>
+    request('/api/lists', listDetailSchema, { method: 'POST', body: JSON.stringify({ name, destinationId }) }),
+
+  list: (id: string) => request(`/api/lists/${id}`, listDetailSchema),
+
+  renameList: (id: string, name: string) =>
+    request(`/api/lists/${id}`, listDetailSchema, { method: 'PATCH', body: JSON.stringify({ name }) }),
+
+  /** Besitzer: löscht die Liste · Mitglied: verlässt sie. */
+  deleteList: (id: string) => request(`/api/lists/${id}`, messageResponseSchema, { method: 'DELETE' }),
+
+  addToList: (id: string, destinationId: string) =>
+    request(`/api/lists/${id}/items`, messageResponseSchema, { method: 'POST', body: JSON.stringify({ destinationId }) }),
+
+  removeFromList: (id: string, destinationId: string) =>
+    request(`/api/lists/${id}/items/${destinationId}`, messageResponseSchema, { method: 'DELETE' }),
+
+  listInvite: (token: string) => request(`/api/lists/join/${encodeURIComponent(token)}`, listInviteSchema),
+
+  joinList: (token: string) =>
+    request(`/api/lists/join/${encodeURIComponent(token)}`, z.object({ id: z.string().uuid() }), { method: 'POST' }),
 };

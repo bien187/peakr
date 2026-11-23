@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Icon } from './Icon';
+import { NewListDialog } from './Lists';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/lib/store';
 import { useSettings } from '@/lib/theme';
@@ -108,6 +109,7 @@ export function TopBar({ centerSlot }: { centerSlot?: ReactNode }) {
   const { user, token, logout } = useAuthStore();
   const [mounted, setMounted] = useState(false);
   const [menu, setMenu] = useState(false);
+  const [newList, setNewList] = useState(false);
   const mref = useRef<HTMLDivElement>(null);
   useClickOutside(mref, () => setMenu(false), menu);
   useEffect(() => setMounted(true), []);
@@ -166,6 +168,26 @@ export function TopBar({ centerSlot }: { centerSlot?: ReactNode }) {
                   type="button"
                   className="pop-item"
                   onClick={() => {
+                    router.push('/lists');
+                    setMenu(false);
+                  }}
+                >
+                  <Icon name="List" size={15} stroke={2} /> Listen
+                </button>
+                <button
+                  type="button"
+                  className="pop-item"
+                  onClick={() => {
+                    setNewList(true);
+                    setMenu(false);
+                  }}
+                >
+                  <Icon name="ListPlus" size={15} stroke={2} /> Neue Liste
+                </button>
+                <button
+                  type="button"
+                  className="pop-item"
+                  onClick={() => {
                     router.push('/');
                     setMenu(false);
                   }}
@@ -184,6 +206,7 @@ export function TopBar({ centerSlot }: { centerSlot?: ReactNode }) {
           </Link>
         ) : null}
       </div>
+      <NewListDialog open={newList} onClose={() => setNewList(false)} />
     </header>
   );
 }

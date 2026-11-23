@@ -1,11 +1,16 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Icon } from './Icon';
 import { Brandmark } from './PeakrChrome';
 import { api, ApiError } from '@/lib/api';
 import { useAuthStore } from '@/lib/store';
+
+/** Nur Pfade dieser Website («/…», nicht «//…»), damit der Parameter nicht nach aussen umleitet. */
+function safeNext(raw: string | null): string | null {
+  return raw && raw.startsWith('/') && !raw.startsWith('//') && !raw.startsWith('/\\') ? raw : null;
+}
 
 export function AuthView({ kind }: { kind: 'login' | 'register' }) {
   const isLogin = kind === 'login';
@@ -16,6 +21,9 @@ export function AuthView({ kind }: { kind: 'login' | 'register' }) {
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  // Rückweg nach der Anmeldung, z. B. zur Einladung in eine Liste.
+  const [next, setNext] = useState<string | null>(null);
+  useEffect(() => setNext(safeNext(new URLSearchParams(window.location.search).get('next'))), []);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,7 +34,7 @@ export function AuthView({ kind }: { kind: 'login' | 'register' }) {
         ? await api.login({ email, password: pw })
         : await api.register({ email, password: pw, displayName: name.trim() || undefined });
       setAuth(r.token, r.user);
-      router.push(isLogin ? '/' : '/dashboard');
+      router.push(next ?? (isLogin ? '/' : '/dashboard'));
     } catch (err) {
       setError(
         err instanceof ApiError
@@ -97,7 +105,11 @@ export function AuthView({ kind }: { kind: 'login' | 'register' }) {
 
         <p className="auth-switch">
           {isLogin ? 'Noch kein Konto?' : 'Bereits registriert?'}{' '}
-          <button type="button" className="link" onClick={() => router.push(isLogin ? '/register' : '/login')}>
+          <button
+            type="button"
+            className="link"
+            onClick={() => router.push(`${isLogin ? '/register' : '/login'}${next ? `?next=${encodeURIComponent(next)}` : ''}`)}
+          >
             {isLogin ? 'Registrieren' : 'Anmelden'}
           </button>
         </p>

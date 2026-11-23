@@ -1,6 +1,6 @@
 import type { SearchItem, Trailhead } from '@ch-alpineroute/shared';
 import { describe, expect, it } from 'vitest';
-import { adaptPoint, adaptResult, classLabel, fmtDuration, sacLabel, trailheadLabel, weatherInfo } from './peakr';
+import { adaptPoint, adaptResult, classLabel, fmtClock, fmtDuration, planLabel, sacLabel, tourTimes, trailheadLabel, weatherInfo, zurichTime } from './peakr';
 
 const th = (over: Partial<Trailhead> = {}): Trailhead => ({
   id: '00000000-0000-0000-0000-000000000001', kind: 'parking', name: null, location: { lat: 47, lng: 8 },
@@ -98,5 +98,37 @@ describe('Planung und Verfügbarkeit', () => {
     const { reasonSummary } = await import('./peakr');
     expect(reasonSummary({ snow: 250, closure: 16, daylight: 78 })).toBe('Schnee 250 · Tageslicht 78 · Sperrungen 16');
     expect(reasonSummary({})).toBe('');
+  });
+});
+
+describe('Tourzeiten', () => {
+  it('Schweizer Ortszeit in Winter und Sommer', () => {
+    expect(zurichTime('2026-11-24', 8).toISOString()).toBe('2026-11-24T07:00:00.000Z');
+    expect(zurichTime('2026-07-15', 8, 30).toISOString()).toBe('2026-07-15T06:30:00.000Z');
+    expect(fmtClock(new Date('2026-11-23T13:20:00Z'))).toBe('14:20');
+  });
+
+  it('ohne Planung ab jetzt: Hinfahrt, Auf-, Abstieg, Rückfahrt', () => {
+    const now = new Date('2026-11-23T13:20:00Z'); // 14:20
+    const t = tourTimes(null, { driveMin: 20.7, upMin: 36, downMin: 29 }, now);
+    expect(t.isNow).toBe(true);
+    expect(t.totalMin).toBe(21 + 36 + 29 + 21);
+    expect(fmtClock(t.back)).toBe('16:07');
+  });
+
+  it('vergangener Start gilt als jetzt, künftiger bleibt', () => {
+    const now = new Date('2026-11-23T13:20:00Z');
+    expect(tourTimes({ date: '2026-11-23', startHour: 8 }, { driveMin: null, upMin: 60, downMin: 40 }, now).isNow).toBe(true);
+    const later = tourTimes({ date: '2026-11-24', startHour: 8 }, { driveMin: 30, upMin: 60, downMin: 40 }, now);
+    expect(later.isNow).toBe(false);
+    expect(fmtClock(later.start)).toBe('08:00');
+    expect(fmtClock(later.back)).toBe('10:40');
+    expect(later.driveBack).toBe(30);
+  });
+
+  it('Planungstext mit Minuten', () => {
+    const now = new Date('2026-11-23T10:00:00Z');
+    expect(planLabel({ date: '2026-11-24', startHour: 8 }, now)).toBe('morgen ab 8 Uhr');
+    expect(planLabel({ date: '2026-11-23', startHour: 14, startMinute: 5 }, now)).toBe('heute ab 14:05 Uhr');
   });
 });

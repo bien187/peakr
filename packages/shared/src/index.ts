@@ -5,6 +5,7 @@ export * from './enums';
 export * from './geo';
 export * from './auth';
 export * from './user';
+export * from './lists';
 export * from './destination';
 export * from './availability';
 export * from './search';

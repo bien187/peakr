@@ -301,7 +301,17 @@ describe('Tageslicht', () => {
   it('Sommer: 4 h Tour ab 8 Uhr → verfügbar mit Rückkehrzeit', () => {
     const r = assessDaylight(at, { date: '2026-07-15', startHour: 8 }, 240);
     expect(r.check.status).toBe('available');
-    expect(r.check.text).toContain('Rückkehr gegen 12:00');
+    expect(r.check.text).toContain('Zurück am Ausgangspunkt gegen 12:00');
+  });
+
+  it('die Wanderung beginnt nach der Hinfahrt', () => {
+    // Abfahrt 14:20, 50 min Fahrt, 1 h 40 min Gehzeit → zurück am Ausgangspunkt 16:50 (vor Sonnenuntergang ~16:55)
+    const plan = { date: '2026-11-13', startHour: 14, startMinute: 20 };
+    const r = assessDaylight(at, plan, 100, 50);
+    expect(r.check.text).toContain('gegen 16:50');
+    expect(r.check.status).toBe('available');
+    // Dieselbe Tour mit 1 h 30 min Fahrt endet in der Dämmerung.
+    expect(assessDaylight(at, plan, 100, 90).check.status).toBe('uncertain');
   });
 
   it('November: Start 14 Uhr, 4 h → Rückkehr nach Einbruch der Dunkelheit → nicht verfügbar', () => {
@@ -328,6 +338,11 @@ describe('Gesamturteil einer Sommerroute', () => {
     expect(a.confidence).toBe('medium');
     expect(a.checks.map((c) => c.kind)).toEqual(['closure', 'avalanche', 'snow', 'weather', 'daylight']);
     expect(a.plan?.endsAt).toBe(new Date(zurichToUtc('2026-07-15', 8).getTime() + 250 * 60_000).toISOString());
+  });
+
+  it('mit Fahrzeit: Ende und Wetterfenster verschieben sich um die Hinfahrt', () => {
+    const a = evaluateHikeRoute(route({ driveMinutes: 45 }), summerConditions(), { date: '2026-07-15', startHour: 8 }, SUMMER_NOW);
+    expect(a.plan?.endsAt).toBe(new Date(zurichToUtc('2026-07-15', 8).getTime() + (45 + 250) * 60_000).toISOString());
   });
 
   it('schlechteste Prüfung bestimmt Status und Grund; Sperrung vor Wetter', () => {

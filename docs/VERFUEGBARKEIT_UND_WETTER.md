@@ -40,12 +40,15 @@ Stand 13.11.2026. Die Seite beschreibt:
 ## Tourplanung
 
 Die Suche bewertet für eine Planung: einen Tag (heute bis übermorgen, so weit reicht die gespeicherte
-Prognose) und eine Startstunde.
-- **Automatisch:** heute ab der nächsten vollen Stunde, frühestens 7 Uhr. Ab 14 Uhr morgen ab 8 Uhr.
-- Ein Start in der Vergangenheit wird auf die nächste Stunde gesetzt.
-- Tourende = Start + Gehzeit hin und zurück nach DIN 33466, ohne Pausen.
-- Skigebiete werden für den Skitag 9–16 Uhr bewertet.
-- Die Detailseite übernimmt die Planung der Suche.
+Prognose) und die Abfahrt zu Hause.
+- **Jetzt** (Standard): die Tour beginnt jetzt (Minute auf 5 abgerundet). Ein Start in der
+  Vergangenheit gilt ebenfalls als «jetzt».
+- Die Wanderung beginnt nach der Hinfahrt: Wetterfenster und Tageslicht gelten ab Ankunft am
+  Ausgangspunkt bis zur Rückkehr dorthin (Auf- und Abstieg nach DIN 33466, ohne Pausen).
+- Die Detailseite zeigt den ganzen Ablauf – Hinfahrt, Aufstieg, Abstieg, Rückfahrt (gleich lang wie
+  die Hinfahrt) – mit Rückkehrzeit und Gesamtdauer und rechnet bei «jetzt» jede Minute neu.
+- Skigebiete werden für den Skitag 9–16 Uhr bewertet; ohne Wahl der heutige, ab 14 Uhr der morgige.
+- Die Detailseite übernimmt einen in der Suche gewählten Tag; sonst beginnt die Tour dort jetzt.
 
 ## Prüfungen beim Wandern (Sommerrouten)
 
@@ -55,7 +58,7 @@ Prognose) und eine Startstunde.
 | **Schnee entlang der Route** | eine Station auf ähnlicher oder grösserer Höhe misst schneefrei (< 2 cm) · nur Modell: Modellhöhe nahe der Route und schneefrei | Station knapp unter dem höchsten Punkt misst 5–20 cm · Modell meldet Schnee nahe Routenhöhe · keine Messung in Routenhöhe | ≥ 20 cm an einer Station bis 100 m über dem höchsten Punkt · ≥ 5 cm an einer Station 300 m oder mehr darunter · Modell meldet Schnee unterhalb der Route |
 | **Wetter zur Tourzeit** (Prognose) | trocken bzw. leichter Regen, Böen < 60 km/h | Gewitter (WMO 95–99) · Böen 60–90 km/h · Schneefall möglich (≥ 1 cm oder Niederschlag bei ≤ 0,5 °C auf dem höchsten Punkt) · ≥ 15 mm bzw. ≥ 5 mm/h · Prognose älter als 18 h oder zu kurz | Böen ≥ 90 km/h · ≥ 10 cm Neuschnee |
 | **Lawinenbulletin** (räumlich) | Stufe 1 · kein Bulletin in Kraft · Route unterhalb 1500 m | Stufe 2 · Bulletin älter als 30 h (Routen ≥ 1500 m) | Stufe ≥ 3 im Höhenband der Route |
-| **Tageslicht** (berechnet) | Rückkehr vor Sonnenuntergang | Rückkehr in der bürgerlichen Dämmerung | Rückkehr nach der Dämmerung · Tour länger als das Tageslicht |
+| **Tageslicht** (berechnet) | zurück am Ausgangspunkt vor Sonnenuntergang | zurück in der bürgerlichen Dämmerung | zurück nach der Dämmerung · Auf- und Abstieg länger als das Tageslicht |
 
 **Schnee:** Massgebend sind Stationen bis 25 km um das Ziel mit Messungen der letzten 36 Stunden:
 SLF-IMIS (1300–2950 m) sowie MeteoSchweiz (manuell und automatisch). Ohne passende Messung zählt die
