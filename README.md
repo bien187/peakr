@@ -7,7 +7,7 @@
 <p align="center">Ski- und Wander-Navigator für die Schweiz – nach echter Autofahrzeit, Route, Wetter, Schnee und Lawinenlage.</p>
 <p align="center"><a href="https://peakr-ch.vercel.app"><strong>peakr-ch.vercel.app</strong></a></p>
 
-![Peakr: rund 2'900 verfügbare Wanderziele in 90 Minuten ab Zürich, als Dichte-Heatmap mit Hotspot-Zahlen auf der swisstopo-Karte, Trefferliste links](docs/screenshots/desktop-hero.jpg)
+![Peakr: rund 2'900 verfügbare Wanderziele in 90 Minuten ab Zürich, als Dichte-Heatmap mit Hotspot-Zahlen auf der swisstopo-Karte, Trefferliste links](docs/screenshots/desktop-heatmap.jpg)
 
 Du gibst Startort, maximale Autofahrzeit und die Art der Ziele an. Peakr zeigt **alle** Gipfel, Seen,
 Hütten, Aussichtspunkte und Pässe bzw. Skigebiete, die du in dieser Zeit über das Strassennetz
@@ -36,31 +36,49 @@ mit kostenlosen, offenen Daten; es gibt keine kostenpflichtige Schnittstelle.
 Fehlende Angaben bleiben sichtbar fehlend: unbekannte Schwierigkeit heisst «unbekannt», ohne
 Strassenroute gibt es keine Fahrzeit, ohne Live-Quelle keinen Liftstatus.
 
-<table>
-  <tr>
-    <th>Detail: Tour ab jetzt, Teilen, Liste</th>
-    <th>Dunkle Karte</th>
-    <th>Wetterkarte</th>
-  </tr>
-  <tr>
-    <td><img src="docs/screenshots/desktop-detail.jpg" width="280" alt="Detailansicht Buchberghaus mit 3D-Gelände, Tour jetzt 14:26 Uhr, Hin- und Rückfahrt, Aufstieg und Abstieg"></td>
-    <td><img src="docs/screenshots/desktop-dark.jpg" width="280" alt="Dunkle swisstopo-Karte mit Mint-Heatmap und Hotspot-Zahlen"></td>
-    <td><img src="docs/screenshots/desktop-weather.jpg" width="280" alt="Wetterkarte mit Niederschlagsprognose, Zeitleiste und Legende"></td>
-  </tr>
-  <tr>
-    <th>Wann, Verfügbarkeit, Filter</th>
-    <th>Ski</th>
-    <th>Mobil: Karte und Liste</th>
-  </tr>
-  <tr>
-    <td><img src="docs/screenshots/desktop-filters.jpg" width="280" alt="Einstellungen: Zeitpunkt, unsichere und nicht verfügbare Ziele zeigen, Zielarten, SAC-Schwierigkeit, Gehzeit, Mindesthöhe"></td>
-    <td><img src="docs/screenshots/desktop-search-ski.jpg" width="280" alt="Skigebiete in 90 Minuten ab Zürich mit Schneehöhen und unbekanntem Liftstatus"></td>
-    <td>
-      <img src="docs/screenshots/mobile-search.jpg" width="130" alt="Mobile Karte mit eingeklappter Ergebnisliste">
-      <img src="docs/screenshots/mobile-list.jpg" width="130" alt="Mobile Ergebnisliste, nach oben gewischt">
-    </td>
-  </tr>
-</table>
+## Ansichten
+
+### Detail: Tour ab jetzt, Teilen, Liste
+
+3D-Gelände mit Route und Parkplatz, darunter die Tour ab jetzt mit Rückkehrzeit, Hin- und Rückfahrt,
+Aufstieg und Abstieg sowie die Prüfung der Verfügbarkeit.
+
+![Detailansicht Buchberghaus mit 3D-Gelände, Tour jetzt 14:26 Uhr, Hin- und Rückfahrt, Aufstieg und Abstieg](docs/screenshots/desktop-detail-tour.jpg)
+
+### Dunkle Karte
+
+Die swisstopo-Karte wird im dunklen Modus umgefärbt, nicht nur abgedunkelt; die Heatmap leuchtet in Mint.
+
+![Dunkle swisstopo-Karte mit Mint-Heatmap und Hotspot-Zahlen](docs/screenshots/desktop-dark.jpg)
+
+### Wetterkarte
+
+Radar und Prognose bis 48 h für Niederschlag, Bewölkung, Neuschnee, Temperatur und Böen, mit Zeitleiste.
+
+![Wetterkarte mit Niederschlagsprognose, Zeitleiste und Legende](docs/screenshots/desktop-weather.jpg)
+
+### Wann, Verfügbarkeit, Filter
+
+Zeitpunkt der Tour, unsichere und nicht verfügbare Ziele, Zielarten, SAC-Schwierigkeit, Gehzeit und Mindesthöhe.
+
+![Einstellungen: Zeitpunkt, unsichere und nicht verfügbare Ziele zeigen, Zielarten, SAC-Schwierigkeit, Gehzeit, Mindesthöhe](docs/screenshots/desktop-filters.jpg)
+
+### Ski
+
+Skigebiete nach Fahrzeit bis zur Talstation, mit Schnee am Berg, Neuschnee, Anlagen und Pisten. Ohne
+Live-Betriebsstatus gelten sie als «unsicher».
+
+![Skigebiete in 90 Minuten ab Zürich mit Schneehöhen und unbekanntem Liftstatus](docs/screenshots/desktop-ski.jpg)
+
+### Mobil: Karte und Liste
+
+Die Ergebnisliste liegt als Fenster über der Karte und lässt sich nach oben wischen.
+
+<p align="center">
+  <img src="docs/screenshots/mobile-map.jpg" width="45%" alt="Mobile Karte mit eingeklappter Ergebnisliste">
+  &nbsp;&nbsp;
+  <img src="docs/screenshots/mobile-list.jpg" width="45%" alt="Mobile Ergebnisliste, nach oben gewischt">
+</p>
 
 ## So funktioniert es
 
