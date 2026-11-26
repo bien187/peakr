@@ -9,12 +9,27 @@ import { api } from '@/lib/api';
 import { useAuthStore } from '@/lib/store';
 import { useSettings } from '@/lib/theme';
 
+/**
+ * Peakr-Bildmarke: offener Wegpunkt-Ring, den der Gipfel von unten durchbricht – die
+ * Spitze liegt im Ringmittelpunkt. Konstruktion und Varianten: docs/brand.
+ * Farben über die Tokens --brand (Ring) und --brand-accent (Gipfel), siehe lib/theme.
+ */
+export function BrandSymbol({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+      <path
+        className="brand-ring"
+        d="M11.88 38.54A19.9 19.9 0 1 1 36.12 38.54L33.59 34.16A14.9 14.9 0 1 0 14.41 34.16Z"
+      />
+      <path className="brand-peak" d="M24 22.75L36.99 45.25L11.01 45.25Z" />
+    </svg>
+  );
+}
+
 export function Brandmark({ size = 'md' }: { size?: 'md' | 'lg' }) {
   return (
     <span className={'brand brand-' + size}>
-      <span className="brand-mark">
-        <Icon name="Mountain" size={size === 'lg' ? 22 : 18} stroke={2} />
-      </span>
+      <BrandSymbol className="brand-mark" />
       <span className="brand-word">peakr</span>
     </span>
   );

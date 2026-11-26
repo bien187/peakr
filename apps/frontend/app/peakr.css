@@ -90,14 +90,14 @@ a.btn { text-decoration: none; }
 .topbar-center { flex: 1; display: flex; justify-content: center; min-width: 0; }
 .topbar-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 
-.brand { display: inline-flex; align-items: center; gap: 9px; }
-.brand-mark {
-  display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px;
-  background: var(--accent); color: var(--on-accent);
-  box-shadow: 0 2px 8px -2px color-mix(in oklch, var(--accent) 60%, transparent);
-}
-.brand-word { font: 600 22px/1 var(--font-serif); letter-spacing: -0.02em; color: var(--ink); }
-.brand-lg .brand-mark { width: 42px; height: 42px; border-radius: 13px; }
+/* Bild- + Wortmarke. Feste Markenfarben (--brand, --brand-accent aus lib/theme),
+   nicht die Akzentfarbe der Farbwelt – das Logo bleibt in Ski und Wandern gleich. */
+.brand { display: inline-flex; align-items: center; gap: 8px; }
+.brand-mark { display: block; flex: none; width: 32px; height: 32px; }
+.brand-ring { fill: var(--brand, #173F35); }
+.brand-peak { fill: var(--brand-accent, #C66A4E); }
+.brand-word { font: 600 22px/1 var(--font-serif); letter-spacing: -0.02em; color: var(--brand, #173F35); }
+.brand-lg .brand-mark { width: 40px; height: 40px; }
 .brand-lg .brand-word { font-size: 28px; }
 
 /* ---- control capsule ------------------------------------------------------ */

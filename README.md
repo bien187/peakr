@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="apps/frontend/app/icon.svg" width="88" height="88" alt="Peakr-Logo: stilisierter Berg auf oranger Kachel">
+  <img src="apps/frontend/app/icon.svg" width="88" height="88" alt="Peakr-Logo: Wegpunkt-Ring mit Gipfel auf waldgrüner Kachel">
 </p>
 
 <h1 align="center">Peakr</h1>
