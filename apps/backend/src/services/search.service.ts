@@ -2,6 +2,7 @@ import {
   SAC_ORDER,
   type Availability,
   type HikeRouteSummary,
+  type LiftStatusSummary,
   type TourPlan,
   type LiveStatus,
   type RoutingStatus,
@@ -30,6 +31,7 @@ import {
   type WeatherCellRow,
 } from '../repositories/search.repo';
 import { getSearchIndex } from '../search/searchIndex';
+import { liftsForScore, summariesByDestination } from '../lifts/summary';
 import { evaluateHikeRoute, evaluateSkiResort, reasonKind, type ConditionsContext, type HikeRouteFacts } from '../availability/engine';
 import { resolvePlan } from '../availability/time';
 import { conditionsMeta, getConditions } from '../repositories/conditions.repo';
@@ -93,6 +95,8 @@ export interface AssembleContext {
   avalanche: AvalancheMap;
   routing: RoutingMeta;
   availability?: AvailabilitySettings;
+  /** Lift- und Pistenstatus je Skigebiet (Statusbericht); fehlt ein Eintrag, gibt es keinen. */
+  liftStatus?: Map<string, LiftStatusSummary>;
 }
 
 const emptyHidden = (): HiddenCounts => ({ uncertain: 0, unavailable: 0, reasons: {} });
@@ -424,6 +428,14 @@ function unroutedResult(input: SearchInput, r: UnroutedRow, ctx: AssembleContext
   };
 }
 
+/** Bisherige Live-Felder zum Liftstatus: offen/gesamt nur aus einem frischen Bericht (Bewertung, Favoriten). */
+function liftFields(s: LiftStatusSummary | null, staticTotal: number): Pick<LiveStatus, 'liftsOpen' | 'liftsTotal' | 'liftSource'> {
+  const fresh = liftsForScore(s);
+  return fresh.liftsOpen !== null
+    ? { liftsOpen: fresh.liftsOpen, liftsTotal: fresh.liftsTotal, liftSource: s!.sourceName }
+    : { liftsOpen: null, liftsTotal: staticTotal, liftSource: null };
+}
+
 /** Reine Funktion: Skigebiete nach Fahrzeit einteilen, Filter anwenden, bewerten. */
 export function assembleSki(
   input: SearchInput,
@@ -444,12 +456,13 @@ export function assembleSki(
     const drive = hasAccess ? driveOf(r) : null;
     if (hasAccess && (!drive || round1(drive.minutes) > limit)) continue; // ausserhalb der Reichweite
 
-    // Verfügbarkeit: ohne verlässlichen Live-Betriebsstatus nie «verfügbar».
+    // Verfügbarkeit: ohne aktuellen Statusbericht nie «verfügbar».
+    const liftStatus = ctx.liftStatus?.get(r.id) ?? null;
     const availability = av
       ? evaluateSkiResort(
           {
             lat: r.lat, lng: r.lng, topElevM: r.elevation_top_m, baseElevM: r.elevation_base_m, slfRegionId: r.slf_region_id,
-            lifts: { liftsOpen: r.lifts_open, liftsTotal: r.lifts_total, source: r.lift_source, capturedAt: toIsoOrNull(r.captured_at) },
+            lifts: liftStatus,
             snowTopCm: r.snow_depth_top_cm, snowValleyCm: r.snow_depth_valley_cm, snowAt: toIsoOrNull(r.captured_at),
             forecast: r.weather_cell ? av.conditions.forecasts.get(r.weather_cell) : undefined,
           },
@@ -474,18 +487,16 @@ export function assembleSki(
           snowDepthTopCm: r.snow_depth_top_cm,
           freshSnowCm: r.fresh_snow_cm,
           avalancheLevel: avalanche,
-          liftsOpen: r.lifts_open,
-          // Gesamtzahl der Anlagen ist statisch (OSM); «offen» nur mit Live-Quelle.
-          liftsTotal: r.lifts_total,
-          slopesOpenKm: r.slopes_open_km,
+          // «Offen» nur aus einem frischen Statusbericht; sonst die statische Anlagenzahl (OSM).
+          ...liftFields(liftStatus, r.lifts_total),
+          slopesOpenKm: liftStatus?.freshness === 'fresh' ? liftStatus.slopes.openKm : null,
           trailStatus: null,
-          liftSource: r.lift_source,
         }
       : avalanche !== null
         ? {
             capturedAt: new Date().toISOString(), temperatureC: null, weatherCode: null, visibilityM: null, windKmh: null,
-            snowDepthValleyCm: null, snowDepthTopCm: null, freshSnowCm: null, avalancheLevel: avalanche, liftsOpen: null,
-            liftsTotal: r.lifts_total, slopesOpenKm: null, trailStatus: null, liftSource: null,
+            snowDepthValleyCm: null, snowDepthTopCm: null, freshSnowCm: null, avalancheLevel: avalanche,
+            ...liftFields(liftStatus, r.lifts_total), slopesOpenKm: null, trailStatus: null,
           }
         : null;
 
@@ -531,6 +542,7 @@ export function assembleSki(
       blockedReason: blocked ? `Lawinengefahr Stufe ${level} – nicht empfohlen` : null,
       overBudgetMinutes: minutes === null || within ? null : Math.ceil(minutes - input.maxMinutes),
       availability,
+      liftStatus,
     };
 
     if (minutes === null) unrouted.push(result);
@@ -737,6 +749,7 @@ function computeSearch(
     avalanche: live.avalanche,
     routing: { provider: ROUTING_PROVIDER, graphBuiltAt: info.graphBuiltAt },
     availability: skipAvailability ? undefined : availability,
+    liftStatus: summariesByDestination(live.liftStatus, availability.now),
   };
   const snapM = Math.round(ctx.originSnapM);
 

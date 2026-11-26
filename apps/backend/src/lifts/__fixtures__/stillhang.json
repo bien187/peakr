@@ -1,0 +1,8 @@
+{
+  "id": "stillhang", "country": "ch", "name": "Stillhang", "region": "Ticino", "location": { "lat": 46.3, "lon": 8.8 },
+  "website": null, "status": "no_report", "fetched_at": "2026-12-20T13:40:42+01:00", "status_from": "2026-12-17T08:40:00+01:00",
+  "snow": { "mountain_cm": null, "valley_cm": null, "fresh_cm": null, "last_snowfall": null, "condition": null, "stations": [] },
+  "lifts": { "open": 0, "total": 6 }, "slopes": { "open": null, "total": 11, "open_km": null, "total_km": 20 },
+  "lifts_by_type": {}, "slopes_by_difficulty": {}, "lifts_updated_at": null,
+  "avalanche": null, "sources": [], "source_details": { "conditions": [], "resort_info": [] }
+}

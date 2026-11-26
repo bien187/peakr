@@ -3,6 +3,8 @@
 import { memo, useEffect, useLayoutEffect, useRef, type CSSProperties, type ReactNode } from 'react';
 import { AVAILABILITY_LABEL, type Availability, type SearchResponse } from '@ch-alpineroute/shared';
 import { Icon } from './Icon';
+import { CardLiftStatus } from './LiftStatus';
+import { isReporting, openOfTotal } from '@/lib/liftStatus';
 import {
   AVALANCHE,
   classLabel,
@@ -198,7 +200,8 @@ export const ResultCard = memo(function ResultCard({
     notes.push(`Strasse endet ${(th.roadGapM / 1000).toFixed(1)} km vor der Talstation (autofrei)`);
   }
   if (r.blockedReason) notes.push(r.blockedReason);
-  if (isSki && r.liftsOpen == null && r.liftsTotal != null) notes.push('Liftstatus: keine Live-Quelle');
+  const ops = isSki && isReporting(r.liftStatus) ? r.liftStatus : null;
+  if (isSki && !r.liftStatus && r.liftsTotal != null) notes.push('Liftstatus: kein Statusbericht');
 
   return (
     <article
@@ -241,15 +244,18 @@ export const ResultCard = memo(function ResultCard({
       )}
 
       <div className="rcard-stats is-4">
-        {isSki ? (
+        {isSki && ops ? (
+          <>
+            <Stat label="Lifte offen" value={openOfTotal(ops.lifts)} />
+            <Stat label="Pisten offen" value={openOfTotal(ops.slopes)} />
+            <Stat label="Schnee Berg" value={dash(r.snowTop)} unit="cm" />
+            <Stat label="Neuschnee" value={dash(r.fresh)} unit="cm" />
+          </>
+        ) : isSki ? (
           <>
             <Stat label="Schnee Berg" value={dash(r.snowTop)} unit="cm" />
             <Stat label="Neuschnee" value={dash(r.fresh)} unit="cm" />
-            {r.liftsOpen != null ? (
-              <Stat label="Lifte offen" value={`${r.liftsOpen}/${dash(r.liftsTotal)}`} />
-            ) : (
-              <Stat label="Anlagen" value={dash(r.liftsTotal)} />
-            )}
+            <Stat label="Anlagen" value={dash(r.liftsTotal)} />
             <Stat label="Pisten" value={r.pisteKm != null ? nf.format(Math.round(r.pisteKm)) : '–'} unit="km" />
           </>
         ) : r.hike ? (
@@ -268,6 +274,8 @@ export const ResultCard = memo(function ResultCard({
           </>
         )}
       </div>
+
+      {isSki && r.liftStatus && <CardLiftStatus s={r.liftStatus} />}
 
       {notes.length > 0 && (
         <p className="rcard-note">
@@ -719,7 +727,7 @@ export function ResultsPanel({
             <p className="empty-title">Keine Ziele mit gesicherter Verfügbarkeit</p>
             <p className="empty-sub">
               {mode === 'ski'
-                ? 'Für kein Skigebiet in Reichweite gibt es einen frei nutzbaren Live-Betriebsstatus. Peakr zeigt deshalb keines als geöffnet an.'
+                ? 'Für kein Skigebiet in Reichweite liegt ein aktueller Statusbericht mit offenen Anlagen für den geplanten Skitag vor. Peakr zeigt deshalb keines als geöffnet an.'
                 : `${nf.format(hiddenUncertain)} Ziele sind in Reichweite, aber die Datenlage reicht nicht für «verfügbar».`}
             </p>
             <button type="button" className="btn btn-sm" onClick={() => onIncludeUncertain(true)} style={{ marginTop: 10 }}>

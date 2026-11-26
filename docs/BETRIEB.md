@@ -10,6 +10,7 @@ Erstmalige Einrichtung: [SETUP_EXTERNAL.md](../SETUP_EXTERNAL.md).
 | Wetterraster mit stündlicher Prognose bis übermorgen; Wegsperrungen (geo.admin.ch) samt Zuordnung zu den Routen; Schneemessungen | Peakr Worker → `weather` | `35 */6 * * *` | 3–10 min (je nach Wiederholungen) |
 | Bekanntheit (Wikipedia) | Peakr Worker → `trend` | montags 04:20 | ~3–4 min |
 | Aufräumen | Peakr Worker → `maintenance` | täglich 03:50 | Sekunden |
+| Lift- und Pistenstatus (LiftRadar) | Peakr Worker → `lifts` | Nov.–Apr. `50 5-17 * 1-4,11,12 *`, sonst `50 6 * 5-10 *`; der Job prüft Saison und Abstand selbst | 2–15 s |
 | Datenaufbau + Strassengraph | Peakr Daten | montags 02:15 | ~15–25 min |
 | Typecheck, Tests, Build | CI | jeder Push/PR | ~5 min |
 
@@ -21,6 +22,20 @@ Suche und Detailseite melden zu alte Daten als «unsicher» (siehe
 
 Selbst betrieben (Docker, eigener Server) übernimmt `pnpm worker schedule` denselben Zeitplan
 (Europe/Zurich) in einem Dauerprozess; siehe [docker-compose.yml](../docker-compose.yml).
+
+### Lift- und Pistenstatus
+
+- Manuell: GitHub → Actions → «Peakr Worker» → «Run workflow» → Job `lifts` (Häkchen `force`), oder
+  lokal `pnpm worker lifts --force`. Ohne `--force` überspringt der Job Läufe in der Saison, die
+  weniger als 40 min nach dem letzten erfolgreichen kommen, ausserhalb der Saison alle unter 20 h
+  (Umgebungsvariablen `LIFTS_*`, siehe [LIFT_UND_PISTENSTATUS.md](LIFT_UND_PISTENSTATUS.md)).
+- Jeder Lauf schreibt einen Bericht ins Protokoll und als `stats` in `import_runs`: geänderte und
+  unveränderte Gebiete, Fehler je Gebiet, `missingInIndex`, `unmappedCandidates` (neue Schweizer
+  Gebiete bei LiftRadar), `unresolvedRefs` (Peakr-Gebiet der Zuordnung fehlt), unbekannte Statuswerte.
+- Fällt LiftRadar aus, bleiben die gespeicherten Stände stehen; die Website zeigt sie mit Zeitpunkt als
+  «älter» bzw. «veraltet». `/api/health` meldet `worker:lifts` nach 30 h ohne Lauf als veraltet.
+- Neue Gebiete zuordnen: `pnpm liftradar:mapping --open --details`, Vorschlag prüfen, in
+  `apps/backend/src/lifts/mapping.ts` eintragen.
 
 ## Überwachung
 

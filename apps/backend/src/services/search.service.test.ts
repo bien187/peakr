@@ -4,6 +4,16 @@ import { ctx, hikeRow, input, skiRow } from '../test/fixtures';
 import { StationIndex } from '../availability/checks';
 import { emptyConditions, type ConditionsContext } from '../availability/engine';
 import { assembleHike, assembleSki, pageResponse, searchCacheKey, type FullSearch } from './search.service';
+import type { LiftStatusSummary } from '@ch-alpineroute/shared';
+
+/** Statusbericht eines Skigebiets, wie lifts/summary.ts ihn liefert. */
+const liftReport = (open: number, total: number, freshness: LiftStatusSummary['freshness'], dataAt: string): LiftStatusSummary => ({
+  source: 'liftradar', sourceName: 'LiftRadar', sourceUrl: 'https://liftradar.eu', status: open > 0 ? 'open' : 'closed',
+  lifts: { open, closed: total - open, preparation: 0, unknown: 0, total },
+  slopes: { open: 10, closed: 5, preparation: 0, unknown: 0, total: 15, openKm: 40, totalKm: 60 },
+  dataAt, dataAtIsReport: true, fetchedAt: dataAt, freshness, ageHours: 1, areas: [{ id: 'x', name: 'X', status: 'open' }],
+  partial: false, coverageNote: null,
+});
 
 /** Fahrzeit je Ausgangspunkt aus einer Tabelle; fehlt der Eintrag, gibt es keine Strassenroute. */
 const drives = (table: Record<string, number>) => (row: { th_id: string | null }): DriveTime | null =>
@@ -121,6 +131,24 @@ describe('assembleSki', () => {
     const out = assembleSki(input({ mode: 'ski' }), [r], drives({ a: 30 }), ctx);
     expect(out.results[0].live?.liftsOpen).toBeNull();
     expect(out.results[0].live?.liftsTotal).toBe(10);
+  });
+
+  it('hängt den Statusbericht an; «offen» und Bonus nur aus einem frischen Bericht', () => {
+    const r = skiRow({ th_id: 'a', captured_at: new Date(), snow_depth_top_cm: 50 });
+    const at = new Date().toISOString();
+    const fresh = assembleSki(input({ mode: 'ski' }), [r], drives({ a: 30 }), { ...ctx, liftStatus: new Map([[r.id, liftReport(15, 20, 'fresh', at)]]) });
+    expect(fresh.results[0].liftStatus?.lifts.open).toBe(15);
+    expect(fresh.results[0].live).toMatchObject({ liftsOpen: 15, liftsTotal: 20, liftSource: 'LiftRadar', slopesOpenKm: 40 });
+    expect(fresh.results[0].scoreBreakdown.liftsOpen).toBe(8);
+
+    const stale = assembleSki(input({ mode: 'ski' }), [r], drives({ a: 30 }), { ...ctx, liftStatus: new Map([[r.id, liftReport(15, 20, 'stale', at)]]) });
+    expect(stale.results[0].liftStatus?.freshness).toBe('stale');
+    expect(stale.results[0].live).toMatchObject({ liftsOpen: null, liftsTotal: 10, liftSource: null });
+    expect(stale.results[0].scoreBreakdown.liftsOpen).toBe(0);
+
+    // Ohne Bericht: kein Status, keine Bestrafung gegenüber «geschlossen».
+    const none = assembleSki(input({ mode: 'ski' }), [r], drives({ a: 30 }), ctx);
+    expect(none.results[0].liftStatus).toBeNull();
   });
 
   it('Lawinenstufe 4 markiert ein Gebiet als nicht empfohlen', () => {
@@ -278,6 +306,17 @@ describe('Verfügbarkeit in der Suche', () => {
     expect(def.hidden.reasons.operation).toBe(1);
     const all = assembleSki(input({ mode: 'ski' }), [r], drives({ a: 30 }), withAv(conditions(), true));
     expect(all.results[0].availability?.status).toBe('uncertain');
+  });
+
+  it('Skigebiet mit frischem Bericht «Anlagen offen» am heutigen Skitag: verfügbar; «alle zu»: nicht verfügbar', () => {
+    const r = skiRow({ th_id: 'a', captured_at: fresh, snow_depth_top_cm: 80, weather_cell: 'c1' });
+    const withLifts = (s: LiftStatusSummary) => ({ ...withAv(conditions(), false, true), liftStatus: new Map([[r.id, s]]) });
+    const open = assembleSki(input({ mode: 'ski' }), [r], drives({ a: 30 }), withLifts(liftReport(12, 20, 'fresh', fresh)));
+    const op = open.results[0].availability!.checks.find((c) => c.kind === 'operation')!;
+    expect(op).toMatchObject({ status: 'available', evidence: 'report' });
+    expect(op.text).toContain('12 von 20 Anlagen offen');
+    const closed = assembleSki(input({ mode: 'ski' }), [r], drives({ a: 30 }), withLifts(liftReport(0, 20, 'fresh', fresh)));
+    expect(closed.results[0].availability?.status).toBe('unavailable');
   });
 
   it('Cache-Schlüssel unterscheidet Planung und «unsichere zeigen»', () => {

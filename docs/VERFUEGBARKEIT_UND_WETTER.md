@@ -26,9 +26,11 @@ Stand 13.11.2026. Die Seite beschreibt:
 - **Prognosen und Modellwerte sind als solche gekennzeichnet.** Jede Prüfung trägt ihre Belegart:
   amtliche Meldung, gemessen, Prognose (Modell), Modellwert, berechnet oder keine Daten. Dazu kommen
   Quelle und Zeitstempel.
-- **Ein Skigebiet wird nie als geöffnet gezeigt, wenn kein verlässlicher Live-Betriebsstatus vorliegt.**
-  Heute gibt es dafür keine freie, rechtlich saubere Quelle. Alle Skigebiete gelten deshalb als
-  «unsicher», bis für ein Gebiet ein zugelassener Adapter existiert (`apps/backend/src/lifts`).
+- **Ein Skigebiet wird nie als geöffnet gezeigt, wenn kein aktueller Statusbericht vorliegt.**
+  Quelle ist LiftRadar (Statusberichte der Gebiete, etwa zweimal täglich, Belegart «Statusbericht»).
+  «Verfügbar» nur mit einem Bericht vom selben Tag (≤ 12 h) und offenen Anlagen für den heutigen
+  Skitag; heute «alle geschlossen» → nicht verfügbar; für spätere Tage, ohne Bericht oder mit älterem
+  Bericht → unsicher. Details: [LIFT_UND_PISTENSTATUS.md](LIFT_UND_PISTENSTATUS.md).
 - Gesamtstatus = schlechteste Einzelprüfung. Der angezeigte Grund ist der Text dieser Prüfung. Bei
   Gleichstand gilt beim Wandern die Reihenfolge Sperrung, Lawine, Schnee, Wetter, Tageslicht, bei
   Skigebieten zuerst der Betrieb.
@@ -214,7 +216,8 @@ entstehen keine Abrufe bei Open-Meteo.
 Geprüft, nicht eingesetzt:
 - **RainViewer:** die Bedingungen erlauben nur persönliche bzw. Ausbildungsnutzung; die
   MeteoSchweiz-Daten sind offen und genauer.
-- **Liftstatus-Portale und Websites der Bergbahnen:** ohne offene Lizenz; automatisierter Abruf untersagt.
+- **Liftstatus-Portale und Websites der Bergbahnen direkt:** ohne offene Lizenz; automatisierter Abruf
+  untersagt. Peakr nutzt die frei lesbaren Dateien von LiftRadar und verlinkt die Websites nur.
 - **Wetterwarnungen von MeteoSchweiz:** keine offene, maschinenlesbare Quelle gefunden. Die Ebene ist
   deshalb nicht umgesetzt.
 

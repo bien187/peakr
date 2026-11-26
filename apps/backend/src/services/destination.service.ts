@@ -62,7 +62,7 @@ async function withAvailability(detail: DestinationDetail, weatherCell: string |
         {
           lat: detail.location.lat, lng: detail.location.lng, topElevM: detail.elevationTopM, baseElevM: detail.elevationBaseM,
           slfRegionId: detail.slfRegionId,
-          lifts: { liftsOpen: live?.liftsOpen ?? null, liftsTotal: live?.liftsTotal ?? null, source: live?.liftSource ?? null, capturedAt: live?.capturedAt ?? null },
+          lifts: detail.liftStatus ?? null,
           snowTopCm: live?.snowDepthTopCm ?? null, snowValleyCm: live?.snowDepthValleyCm ?? null, snowAt: live?.capturedAt ?? null,
           forecast: weatherCell ? conditions.forecasts.get(weatherCell) : undefined,
         },

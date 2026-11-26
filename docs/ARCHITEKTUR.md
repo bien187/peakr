@@ -38,6 +38,7 @@ zweite Implementierung (Fastify) ist entfernt.
 | `weather_cells.forecast` | Stündliche Prognose je 0,1°-Zelle für heute bis übermorgen (Tourplanung, Wetterkarte). |
 | `ski_resort_details`, `ski_lifts` | Gruppierte Skigebiete, Anlagen nach Typ, Pistenkilometer nach Schwierigkeit, Talstation. |
 | `live_status` | Verlauf der Bedingungen je Skigebiet (120 Tage). |
+| `ski_resort_status`, `ski_resort_status_items` | Lift- und Pistenstatus laut Statusbericht (LiftRadar) je Quellgebiet, mit Zählern, getrennten Zeitpunkten (Bericht, Prüfung der Quelle, Abgleich durch Peakr) und Einzelliste; siehe [LIFT_UND_PISTENSTATUS.md](LIFT_UND_PISTENSTATUS.md). |
 | `weather_cells` | Wetterraster 0,1° für Wanderziele, überschrieben statt angehängt. |
 | `avalanche_regions`, `cantons` | Polygone für die Zuordnung per `ST_Contains`. |
 | `data_sources`, `import_runs`, `app_meta`, `job_locks`, `rate_limits` | Herkunft und Stand, Protokoll aller Läufe, Datenversion, Sperren gegen Parallelläufe, Rate-Limits über Serverless-Instanzen hinweg. |

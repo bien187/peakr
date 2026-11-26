@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { AvailabilityCheck } from '@ch-alpineroute/shared';
+import type { AvailabilityCheck, LiftStatusSummary } from '@ch-alpineroute/shared';
 import {
   assessAvalanche,
   assessClosures,
@@ -383,30 +383,47 @@ describe('Winter: Skigebiet', () => {
   };
   const resort = (over: Partial<Parameters<typeof evaluateSkiResort>[0]> = {}) => ({
     lat: 46.8, lng: 9.83, topElevM: 2600, baseElevM: 1550, slfRegionId: null,
-    lifts: { liftsOpen: null, liftsTotal: 30, source: null, capturedAt: null },
+    lifts: null,
     snowTopCm: 60, snowValleyCm: 20, snowAt: iso(now, 2), forecast: forecast(today, iso(now, 2), { temp: Object.fromEntries(Array.from({ length: 72 }, (_, i) => [i, -4])) }),
     ...over,
   });
+  /** Statusbericht wie aus lifts/summary.ts (nur die Felder, die die Prüfung liest, sind relevant). */
+  const report = (open: number | null, total: number | null, hoursAgo: number, status: LiftStatusSummary['status'] = open === 0 ? 'closed' : 'open'): LiftStatusSummary => ({
+    source: 'liftradar', sourceName: 'LiftRadar', sourceUrl: 'https://liftradar.eu', status,
+    lifts: { open, closed: null, preparation: null, unknown: null, total },
+    slopes: { open: null, closed: null, preparation: null, unknown: null, total: null, openKm: null, totalKm: null },
+    dataAt: iso(now, hoursAgo), dataAtIsReport: true, fetchedAt: iso(now, 0), freshness: 'fresh', ageHours: hoursAgo,
+    areas: [{ id: 'test', name: 'Test', status }], partial: false, coverageNote: null,
+  });
 
-  it('ohne Live-Betriebsstatus nie «verfügbar» – höchstens unsicher', () => {
+  it('ohne Statusbericht nie «verfügbar» – höchstens unsicher', () => {
     const a = evaluateSkiResort(resort(), conditions(), { date: today, startHour: 8 }, now);
     expect(a.status).toBe('uncertain');
     expect(a.reason).toContain('Betriebsstatus unbekannt');
     expect(byKind(a.checks, 'operation').evidence).toBe('none');
   });
 
-  it('mit aktueller Betriebsmeldung (heute, Anlagen offen) und Schnee → verfügbar', () => {
-    const lifts = { liftsOpen: 18, liftsTotal: 30, source: 'Bergbahn (Vereinbarung)', capturedAt: iso(now, 1) };
-    const a = evaluateSkiResort(resort({ lifts }), conditions(), { date: today, startHour: 8 }, now);
+  it('mit aktuellem Statusbericht (heute, Anlagen offen) und Schnee → verfügbar', () => {
+    const a = evaluateSkiResort(resort({ lifts: report(18, 30, 1) }), conditions(), { date: today, startHour: 8 }, now);
     expect(a.status).toBe('available');
-    expect(byKind(a.checks, 'operation').text).toContain('18 von 30 Anlagen offen');
+    const op = byKind(a.checks, 'operation');
+    expect(op.text).toContain('18 von 30 Anlagen offen laut Statusbericht');
+    expect(op.evidence).toBe('report');
+    expect(op.source).toContain('LiftRadar');
   });
 
-  it('Betriebsmeldung «alle Anlagen zu» → nicht verfügbar; veraltet oder für einen anderen Tag → unsicher', () => {
-    const closed = { liftsOpen: 0, liftsTotal: 30, source: 'Bergbahn', capturedAt: iso(now, 1) };
-    expect(assessOperation(closed, today, now).status).toBe('unavailable');
-    expect(assessOperation({ ...closed, liftsOpen: 10, capturedAt: iso(now, 13) }, today, now).status).toBe('uncertain');
-    expect(assessOperation({ ...closed, liftsOpen: 10 }, '2026-11-14', now).status).toBe('uncertain');
+  it('Bericht «alle Anlagen zu» → nicht verfügbar; veraltet oder für einen anderen Tag → unsicher', () => {
+    expect(assessOperation(report(0, 30, 1), today, now).status).toBe('unavailable');
+    expect(assessOperation(report(10, 30, 13), today, now).status).toBe('uncertain');
+    expect(assessOperation(report(10, 30, 1), '2026-11-14', now).status).toBe('uncertain');
+    // Heute geschlossen heisst nicht: morgen geschlossen.
+    expect(assessOperation(report(0, 30, 1), '2026-11-14', now).status).toBe('uncertain');
+  });
+
+  it('kein aktueller Bericht der Quelle («no_report») → unsicher, nie geschlossen', () => {
+    const c = assessOperation({ ...report(null, 30, 1, 'no_report'), dataAt: null }, today, now);
+    expect(c.status).toBe('uncertain');
+    expect(c.text).toContain('keinen aktuellen Statusbericht');
   });
 
   it('Schnee: Messung der nahen Station bevorzugt und gekennzeichnet, Modell zusätzlich genannt', () => {
@@ -425,7 +442,7 @@ describe('Winter: Skigebiet', () => {
   });
 
   it('Sturm am Skitag → nicht verfügbar', () => {
-    const lifts = { liftsOpen: 18, liftsTotal: 30, source: 'Bergbahn', capturedAt: iso(now, 1) };
+    const lifts = report(18, 30, 1);
     const a = evaluateSkiResort(resort({ lifts, forecast: forecast(today, iso(now, 2), { gust: { 11: 110 } }) }), conditions(), { date: today, startHour: 8 }, now);
     expect(a.status).toBe('unavailable');
     expect(a.reason).toContain('Sturmböen');

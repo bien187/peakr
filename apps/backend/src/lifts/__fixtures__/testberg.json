@@ -1,0 +1,29 @@
+{
+  "$schema": "https://liftradar.eu/schema/resort.schema.json",
+  "id": "testberg",
+  "country": "ch",
+  "name": "Testberg",
+  "region": "Bern",
+  "location": { "lat": 46.6, "lon": 7.6 },
+  "website": "https://www.testberg.example",
+  "status": "open",
+  "fetched_at": "2026-12-20T13:40:42.979893+01:00",
+  "status_from": null,
+  "snow": { "mountain_cm": 80, "valley_cm": 35, "fresh_cm": 5, "last_snowfall": "2026-12-19", "condition": "powder", "stations": [] },
+  "lifts": { "open": 2, "total": 4 },
+  "slopes": { "open": 2, "total": 4, "open_km": 3.5, "total_km": 9 },
+  "lifts_by_type": { "gondola": { "open": 1, "total": 1 }, "chairlift": { "open": 1, "total": 2 }, "drag_lift": { "open": 0, "total": 1 } },
+  "slopes_by_difficulty": { "easy": { "open": 1, "total": 1, "open_km": 1.5, "total_km": null }, "intermediate": { "open": 1, "total": 2, "open_km": 2.0, "total_km": null }, "difficult": { "open": 0, "total": 1, "open_km": 0.0, "total_km": null } },
+  "lifts_updated_at": "2026-12-20T08:30:00+01:00",
+  "details": "json/ch/testberg.details.json",
+  "avalanche": null,
+  "sources": ["https://infosnow.example/portal/"],
+  "source_details": {
+    "conditions": [
+      { "url": "https://infosnow.example/portal/", "attribution_required": null },
+      { "url": "javascript:alert(1)", "attribution_required": true }
+    ],
+    "resort_info": [{ "url": "https://www.testberg.example/info", "attribution_required": false }]
+  },
+  "errors": []
+}

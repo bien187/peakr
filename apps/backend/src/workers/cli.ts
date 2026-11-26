@@ -5,6 +5,8 @@
  *   pnpm worker weather       Wetterraster für Wanderziele
  *   pnpm worker trend         Bekanntheit (Wikipedia-Seitenaufrufe)
  *   pnpm worker maintenance   Aufräumen
+ *   pnpm worker lifts         Lift- und Pistenstatus (LiftRadar); in der Saison stündlich sinnvoll
+ *   pnpm worker lifts --force manueller Lauf: Saison- und Änderungsprüfung übergehen
  *   pnpm worker schedule      Dauerbetrieb mit eingebautem Zeitplan (Docker/Self-Hosting)
  *
  * Im gehosteten Betrieb startet GitHub Actions die Jobs nach Zeitplan.
@@ -15,7 +17,7 @@ import { logger } from '../lib/logger';
 import { JOBS } from './jobs';
 import { runJob } from './runner';
 
-async function once(names: string[]): Promise<number> {
+async function once(names: string[], force = false): Promise<number> {
   let failed = 0;
   for (const name of names) {
     const spec = JOBS[name];
@@ -23,7 +25,7 @@ async function once(names: string[]): Promise<number> {
       logger.error(`Unbekannter Job «${name}». Verfügbar: ${Object.keys(JOBS).join(', ')}, schedule`);
       return 2;
     }
-    if ((await runJob(spec)) === 'failed') failed++;
+    if ((await runJob(spec, { force })) === 'failed') failed++;
   }
   return failed > 0 ? 1 : 0;
 }
@@ -34,6 +36,8 @@ function schedule(): void {
     ['35 */6 * * *', 'weather'],
     ['20 4 * * 1', 'trend'],
     ['50 3 * * *', 'maintenance'],
+    // Statusberichte: LiftRadar liest etwa 08:40 und 13:40; der Job prüft die Saison selbst.
+    ['50 7-18 * * *', 'lifts'],
   ];
   for (const [expr, name] of plan) {
     cron.schedule(expr, () => void runJob(JOBS[name]), { timezone: 'Europe/Zurich' });
@@ -49,14 +53,16 @@ function schedule(): void {
   process.once('SIGINT', () => setTimeout(() => void stop(), 15_000));
 }
 
-const args = process.argv.slice(2);
+const argv = process.argv.slice(2);
+const force = argv.includes('--force');
+const args = argv.filter((a) => !a.startsWith('--'));
 if (args[0] === 'schedule') {
   schedule();
 } else if (args.length === 0) {
   logger.error(`Aufruf: pnpm worker <${Object.keys(JOBS).join('|')}|schedule>`);
   process.exit(2);
 } else {
-  once(args)
+  once(args, force)
     .then(async (code) => {
       await queryClient.end({ timeout: 5 }).catch(() => undefined);
       process.exit(code);

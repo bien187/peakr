@@ -23,6 +23,7 @@ mit kostenlosen, offenen Daten; es gibt keine kostenpflichtige Schnittstelle.
 | **Suche** | Startort per Ortssuche (swisstopo) oder GPS · Fahrzeit 15–240 min plus Toleranz · Wandern oder Ski · Zeitpunkt «Jetzt», heute, morgen oder übermorgen |
 | **Wandern** | Mehrere Zielarten gleichzeitig · SAC-Filter T1–T6 auf die **gewählte Route** · max. Gehzeit · Mindesthöhe · Ziele ohne bekannte Route optional |
 | **Ski** | 317 Skigebiete aus OpenStreetMap, gruppiert · Fahrzeit bis zur Talstation · Schnee Tal/Berg, Neuschnee, Wetter, Lawinenstufe · Mindestschneehöhe · geplant wird der heutige bzw. ab 14 Uhr der morgige Skitag |
+| **Lift- und Pistenstatus** | Für 73 Skigebiete laut Statusbericht (LiftRadar): Lifte und Pisten offen/geschlossen, einzeln aufklappbar, mit Zeitpunkt des Berichts und Aktualität («aktuell», «älter», «veraltet») · nie als Echtzeit ausgegeben · offen nur aus einem Bericht vom selben Tag |
 | **Verfügbarkeit** | Standardmässig nur Ziele, die zur geplanten Zeit verfügbar sind: Wegsperrungen, Schnee entlang der Route (Messstationen, als Beleg die nächstgelegene), Wetter zur Tourzeit, Lawinenbulletin nach Höhenlage, Tageslicht · Tageslicht und Wetterfenster ab Ankunft am Ausgangspunkt · Skigebiete nie «offen» ohne Live-Betriebsstatus · Gründe je Ziel |
 | **Ausgeblendete Ziele** | Listenkopf nennt, was fehlt («1'219 unsicher · 2'350 nicht verfügbar ausgeblendet · Zeigen») · zuerst unsichere, dann auch nicht verfügbare einblenden · nicht verfügbare stehen gedämpft am Ende jedes Abschnitts und erscheinen grau auf der Karte |
 | **Wetterkarte** | Schalter «Wetter» auf der Karte: Radar MeteoSchweiz (gemessen, 5 min) und Prognose bis 48 h für Niederschlag, Bewölkung, Neuschnee, Temperatur, Böen · fliessende Verläufe · läuft auch bei zugeklappten Einstellungen weiter · Böen als ziehende Striche, Neuschnee als Flocken · Zeitleiste mit Pause · Legende |
@@ -34,7 +35,7 @@ mit kostenlosen, offenen Daten; es gibt keine kostenpflichtige Schnittstelle.
 | **Mobil** | Ergebnisliste als wischbares Fenster über der Karte · Statusleiste in den Farben der App (hell/dunkel) · Icon für den Home-Bildschirm (iOS und Android) |
 
 Fehlende Angaben bleiben sichtbar fehlend: unbekannte Schwierigkeit heisst «unbekannt», ohne
-Strassenroute gibt es keine Fahrzeit, ohne Live-Quelle keinen Liftstatus.
+Strassenroute gibt es keine Fahrzeit, ohne Statusbericht keinen Liftstatus.
 
 <table>
   <tr>
@@ -91,6 +92,9 @@ Abschnitte (≤ Limit · ≤ Limit+Toleranz · SAC unbekannt · ohne Route) → 
 - **Live-Daten:** Open-Meteo (Wetter, Schnee, stündliche Prognose), SLF (Lawinenbulletin, IMIS-Stationen),
   MeteoSchweiz (Schneemessnetz, Niederschlagsradar), Wegsperrungen von ASTRA und Schweizer Wanderwege
   (geo.admin.ch) – per GitHub Actions alle 3–6 Stunden, das Radar live beim Öffnen der Wetterkarte.
+- **Lift- und Pistenstatus:** Statusberichte von [LiftRadar](https://liftradar.eu) (meist über
+  infosnow.ch), in der Saison stündlich abgeglichen (ETag, nur bei neuem Bericht) und gespeichert; die
+  Website fragt LiftRadar nie direkt. Zuordnung und Regeln: [docs/LIFT_UND_PISTENSTATUS.md](docs/LIFT_UND_PISTENSTATUS.md).
 - **Karte:** Die Dichte der Treffer rechnet ein Web Worker (`apps/frontend/lib/density`); Heatmap,
   Hotspots und Einzelziele zeichnet MapLibre als GPU-Ebenen.
 
@@ -132,7 +136,7 @@ Datenbank, Strassengraph, Suchindex und Live-Daten-Jobs steht unter
 |---|---|---|
 | Web-App inkl. API | Vercel (Hobby) | 0 |
 | Datenbank | Neon (Free, ~110 MB von 1 GB), über die Vercel-Integration | 0 |
-| Live-Daten alle 3–6 h | GitHub Actions «Peakr Worker» | 0 (öffentliches Repo) |
+| Live-Daten alle 3–6 h, Liftstatus stündlich (Saison) | GitHub Actions «Peakr Worker» | 0 (öffentliches Repo) |
 | Datenaufbau wöchentlich | GitHub Actions «Peakr Daten» | 0 |
 | Strassengraph + Suchindex | GitHub-Release `data-latest` | 0 |
 
@@ -147,7 +151,9 @@ pnpm typecheck && pnpm lint          # statische Prüfung
 pnpm test                            # Unit-Tests (Backend + Frontend)
 pnpm test:db                         # Tests gegen die befüllte Datenbank (Testmatrix 8 Regionen)
 pnpm pipeline <schritt|all>          # Datenaufbau
-pnpm worker <ski|weather|trend|maintenance|schedule>
+pnpm worker <ski|weather|trend|maintenance|lifts|schedule>
+pnpm worker lifts --force            # Lift- und Pistenstatus sofort abgleichen (Saisonlogik übergehen)
+pnpm liftradar:mapping               # Zuordnung LiftRadar ↔ Peakr prüfen, Kandidaten für neue Gebiete
 pnpm report:quality [-- --write]     # Datenqualitätsbericht
 ```
 
@@ -159,7 +165,8 @@ apps/frontend/        Next.js: Oberfläche und API-Routen (dünne Hüllen um app
 apps/backend/src/
   server/             die gesamte API-Logik, framework-frei
   services/           Suche, Bewertung, Detail, Auth, Listen, Wetter, Radar, SLF, Sperrungen, Schneestationen
-  availability/       Verfügbarkeitsprüfung: Sperrung, Schnee, Wetter, Lawine, Tageslicht
+  availability/       Verfügbarkeitsprüfung: Sperrung, Schnee, Wetter, Lawine, Tageslicht, Betrieb
+  lifts/              Lift- und Pistenstatus (LiftRadar): Abruf, Zuordnung, Normalisierung, Aktualität
   repositories/       SQL (postgres.js, parametrisiert)
   routing/            Strassengraph und Fahrzeit
   search/             vorberechneter Suchindex
@@ -178,9 +185,10 @@ werden weder gebaut noch geprüft.
 
 ## Grenzen
 
-- **Liftstatus:** Es gibt keine freie, rechtlich saubere schweizweite Quelle. Peakr zeigt die Zahl der
-  Anlagen (OSM), aber keinen Betriebsstatus; Skigebiete gelten deshalb als «unsicher». Adapter für
-  einzelne Gebiete sind vorbereitet (`apps/backend/src/lifts`).
+- **Liftstatus** stammt aus Statusberichten, die LiftRadar etwa zweimal täglich liest – keine
+  Echtzeitdaten und keine offizielle Quelle. 85 von 89 Schweizer LiftRadar-Gebieten sind zugeordnet;
+  Gstaad, Andermatt–Sedrun–Disentis und Lenk umfassen mehrere Peakr-Gebiete und bleiben ohne Status,
+  ebenso Skigebiete, die LiftRadar nicht führt. Ohne frischen Bericht gilt ein Gebiet als «unsicher».
 - **Sperrungen** gibt es nur für das amtliche Wanderwegnetz. Liegt eine Route teils daneben, sagt die
   Prüfung das offen, wertet die Route deswegen aber nicht ab.
 - **Schnee:** Die Prüfung stützt sich auf Messstationen und Modell; Stationen jenseits eines Grats oder
@@ -196,4 +204,6 @@ werden weder gebaut noch geprüft.
 Daten: © swisstopo (OGD), © OpenStreetMap-Mitwirkende (ODbL), Open-Meteo (CC BY 4.0),
 MeteoSchweiz (CC BY 4.0), WSL-Institut für Schnee- und Lawinenforschung SLF (CC BY 4.0),
 ASTRA / Schweizer Wanderwege (Sperrungen, OGD), Terrain Tiles (Mapzen/AWS), Mapterhorn (3D-Ansicht).
-Einzelheiten in [docs/DATENQUELLEN.md](docs/DATENQUELLEN.md).
+Lift- und Pistenstatus: [LiftRadar](https://liftradar.eu) (keine ausdrückliche Lizenz, frei lesbar;
+Nennung von LiftRadar und der Originalquellen wie infosnow.ch). Einzelheiten in
+[docs/DATENQUELLEN.md](docs/DATENQUELLEN.md).

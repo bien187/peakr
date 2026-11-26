@@ -11,6 +11,8 @@ export const JOB_MAX_AGE_HOURS: Record<string, number> = {
   'worker:weather': 14,
   'worker:trend': 24 * 9,
   'worker:maintenance': 24 * 3,
+  // In der Saison tagsüber stündlich, sonst täglich (übersprungene Läufe zählen als Lauf).
+  'worker:lifts': 30,
   'pipeline:destinations': 24 * 45,
   'pipeline:ski': 24 * 45,
   'pipeline:network': 24 * 16,

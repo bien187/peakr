@@ -21,7 +21,8 @@
     "db:migrate": "pnpm --filter @ch-alpineroute/backend run db:migrate",
     "pipeline": "pnpm --filter @ch-alpineroute/backend run pipeline",
     "worker": "pnpm --filter @ch-alpineroute/backend run worker",
-    "report:quality": "pnpm --filter @ch-alpineroute/backend run report:quality"
+    "report:quality": "pnpm --filter @ch-alpineroute/backend run report:quality",
+    "liftradar:mapping": "pnpm --filter @ch-alpineroute/backend run liftradar:mapping"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",

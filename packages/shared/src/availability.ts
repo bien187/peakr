@@ -25,7 +25,7 @@ export type AvailabilityCheckKind = z.infer<typeof availabilityCheckKindSchema>;
  *  computed  berechnet (z. B. Sonnenuntergang)
  *  none      keine Daten
  */
-export const evidenceSchema = z.enum(['official', 'measured', 'forecast', 'model', 'computed', 'none']);
+export const evidenceSchema = z.enum(['official', 'report', 'measured', 'forecast', 'model', 'computed', 'none']);
 export type Evidence = z.infer<typeof evidenceSchema>;
 
 export const availabilityCheckSchema = z.object({
@@ -84,6 +84,7 @@ export const AVAILABILITY_LABEL: Record<AvailabilityStatus, string> = {
 
 export const EVIDENCE_LABEL: Record<Evidence, string> = {
   official: 'amtliche Meldung',
+  report: 'Statusbericht (nicht amtlich)',
   measured: 'gemessen',
   forecast: 'Prognose (Modell)',
   model: 'Modellwert',
