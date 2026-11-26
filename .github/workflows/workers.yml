@@ -15,6 +15,8 @@ on:
     - cron: '50 3 * * *'    # maintenance: Aufräumen – täglich
     # lifts: Statusberichte (LiftRadar liest sie gegen 08:40 und 13:40 MEZ). In der Saison
     # stündlich tagsüber, sonst täglich; der Job prüft Saison und Abstand selbst (lifts/freshness.ts).
+    # Zusätzlich läuft er nach jedem anderen Job mit (Schritt «Liftstatus» unten), weil GitHub
+    # geplante Läufe oft auslässt.
     - cron: '50 5-17 * 1-4,11,12 *'
     - cron: '50 6 * 5-10 *'
   workflow_dispatch:
@@ -75,6 +77,14 @@ jobs:
       # Neue Tabellen/Spalten sofort anlegen, nicht erst beim wöchentlichen Datenaufbau
       # (idempotent; bereits angewendete Migrationen werden übersprungen).
       - name: Migrationen
+        id: migrate
         run: pnpm db:migrate
       - name: Worker ${{ steps.job.outputs.name }}
         run: pnpm worker ${{ steps.job.outputs.name }} ${{ (github.event_name == 'workflow_dispatch' && inputs.force) && '--force' || '' }}
+      # GitHub startet geplante Läufe stark verspätet und lässt viele ganz fallen (Nov. 2026:
+      # rund 6 von 13 Terminen am Tag, bis ~10 h zu spät; von den Lift-Terminen startete am
+      # ersten Tag kein einziger). Deshalb gleicht jeder Lauf den Liftstatus mit ab. Der Job
+      # prüft Saison und Abstand selbst und holt nur neue Berichte – sonst kostet das 1 Abruf.
+      - name: Liftstatus (läuft bei jedem Lauf mit)
+        if: ${{ !cancelled() && steps.migrate.outcome == 'success' && steps.job.outputs.name != 'lifts' }}
+        run: pnpm worker lifts
