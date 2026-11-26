@@ -14,6 +14,8 @@ import { setMeta, withRun } from '../pipeline/runs';
 export interface JobContext {
   /** true, sobald der Lauf enden soll (Signal oder Zeitlimit). Schleifen prüfen das je Durchgang. */
   shouldStop: () => boolean;
+  /** Manueller Lauf (`--force`): Zeitplan- und Änderungsprüfungen übergehen. */
+  force: boolean;
 }
 
 export interface JobResult extends Record<string, unknown> {
@@ -50,7 +52,7 @@ async function releaseLock(job: string, owner: string): Promise<void> {
   await sql`DELETE FROM job_locks WHERE job = ${job} AND owner = ${owner}`.catch(() => undefined);
 }
 
-export async function runJob(spec: JobSpec): Promise<JobOutcome> {
+export async function runJob(spec: JobSpec, opts: { force?: boolean } = {}): Promise<JobOutcome> {
   const owner = randomUUID();
   if (!(await acquireLock(spec.name, owner, spec.lockMinutes))) {
     logger.warn({ job: spec.name }, 'Lauf übersprungen: derselbe Job läuft bereits');
@@ -74,7 +76,7 @@ export async function runJob(spec: JobSpec): Promise<JobOutcome> {
 
   try {
     const stats = await withRun(spec.name, null, async () => {
-      const result = await spec.run({ shouldStop: () => stop });
+      const result = await spec.run({ shouldStop: () => stop, force: opts.force === true });
       const ratio = result.total === 0 ? 1 : result.updated / result.total;
       if (ratio < spec.minSuccessRatio) {
         throw new Error(

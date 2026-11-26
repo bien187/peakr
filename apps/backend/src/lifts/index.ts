@@ -1,16 +1,15 @@
 /**
- * Live-Liftstatus.
+ * Adapter für zusätzliche Liftstatus-Quellen einzelner Gebiete (Ski-Worker).
  *
- * Stand der Abklärung (November 2026): Es gibt keine freie, schweizweite und
- * rechtlich saubere Quelle für den Betriebsstatus von Liften und Pisten. Die
- * Bergbahnen veröffentlichen ihn auf eigenen Webseiten ohne offene Lizenz;
- * Sammelportale untersagen die automatisierte Abfrage. Peakr betreibt deshalb
- * kein Scraping und zeigt «keine Live-Daten», statt Werte zu erfinden.
+ * Der Lift- und Pistenstatus kommt seit November 2026 aus den Statusberichten
+ * von LiftRadar (eigener Job `pnpm worker lifts`, siehe sync.ts und
+ * docs/LIFT_UND_PISTENSTATUS.md) und steht in ski_resort_status. Peakr betreibt
+ * kein Scraping von Betreiber-Websites.
  *
- * Wer für ein Gebiet eine zugelassene Quelle hat (z. B. eine Vereinbarung mit
- * der Bergbahn oder eine dokumentierte öffentliche Schnittstelle), registriert
- * hier einen Adapter. Der Worker ruft ihn je Lauf einmal auf, begrenzt die
- * Laufzeit und speichert die Quelle zu jedem Messwert.
+ * Wer für ein Gebiet eine weitere zugelassene Quelle hat (z. B. eine
+ * Vereinbarung mit der Bergbahn oder eine dokumentierte öffentliche
+ * Schnittstelle), kann hier einen Adapter registrieren. Der Ski-Worker ruft ihn
+ * je Lauf einmal auf und speichert die Quelle zu jedem Messwert in live_status.
  */
 
 export interface LiftResort {

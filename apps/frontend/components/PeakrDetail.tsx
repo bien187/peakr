@@ -7,10 +7,12 @@ import { useSettings } from '@/lib/theme';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Icon } from './Icon';
+import { OperationCard } from './LiftStatus';
 import { AddToListButton } from './Lists';
 import { AvailabilityBadge, AvalancheTag, WeatherChip } from './PeakrUI';
 import { ShareButton } from './Share';
 import { useMinuteClock } from '@/lib/useNow';
+import { isReporting, openOfTotal, requiredCredits } from '@/lib/liftStatus';
 import {
   classLabel,
   fetchForecast,
@@ -637,6 +639,7 @@ function AvailabilityCard({ a, isSki, route }: { a: Availability | null; isSki: 
 
 /** Kurzform der Quellenangaben (Lizenzen verlangen die Nennung, nicht mehr). */
 const SOURCE_SHORT: Record<string, string> = {
+  liftradar: 'LiftRadar',
   open_meteo: 'Open-Meteo',
   osm: '© OpenStreetMap-Mitwirkende',
   swissnames3d: '© swisstopo',
@@ -653,6 +656,8 @@ const CHECK_SOURCES: [RegExp, string][] = [
 function credits(d: PDetail): string[] {
   const out = new Set<string>();
   for (const s of d.sources) out.add(SOURCE_SHORT[s.id] ?? s.attribution ?? s.name);
+  // Statusberichte: LiftRadar und die Originalquellen, die eine Nennung verlangen (oder ungeprüft sind).
+  if (d.liftStatus) for (const c of requiredCredits(d.liftStatus.areaDetails.flatMap((a) => a.sourceLinks))) out.add(c);
   const checks = [d.availability, ...d.routes.map((r) => r.src.availability)].flatMap((a) => a?.checks ?? []);
   for (const c of checks) {
     for (const [re, label] of CHECK_SOURCES) if (c.source && re.test(c.source)) out.add(label);
@@ -943,12 +948,17 @@ export function DetailView({
               <Fact label="Schnee Berg" value={dash(d.snowTop)} unit="cm" />
               <Fact label="Schnee Tal" value={dash(d.snowValley)} unit="cm" />
               <Fact label="Neuschnee 24 h" value={dash(d.fresh)} unit="cm" />
-              {d.liftsOpen != null ? (
-                <Fact label="Lifte offen" value={`${d.liftsOpen}/${dash(d.liftsTotal)}`} />
+              {isReporting(d.liftStatus) ? (
+                <>
+                  <Fact label="Lifte offen" value={openOfTotal(d.liftStatus!.lifts)} />
+                  <Fact label="Pisten offen" value={openOfTotal(d.liftStatus!.slopes)} />
+                </>
               ) : (
-                <Fact label="Anlagen" value={dash(d.liftsTotal)} />
+                <>
+                  <Fact label="Anlagen" value={dash(d.liftsTotal)} />
+                  <Fact label="Pisten" value={d.pisteKm != null ? nf.format(Math.round(d.pisteKm)) : '–'} unit="km" />
+                </>
               )}
-              <Fact label="Pisten" value={d.pisteKm != null ? nf.format(Math.round(d.pisteKm)) : '–'} unit="km" />
             </>
           ) : (
             <>
@@ -963,6 +973,8 @@ export function DetailView({
         </div>
 
         <AvailabilityCard a={isSki ? d.availability : (route?.src.availability ?? null)} isSki={isSki} route={isSki ? null : route} />
+
+        {isSki && <OperationCard s={d.liftStatus} />}
 
         <section className="detail-card">
           <h2 className="detail-h2">Anreise mit dem Auto</h2>

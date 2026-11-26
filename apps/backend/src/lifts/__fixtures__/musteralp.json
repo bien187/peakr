@@ -1,0 +1,8 @@
+{
+  "id": "musteralp", "country": "ch", "name": "Musteralp", "region": "Valais", "location": { "lat": 46.1, "lon": 7.3 },
+  "website": "https://musteralp.example", "status": "closed", "fetched_at": "2026-12-20T13:40:42+01:00", "status_from": null,
+  "snow": { "mountain_cm": null, "valley_cm": null, "fresh_cm": null, "last_snowfall": null, "condition": null, "stations": [] },
+  "lifts": { "open": 0, "total": 3 }, "slopes": { "open": 0, "total": 5, "open_km": 0.0, "total_km": 12 },
+  "lifts_by_type": {}, "slopes_by_difficulty": {}, "lifts_updated_at": null,
+  "avalanche": null, "sources": [], "source_details": { "conditions": [], "resort_info": [] }
+}

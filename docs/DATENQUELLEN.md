@@ -1,4 +1,4 @@
-# Peakr – Datenquellen (Stand 13.11.2026)
+# Peakr – Datenquellen (Stand 26.11.2026)
 
 Alle Quellen sind kostenlos. Geprüft wurden jeweils: Kosten, Nutzungsbedingungen, Qualität,
 Aktualisierung, technische Abrufbarkeit, Überschneidung mit anderen Quellen. Die Stände der
@@ -17,6 +17,7 @@ Detailansicht und unter `/api/health`.
 | **SLF** (WSL-Institut für Schnee- und Lawinenforschung) | Warnregionen (Polygone), Gefahrenstufe und Kernzonen (Höhe, Expositionen) aus dem Lawinenbulletin; Schneehöhe und Neuschnee der IMIS-Stationen | CC BY 4.0, Quellenangabe SLF mit Link; Messschnittstelle nur periodisch abfragen | 3-stündlich mit dem Ski-Job, IMIS auch im Wetterlauf; Bulletin erscheint saisonal | `aws.slf.ch` CAAML-JSON, `measurement-api.slf.ch` |
 | **Sperrungen Wanderwege** (ASTRA, Schweizer Wanderwege, Kantone) | Gesperrte Abschnitte und Umleitungen auf dem amtlichen Wanderwegnetz | Bundesgeodaten (OGD), Quellenangabe | 6-stündlich (Worker «weather») | GeoAdmin-Identify `ch.astra.wanderland-sperrungen_umleitungen` |
 | **MeteoSchweiz** | Schneehöhen (manuelles und automatisches Messnetz); Niederschlagsradar (PRECIP, 5 min) für die Wetterkarte | OGD, CC BY 4.0, «Quelle: MeteoSchweiz» | Schnee mit den Workern; Radar beim Öffnen der Karte | GeoJSON auf `data.geo.admin.ch`, STAC `ch.meteoschweiz.ogd-radar-precip` |
+| **LiftRadar** (liftradar.eu) | Lift- und Pistenstatus laut Statusbericht der Skigebiete (offen/geschlossen je Anlage und Piste, Zähler), Bericht-Zeitpunkt, Schneehöhen laut Bericht, Website und Originalquellen | Keine ausdrückliche Lizenz; «free to read», ohne Schlüssel. Nennung von LiftRadar und aller Originalquellen mit `attribution_required` true/null (z. B. infosnow.ch). Keine offizielle Quelle. Siehe [LIFT_UND_PISTENSTATUS.md](LIFT_UND_PISTENSTATUS.md) | Saison stündlich (Worker «lifts», ETag), sonst täglich; Quelle liest ~08:40 und 13:40 | `/json/index.json`, `/json/ch/<id>.json`, `/json/ch/<id>.details.json` |
 | **Wikimedia Pageviews** | Bekanntheit (Seitenaufrufe 30 Tage) für Ziele mit Wikipedia-Artikel | CC0; User-Agent mit Kontakt Pflicht | wöchentlich | REST-API |
 | **swisstopo Kartendienste** (Browser) | Grundkarte (Vektor), Luftbild SWISSIMAGE, Wanderwege-Overlay, Ortssuche | OGD, Quellenangabe; faire Nutzung | live | `vectortiles.geo.admin.ch`, `wmts.geo.admin.ch`, `api3.geo.admin.ch` |
 | **OpenStreetMap / Mapterhorn** (Browser, 3D-Ansicht) | Rasterkarte und Höhenmodell der 3D-Ansicht | ODbL bzw. offene Höhendaten, Quellenangabe in der Karte | live | Kachel-Server |
@@ -36,7 +37,7 @@ Details zu Verfügbarkeit und Wetterkarte: [VERFUEGBARKEIT_UND_WETTER.md](VERFUE
 | Wikidata direkt | Die Verknüpfungen kommen bereits über die OSM-Tags `wikidata`/`wikipedia`; eigene SPARQL-Abfragen brächten wenig zusätzliche Ziele. |
 | swisstopo swissALTI3D / DHM25 | Genauer als Terrain Tiles; swissALTI3D (2 m) ist aber viele GB gross, DHM25 wurde heruntergeladen und geprüft. Für Höhenmeter auf Wanderrouten reicht die Kombination aus amtlichen 3D-Wegen und Terrain Tiles; mögliche spätere Verbesserung. |
 | SchweizMobil-Routen | Keine offene Lizenz für die Weiterverwendung der Tourendaten. |
-| Liftstatus der Bergbahnen / Sammelportale | Keine offene Lizenz, Nutzungsbedingungen verbieten automatisierten Abruf. Peakr zeigt deshalb keinen Liftstatus statt erfundener Werte. Adapter für zugelassene Einzelquellen: `apps/backend/src/lifts`. |
+| Liftstatus direkt von Bergbahnen / kommerziellen Sammelportalen | Keine offene Lizenz, Nutzungsbedingungen verbieten automatisierten Abruf. Peakr nutzt stattdessen LiftRadar (frei lesbare JSON-Dateien, siehe oben) und scrapt keine Betreiber-Websites. |
 | MeteoSchweiz-Modellprognosen (ICON-CH, GRIB2) | Open-Meteo liefert diese Modelle bereits in einfach abrufbarer Form; Messnetz und Radar von MeteoSchweiz sind eingesetzt (siehe oben). |
 | RainViewer (Radar) | Bedingungen erlauben nur persönliche bzw. Ausbildungsnutzung; das Radar von MeteoSchweiz ist offen und für die Schweiz genauer. |
 | Wetterwarnungen MeteoSchweiz | Keine offene, maschinenlesbare Quelle gefunden – die Wetterkarte zeigt deshalb keine Warnebene. |

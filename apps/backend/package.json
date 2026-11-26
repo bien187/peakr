@@ -12,6 +12,7 @@
     "pipeline": "node --max-old-space-size=8192 --import tsx src/pipeline/cli.ts",
     "worker": "tsx src/workers/cli.ts",
     "report:quality": "tsx src/scripts/quality-report.ts",
+    "liftradar:mapping": "tsx src/scripts/liftradar-mapping.ts",
     "calibrate:drive": "node --max-old-space-size=8192 --import tsx src/scripts/calibrate-drive.ts"
   },
   "dependencies": {

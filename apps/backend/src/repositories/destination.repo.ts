@@ -11,7 +11,9 @@ import type {
 import { queryClient as sql } from '../db';
 import { toIso, toIsoOrNull } from '../lib/dates';
 import { hikeLive } from '../services/search.service';
-import { getAvalancheLevels, getWeatherCells } from './search.repo';
+import { detailForDestination, liftsForScore, summariesByDestination } from '../lifts/summary';
+import { readStatusForDestination } from './liftStatus.repo';
+import { getAvalancheLevels, getLiftStatusRows, getWeatherCells } from './search.repo';
 
 interface DestRow {
   id: string;
@@ -136,6 +138,18 @@ async function attachLive(rows: DestRow[]): Promise<Map<string, LiveStatus | nul
       ORDER BY l.destination_id, l.captured_at DESC
     `;
     for (const l of live) out.set(l.destination_id, liveFromRow(l, l.resort_lifts));
+    // «Lifte offen» nur aus einem frischen Statusbericht (lifts/summary.ts).
+    const summaries = summariesByDestination(
+      (await getLiftStatusRows().catch(() => [])).filter((s) => skiIds.includes(s.destination_id)),
+      new Date(),
+    );
+    for (const [id, summary] of summaries) {
+      const current = out.get(id);
+      const fresh = liftsForScore(summary);
+      if (current && fresh.liftsOpen !== null) {
+        out.set(id, { ...current, liftsOpen: fresh.liftsOpen, liftsTotal: fresh.liftsTotal, liftSource: summary.sourceName });
+      }
+    }
   }
   for (const r of rows) {
     if (r.type === 'ski_resort') {
@@ -266,7 +280,7 @@ export async function getDestinationDetail(
   const isSki = r.type === 'ski_resort';
   const elevations = !isSki && (await hasElevationsColumn()) ? sql`hr.elevations` : sql`NULL::smallint[] AS elevations`;
 
-  const [live, routeRows, skiRows, historyRows, sourceRows, waypoints] = await Promise.all([
+  const [live, routeRows, skiRows, historyRows, sourceRows, waypoints, statusData] = await Promise.all([
     attachLive([r]),
     sql<RouteRow[]>`
       SELECT hr.id, hr.rank, hr.distance_m, hr.ascent_m, hr.descent_m, hr.duration_up_min, hr.duration_down_min,
@@ -305,11 +319,15 @@ export async function getDestinationDetail(
       SELECT id, name, attribution, license, version, fetched_at FROM data_sources ORDER BY id
     `,
     isSki ? Promise.resolve(new Map<number, RouteWaypoint[]>()) : routeWaypoints(id),
+    isSki ? readStatusForDestination(id).catch(() => ({ rows: [], items: [] })) : Promise.resolve({ rows: [], items: [] }),
   ]);
+  const liftStatus = isSki ? detailForDestination(statusData.rows, statusData.items, new Date()) : null;
 
   const ski = skiRows[0];
   const usedSources = new Set<string>(
-    isSki ? ['osm', 'open_meteo', 'slf'] : [r.source_layer ?? 'osm', 'open_meteo', ...(routeRows.length > 0 ? ['osm', 'swisstlm3d_wanderwege', 'terrain_tiles'] : [])],
+    isSki
+      ? ['osm', 'open_meteo', 'slf', ...(liftStatus ? ['liftradar'] : [])]
+      : [r.source_layer ?? 'osm', 'open_meteo', ...(routeRows.length > 0 ? ['osm', 'swisstlm3d_wanderwege', 'terrain_tiles'] : [])],
   );
   const sources: DataSourceInfo[] = sourceRows
     .filter((s) => usedSources.has(s.id))
@@ -376,6 +394,7 @@ export async function getDestinationDetail(
             elevationM: ski.th_elev, quality: ski.th_quality ?? 1, roadGapM: ski.road_snap_m,
           }
         : null,
+    liftStatus,
     sources,
     updatedAt: toIsoOrNull(r.updated_at),
   };

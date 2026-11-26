@@ -3,6 +3,10 @@ import { weatherCellCenter } from '../geo/lv95';
 import { settle } from '../lib/http';
 import { logger } from '../lib/logger';
 import { getLiftStatus } from '../lifts';
+import { readLiftSchedule, shouldSync } from '../lifts/freshness';
+import { fetchLiftRadar } from '../lifts/liftradar';
+import { formatReport, syncLiftStatus } from '../lifts/sync';
+import { lastSuccessfulSync, liftStore } from '../repositories/liftStatus.repo';
 import { chunks, setMeta, upsertDataSource } from '../pipeline/runs';
 import { env } from '../config/env';
 import { enrichTrendWithOpenAi, isOpenAiTrendEnabled } from '../services/openai.service';
@@ -279,6 +283,26 @@ async function runTrend(ctx: JobContext): Promise<JobResult> {
   return { total: dests.length, updated: updated + noArticle, failed, withScore: updated, noArticle, removedLegacy: removed.count };
 }
 
+/**
+ * Lift- und Pistenstatus aus den Statusberichten von LiftRadar (lifts/sync.ts).
+ * Die Saisonlogik entscheidet, ob ein Lauf nötig ist; `--force` übergeht sie.
+ */
+async function runLifts(ctx: JobContext): Promise<JobResult> {
+  const schedule = readLiftSchedule();
+  const decision = shouldSync(new Date(), await lastSuccessfulSync(JOBS.lifts.name), schedule, ctx.force);
+  if (!decision.run) {
+    logger.info({ reason: decision.reason }, 'LiftRadar-Abgleich übersprungen');
+    return { total: 0, updated: 0, failed: 0, skipped: decision.reason };
+  }
+  await upsertDataSource('liftradar');
+  const result = await syncLiftStatus(
+    { fetcher: fetchLiftRadar, store: liftStore, shouldStop: ctx.shouldStop, concurrency: schedule.concurrency },
+    { force: ctx.force },
+  );
+  logger.info(formatReport(result));
+  return result;
+}
+
 /** Aufräumen: Verlauf begrenzen, alte Zähler und Protokolle löschen. */
 async function runMaintenance(): Promise<JobResult> {
   const live = await sql`DELETE FROM live_status WHERE captured_at < now() - interval '120 days'`;
@@ -306,4 +330,5 @@ export const JOBS: Record<string, JobSpec> = {
   weather: { name: 'worker:weather', lockMinutes: 30, timeoutMinutes: 20, minSuccessRatio: 0.7, run: runWeather },
   trend: { name: 'worker:trend', lockMinutes: 120, timeoutMinutes: 90, minSuccessRatio: 0.5, run: runTrend },
   maintenance: { name: 'worker:maintenance', lockMinutes: 15, timeoutMinutes: 10, minSuccessRatio: 1, run: runMaintenance },
+  lifts: { name: 'worker:lifts', lockMinutes: 20, timeoutMinutes: 10, minSuccessRatio: 0.7, run: runLifts },
 };

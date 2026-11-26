@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { availabilitySchema } from './availability';
 import { latLngSchema } from './geo';
+import { liftStatusDetailSchema } from './liftStatus';
 import { destinationTypeSchema, routingStatusSchema, sacDifficultySchema, trailheadKindSchema } from './enums';
 
 /** Aktuelle Bedingungen (Wetter/Schnee/Lawine/Lift) zu einem Ziel. Unbekanntes ist null. */
@@ -188,6 +189,8 @@ export const destinationDetailSchema = destinationSchema.extend({
   accessDrive: driveInfoSchema.nullable().optional(),
   /** Skigebiet: Verfügbarkeit (Betrieb, Schnee, Wetter, Lawinen). Wandern: je Route unter `routes`. */
   availability: availabilitySchema.nullable().optional(),
+  /** Skigebiet: Lift- und Pistenstatus laut Statusbericht; null = kein Bericht zugeordnet. */
+  liftStatus: liftStatusDetailSchema.nullable().optional(),
   sources: z.array(dataSourceSchema),
   updatedAt: z.string().nullable(),
 });

@@ -75,6 +75,14 @@ export const SOURCES: Record<string, DataSource> = {
     license: 'Open Government Data, CC BY 4.0',
     attribution: 'Quelle: MeteoSchweiz',
   },
+  liftradar: {
+    id: 'liftradar',
+    name: 'LiftRadar (Lift- und Pistenstatus)',
+    url: 'https://liftradar.eu/api',
+    license:
+      'Keine ausdrückliche Lizenz: frei lesbar ohne Schlüssel (liftradar.eu/api). Nennung von LiftRadar und der Originalquellen; LiftRadar ist keine offizielle Quelle.',
+    attribution: 'Statusberichte: LiftRadar (liftradar.eu), Originaldaten der Skigebiete (u. a. infosnow.ch)',
+  },
 };
 
 export async function upsertDataSource(id: keyof typeof SOURCES, version?: string | null): Promise<void> {

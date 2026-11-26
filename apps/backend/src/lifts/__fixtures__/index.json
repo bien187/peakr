@@ -1,0 +1,12 @@
+{
+  "$schema": "https://liftradar.eu/schema/index.schema.json",
+  "generated_at": "2026-12-20T13:43:10+01:00",
+  "resorts": [
+    { "id": "testberg", "country": "ch", "name": "Testberg", "region": "Bern", "location": { "lat": 46.6, "lon": 7.6 }, "status": "open", "checked_at": "2026-12-20T13:40:42+01:00", "snow": { "mountain_cm": 80, "valley_cm": 35, "fresh_cm": 5 }, "lifts": { "open": 2, "total": 4 }, "slopes": { "open": 2, "total": 4, "open_km": 3.5, "total_km": 9 }, "avalanche": null, "sources": [], "source_details": { "conditions": [], "resort_info": [] } },
+    { "id": "musteralp", "country": "ch", "name": "Musteralp", "region": "Valais", "location": { "lat": 46.1, "lon": 7.3 }, "status": "closed", "checked_at": "2026-12-20T13:40:42+01:00", "snow": { "mountain_cm": null, "valley_cm": null, "fresh_cm": null }, "lifts": { "open": 0, "total": 3 }, "slopes": { "open": 0, "total": 5, "open_km": 0.0, "total_km": 12 }, "avalanche": null, "sources": [], "source_details": { "conditions": [], "resort_info": [] } },
+    { "id": "stillhang", "country": "ch", "name": "Stillhang", "region": "Ticino", "location": { "lat": 46.3, "lon": 8.8 }, "status": "no_report", "checked_at": "2026-12-20T13:40:42+01:00", "snow": { "mountain_cm": null, "valley_cm": null, "fresh_cm": null }, "lifts": { "open": 0, "total": 6 }, "slopes": { "open": null, "total": 11, "open_km": null, "total_km": 20 }, "avalanche": null, "sources": [], "source_details": { "conditions": [], "resort_info": [] } },
+    { "id": "neuegg", "country": "ch", "name": "Neuegg", "region": "Uri", "location": { "lat": 46.7, "lon": 8.6 }, "status": "open", "checked_at": "2026-12-20T13:40:42+01:00", "snow": { "mountain_cm": 50, "valley_cm": 10, "fresh_cm": 0 }, "lifts": { "open": 1, "total": 2 }, "slopes": null, "avalanche": null, "sources": [], "source_details": { "conditions": [], "resort_info": [] } },
+    { "id": "grenzberg", "country": "at", "name": "Grenzberg", "region": "Tirol", "location": { "lat": 47.0, "lon": 11.0 }, "status": "open", "checked_at": "2026-12-20T13:40:42+01:00", "snow": { "mountain_cm": 60, "valley_cm": 20, "fresh_cm": 0 }, "lifts": { "open": 5, "total": 8 }, "slopes": null, "avalanche": null, "sources": [], "source_details": { "conditions": [], "resort_info": [] } },
+    { "id": "Kaputt Eintrag", "country": "ch" }
+  ]
+}

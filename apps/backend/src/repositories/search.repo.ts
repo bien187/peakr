@@ -1,6 +1,8 @@
 import type { HikeKind } from '@ch-alpineroute/shared';
 import { queryClient as sql } from '../db';
 import { logger } from '../lib/logger';
+import type { StatusRow } from '../lifts/summary';
+import { readAllStatusRows } from './liftStatus.repo';
 import type { IndexRoute, IndexSki, SearchIndex } from '../search/searchIndex';
 
 /**
@@ -232,6 +234,11 @@ export function getSkiLive(): Promise<Map<string, SkiLiveRow>> {
   });
 }
 
+/** Lift- und Pistenstatus aller zugeordneten Gebiete (wenige hundert Zeilen). */
+export function getLiftStatusRows(): Promise<StatusRow[]> {
+  return cached('liftStatus', LIVE_TTL_MS, readAllStatusRows);
+}
+
 /** Stand der Live-Daten; ändert sich mit jedem Worker-Lauf und entwertet Such-Caches. */
 export function getLiveVersion(): Promise<string | null> {
   return cached('liveVersion', 60_000, async () => {
@@ -247,6 +254,8 @@ export interface LiveContext {
   avalanche: AvalancheMap;
   trends: Map<string, TrendRow>;
   skiLive: Map<string, SkiLiveRow>;
+  /** Statusberichte der Skigebiete (lifts/summary.ts fasst sie je Gebiet zusammen). */
+  liftStatus: StatusRow[];
   liveVersion: string | null;
   /** false, wenn mindestens eine Live-Quelle aus der Datenbank nicht geladen werden konnte. */
   ok: boolean;
@@ -267,14 +276,15 @@ export async function getLiveContext(includeSki: boolean): Promise<LiveContext> 
       return fallback;
     }
   };
-  const [weather, avalanche, trends, skiLive, liveVersion] = await Promise.all([
+  const [weather, avalanche, trends, skiLive, liftStatus, liveVersion] = await Promise.all([
     safe('weather_cells', getWeatherCells, new Map<string, WeatherCellRow>()),
     safe('avalanche', getAvalancheLevels, new Map() as AvalancheMap),
     safe('trend_scores', getTrendScores, new Map<string, TrendRow>()),
     includeSki ? safe('live_status', getSkiLive, new Map<string, SkiLiveRow>()) : Promise.resolve(new Map<string, SkiLiveRow>()),
+    includeSki ? safe('ski_resort_status', getLiftStatusRows, [] as StatusRow[]) : Promise.resolve([] as StatusRow[]),
     safe('live_version', getLiveVersion, null),
   ]);
-  return { weather, avalanche, trends, skiLive, liveVersion, ok };
+  return { weather, avalanche, trends, skiLive, liftStatus, liveVersion, ok };
 }
 
 /** Für Tests und nach Worker-Läufen im selben Prozess. */

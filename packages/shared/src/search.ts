@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { availabilitySchema, availabilityStatusSchema, tourPlanSchema } from './availability';
 import { latLngSchema } from './geo';
+import { liftStatusSummarySchema } from './liftStatus';
 import { hikeKindSchema, modeSchema, routingStatusSchema, sacDifficultySchema } from './enums';
 import {
   destinationSchema,
@@ -112,6 +113,8 @@ export const searchResultSchema = destinationSchema.extend({
   overBudgetMinutes: z.number().int().nullable(),
   /** Verfügbarkeit der gewählten Route bzw. des Skigebiets zur geplanten Zeit. */
   availability: availabilitySchema.nullable().optional(),
+  /** Skigebiet: Lift- und Pistenstatus laut Statusbericht; null = kein Bericht zugeordnet. */
+  liftStatus: liftStatusSummarySchema.nullable().optional(),
 });
 export type SearchResult = z.infer<typeof searchResultSchema>;
 

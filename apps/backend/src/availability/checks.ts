@@ -8,8 +8,9 @@
  *  - Prognosen und Modellwerte sind als solche gekennzeichnet (evidence).
  *  - Schwellen stehen als Konstanten oben und sind in docs/VERFUEGBARKEIT_UND_WETTER.md beschrieben.
  */
-import type { AvailabilityCheck, AvailabilityStatus, TourPlan } from '@ch-alpineroute/shared';
+import type { AvailabilityCheck, AvailabilityStatus, LiftStatusSummary, TourPlan } from '@ch-alpineroute/shared';
 import { haversineM } from '../geo/lv95';
+import { FRESHNESS_HOURS } from '../lifts/freshness';
 import { sunTimes } from './sun';
 import { hhmm, planStart, zurichParts } from './time';
 
@@ -43,8 +44,8 @@ export const AVALANCHE_MAX_AGE_H = 30;
 /** Unterhalb dieser Höhe spielt die Lawinengefahr für Wanderrouten kaum eine Rolle. */
 export const AVALANCHE_MIN_ELEV_M = 1500;
 
-/** Live-Liftstatus älter als das gilt nicht mehr. */
-export const LIFTS_MAX_AGE_H = 12;
+/** Statusbericht älter als das gilt nicht für den Betrieb (gleich der Grenze «fresh», lifts/freshness.ts). */
+export const LIFTS_MAX_AGE_H = FRESHNESS_HOURS.fresh;
 /** Unter dieser Schneehöhe am Berg reicht Naturschnee kaum für den Betrieb. */
 export const SKI_MIN_SNOW_CM = 10;
 
@@ -454,30 +455,44 @@ export function assessDaylight(
 
 // ── Skigebiet: Betrieb und Schnee ────────────────────────────────────────────
 
-export interface LiftLive {
-  liftsOpen: number | null;
-  liftsTotal: number | null;
-  source: string | null;
-  capturedAt: string | null;
-}
+/** Statusbericht der Lifte; null = für dieses Skigebiet liegt keiner vor. */
+export type LiftLive = LiftStatusSummary | null;
 
+/**
+ * Betrieb laut Statusbericht. «Verfügbar» nur mit einem Bericht vom selben Tag
+ * (≤ LIFTS_MAX_AGE_H) für den heutigen Skitag. Ein fehlender oder alter Bericht
+ * heisst nie «geschlossen», sondern «unsicher».
+ */
 export function assessOperation(live: LiftLive, planDate: string, now: Date): AvailabilityCheck {
   const today = zurichParts(now).date;
-  if (!live.source || live.liftsOpen === null || hoursSince(live.capturedAt, now) > LIFTS_MAX_AGE_H) {
+  if (!live) {
     return check(
       'operation', 'uncertain',
-      'Betriebsstatus unbekannt: Für dieses Skigebiet gibt es keine frei nutzbare Live-Quelle. Peakr zeigt es deshalb nie als geöffnet an.',
+      'Betriebsstatus unbekannt: Für dieses Skigebiet liegt kein Statusbericht vor. Peakr zeigt es deshalb nie als geöffnet an.',
       'none', null, null,
     );
   }
-  if (live.liftsOpen === 0) {
-    return check('operation', 'unavailable', `Alle Anlagen geschlossen (Stand ${when(live.capturedAt!)}).`, 'official', live.source, live.capturedAt);
+  const source = `${live.sourceName} (Statusbericht)`;
+  if ((live.status !== 'open' && live.status !== 'closed') || !live.dataAt) {
+    return check(
+      'operation', 'uncertain',
+      'Betriebsstatus unbekannt: Das Skigebiet hat derzeit keinen aktuellen Statusbericht veröffentlicht.',
+      'report', source, live.fetchedAt,
+    );
   }
-  const text = `${live.liftsOpen}${live.liftsTotal ? ` von ${live.liftsTotal}` : ''} Anlagen offen (Stand ${when(live.capturedAt!)}).`;
-  if (planDate !== today) {
-    return check('operation', 'uncertain', `${text} Für den geplanten Tag gibt es noch keinen Betriebsstatus.`, 'official', live.source, live.capturedAt);
+  const at = when(live.dataAt);
+  if (hoursSince(live.dataAt, now) > LIFTS_MAX_AGE_H) {
+    return check('operation', 'uncertain', `Letzter Statusbericht vom ${at} – zu alt, um den Betrieb zu beurteilen.`, 'report', source, live.dataAt);
   }
-  return check('operation', 'available', text, 'official', live.source, live.capturedAt);
+  const open = live.lifts.open;
+  const laterDay = planDate !== today ? ' Für den geplanten Tag gibt es noch keinen Bericht.' : '';
+  if (live.status === 'closed' || open === 0) {
+    const text = `Laut Statusbericht alle Anlagen geschlossen (Stand ${at}).`;
+    return check('operation', laterDay ? 'uncertain' : 'unavailable', text + laterDay, 'report', source, live.dataAt);
+  }
+  const counts = open === null ? 'Anlagen in Betrieb' : `${open}${live.lifts.total ? ` von ${live.lifts.total}` : ''} Anlagen offen`;
+  const text = `${counts} laut Statusbericht (Stand ${at}).`;
+  return check('operation', laterDay ? 'uncertain' : 'available', text + laterDay, 'report', source, live.dataAt);
 }
 
 export function assessSkiSnow(

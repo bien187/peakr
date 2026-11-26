@@ -13,13 +13,21 @@ on:
     - cron: '35 */6 * * *'  # weather: Wetterraster der Wanderziele – alle 6 Stunden
     - cron: '20 4 * * 1'    # trend: Wikipedia-Seitenaufrufe – montags
     - cron: '50 3 * * *'    # maintenance: Aufräumen – täglich
+    # lifts: Statusberichte (LiftRadar liest sie gegen 08:40 und 13:40 MEZ). In der Saison
+    # stündlich tagsüber, sonst täglich; der Job prüft Saison und Abstand selbst (lifts/freshness.ts).
+    - cron: '50 5-17 * 1-4,11,12 *'
+    - cron: '50 6 * 5-10 *'
   workflow_dispatch:
     inputs:
       job:
         description: 'Job'
         type: choice
-        options: [ski, weather, trend, maintenance]
+        options: [ski, weather, trend, maintenance, lifts]
         default: ski
+      force:
+        description: 'Manueller Lauf: Saison- und Änderungsprüfung übergehen (lifts)'
+        type: boolean
+        default: true
 
 concurrency:
   group: peakr-worker-${{ github.event.schedule || inputs.job }}
@@ -46,6 +54,7 @@ jobs:
             '35 */6 * * *') echo "name=weather" >> "$GITHUB_OUTPUT" ;;
             '20 4 * * 1')   echo "name=trend" >> "$GITHUB_OUTPUT" ;;
             '50 3 * * *')   echo "name=maintenance" >> "$GITHUB_OUTPUT" ;;
+            '50 5-17 * 1-4,11,12 *'|'50 6 * 5-10 *') echo "name=lifts" >> "$GITHUB_OUTPUT" ;;
             *)              echo "name=${{ inputs.job }}" >> "$GITHUB_OUTPUT" ;;
           esac
       - name: DATABASE_URL vorhanden?
@@ -68,4 +77,4 @@ jobs:
       - name: Migrationen
         run: pnpm db:migrate
       - name: Worker ${{ steps.job.outputs.name }}
-        run: pnpm worker ${{ steps.job.outputs.name }}
+        run: pnpm worker ${{ steps.job.outputs.name }} ${{ (github.event_name == 'workflow_dispatch' && inputs.force) && '--force' || '' }}

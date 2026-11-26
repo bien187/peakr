@@ -1,0 +1,24 @@
+{
+  "$schema": "https://liftradar.eu/schema/resort-details.schema.json",
+  "id": "testberg",
+  "country": "ch",
+  "fetched_at": "2026-12-20T13:40:42.980121+01:00",
+  "updated_at": "2026-12-20T08:30:00+01:00",
+  "source": "https://infosnow.example/portal/",
+  "lifts": [
+    { "id": "lift-a-tal-mitte", "ref": "A", "name": "A • Tal - Mitte", "type": "gondola", "status": "open", "length_m": 2100, "map_length_m": 2050, "capacity_per_hour": null, "bottom_m": null, "top_m": null },
+    { "id": "lift-b-mitte-gipfel", "ref": "B", "name": "B • Mitte - Gipfel", "type": "chairlift", "status": "open", "length_m": null, "map_length_m": null, "capacity_per_hour": null, "bottom_m": null, "top_m": null },
+    { "id": "lift-c-sonnenhang", "ref": "C", "name": "C • Sonnenhang", "type": "chairlift", "status": "preparation", "length_m": null, "map_length_m": null, "capacity_per_hour": null, "bottom_m": null, "top_m": null },
+    { "id": "lift-d-uebungslift", "ref": null, "name": "Übungslift", "type": "drag_lift", "status": "closed", "length_m": null, "map_length_m": null, "capacity_per_hour": null, "bottom_m": null, "top_m": null },
+    { "id": "lift-e-neu", "ref": null, "name": "Neue Bahn", "type": "gondola", "status": "unknown", "length_m": null, "map_length_m": null, "capacity_per_hour": null, "bottom_m": null, "top_m": null }
+  ],
+  "slopes": [
+    { "id": "slope-1-talabfahrt", "ref": "1", "name": "1 • Talabfahrt", "difficulty": "easy", "colour": "blue", "status": "open", "length_m": 1500, "map_length_m": 1400 },
+    { "id": "slope-2-mitte", "ref": "2", "name": "2 • Mittelstrecke", "difficulty": "intermediate", "colour": "red", "status": "open", "length_m": 2000, "map_length_m": null },
+    { "id": "slope-3-wald", "ref": "3", "name": "3 • Waldpiste", "difficulty": "intermediate", "colour": "red", "status": "closed", "length_m": null, "map_length_m": null },
+    { "id": "slope-4-steil", "ref": "4", "name": "4 • Steilhang", "difficulty": "difficult", "colour": "black", "status": "closed", "length_m": 800, "map_length_m": null },
+    { "id": "slope-5-route", "ref": "5", "name": "5 • Skiroute", "difficulty": "ski_route", "colour": "yellow", "status": "wartung", "length_m": null, "map_length_m": null }
+  ],
+  "bottom": { "lat": 46.59, "lon": 7.59, "elevation_m": 1200 },
+  "top": { "lat": 46.61, "lon": 7.62, "elevation_m": 2400 }
+}

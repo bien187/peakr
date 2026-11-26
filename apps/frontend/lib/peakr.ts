@@ -11,6 +11,8 @@ import type {
   HikeRouteDetail,
   HikeRouteSummary,
   LatLng,
+  LiftStatusDetail,
+  LiftStatusSummary,
   LiveStatus,
   MapPoint,
   RoutingStatus,
@@ -104,6 +106,8 @@ export interface PCard {
   blockedReason: string | null;
   /** Verfügbarkeit zur geplanten Zeit (Suche); null = nicht geprüft. */
   availability: Availability | null;
+  /** Skigebiet: Lift- und Pistenstatus laut Statusbericht; null = keiner zugeordnet. */
+  liftStatus: LiftStatusSummary | null;
 }
 
 /* ---- Farben / Labels ----------------------------------------------------- */
@@ -295,6 +299,7 @@ export function adaptResult(r: SearchItem): PCard {
     quality: r.qualityScore ?? null,
     blockedReason: r.blockedReason,
     availability: r.availability ?? null,
+    liftStatus: r.liftStatus ?? null,
     ...liveFields(r.live),
   };
 }
@@ -366,6 +371,7 @@ export function adaptFavorite(d: DestinationWithStatus): PCard {
     quality: d.qualityScore ?? null,
     blockedReason: null,
     availability: null,
+    liftStatus: null,
     ...liveFields(d.live),
   };
 }
@@ -397,6 +403,8 @@ export interface PDetail extends PCard {
   sources: DestinationDetail['sources'];
   updatedAt: string | null;
   wikipedia: string | null;
+  /** Vollständiger Status mit Einzellisten (überschreibt die Kurzfassung aus PCard). */
+  liftStatus: LiftStatusDetail | null;
 }
 
 function routeOf(r: HikeRouteDetail): PRoute {
@@ -445,6 +453,7 @@ export function adaptDetail(d: DestinationDetail): PDetail {
     blockedReason: null,
     // Ski: Gebiet; Wandern: beste Variante (je Variante unter routes[].src.availability).
     availability: (type === 'ski' ? d.availability : best?.src.availability) ?? null,
+    liftStatus: d.liftStatus ?? null,
     ...liveFields(d.live),
     altNames: [...new Set([...Object.values(d.names ?? {}), ...(d.altNames ?? [])])].filter((n) => n && n !== d.name),
     routes,
