@@ -7,7 +7,7 @@
 <p align="center">Ski- und Wander-Navigator für die Schweiz – nach echter Autofahrzeit, Route, Wetter, Schnee und Lawinenlage.</p>
 <p align="center"><a href="https://peakr-ch.vercel.app"><strong>peakr-ch.vercel.app</strong></a></p>
 
-![Peakr: rund 2'900 verfügbare Wanderziele in 90 Minuten ab Zürich, als Dichte-Heatmap mit Hotspot-Zahlen auf der swisstopo-Karte, Trefferliste links](docs/screenshots/desktop-heatmap.jpg)
+![Peakr: verfügbare Wanderziele in 90 Minuten ab Zürich, als Dichte-Heatmap mit Hotspot-Zahlen auf der swisstopo-Karte, Trefferliste links](docs/screenshots/desktop-heatmap.jpg)
 
 Du gibst Startort, maximale Autofahrzeit und die Art der Ziele an. Peakr zeigt **alle** Gipfel, Seen,
 Hütten, Aussichtspunkte und Pässe bzw. Skigebiete, die du in dieser Zeit über das Strassennetz
@@ -44,7 +44,7 @@ Strassenroute gibt es keine Fahrzeit, ohne Statusbericht keinen Liftstatus.
 3D-Gelände mit Route und Parkplatz, darunter die Tour ab jetzt mit Rückkehrzeit, Hin- und Rückfahrt,
 Aufstieg und Abstieg sowie die Prüfung der Verfügbarkeit.
 
-![Detailansicht Buchberghaus mit 3D-Gelände, Tour jetzt 14:26 Uhr, Hin- und Rückfahrt, Aufstieg und Abstieg](docs/screenshots/desktop-detail-tour.jpg)
+![Detailansicht Stadlerberg mit 3D-Gelände, Tour jetzt 14:55 Uhr, zurück gegen 17:05 Uhr, Hin- und Rückfahrt, Aufstieg und Abstieg](docs/screenshots/desktop-detail-tour.jpg)
 
 ### Dunkle Karte
 
@@ -56,7 +56,7 @@ Die swisstopo-Karte wird im dunklen Modus umgefärbt, nicht nur abgedunkelt; die
 
 Radar und Prognose bis 48 h für Niederschlag, Bewölkung, Neuschnee, Temperatur und Böen, mit Zeitleiste.
 
-![Wetterkarte mit Niederschlagsprognose, Zeitleiste und Legende](docs/screenshots/desktop-weather.jpg)
+![Wetterkarte mit Temperaturprognose, angehaltener Zeitleiste und Legende](docs/screenshots/desktop-weather.jpg)
 
 ### Wann, Verfügbarkeit, Filter
 
@@ -66,10 +66,19 @@ Zeitpunkt der Tour, unsichere und nicht verfügbare Ziele, Zielarten, SAC-Schwie
 
 ### Ski
 
-Skigebiete nach Fahrzeit bis zur Talstation, mit Schnee am Berg, Neuschnee, Anlagen und Pisten. Ohne
-Live-Betriebsstatus gelten sie als «unsicher».
+Skigebiete nach Fahrzeit bis zur Talstation, mit offenen Liften und Pisten laut Statusbericht
+(Zeitpunkt und Quelle stehen auf der Ergebniskarte), Schnee am Berg und Neuschnee. Ohne Bericht steht
+«kein Statusbericht». Als verfügbar gilt ein Gebiet nur mit einem Bericht vom geplanten Skitag –
+ab 14 Uhr wird der morgige geplant, dann sind alle Gebiete bis zum nächsten Bericht «unsicher».
 
-![Skigebiete in 90 Minuten ab Zürich mit Schneehöhen und unbekanntem Liftstatus](docs/screenshots/desktop-ski.jpg)
+![Skigebiete in 2 Stunden ab Bern: Mürren/Schilthorn mit 4 von 13 Liften und 2 von 27 Pisten offen laut Bericht von 08:50, Betelberg ohne Statusbericht](docs/screenshots/desktop-ski.jpg)
+
+### Ski: Betriebsstatus
+
+Lifte und Pisten offen bzw. geschlossen laut Statusbericht, mit Zeitpunkt, Aktualität, Schnee laut
+Bericht und aufklappbaren Einzellisten. Peakr gibt den Status nie als Echtzeit aus.
+
+![Betriebsstatus Saas-Fee: in Betrieb laut Bericht von 13:29, 6 von 23 Liften und 6 von 34 Pisten offen, Einzelliste der Lifte](docs/screenshots/desktop-ski-status.jpg)
 
 ### Mobil: Karte und Liste
 

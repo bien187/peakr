@@ -43,7 +43,7 @@ der Quellenzeile. Eine Aussage über uneingeschränkte (kommerzielle) Nutzungsre
 ## Datenfluss
 
 ```
-GitHub Actions «Peakr Worker» (stündlich tagsüber in der Saison, sonst täglich)
+GitHub Actions «Peakr Worker» (eigene Termine + nach jedem anderen Worker-Job)
   └─ pnpm worker lifts
        1. Zuordnung prüfen, OSM-Referenzen → Peakr-Ziel-IDs (destination_sources)
        2. index.json mit If-None-Match  ── 304 → nur «zuletzt abgeglichen» setzen, fertig
@@ -179,7 +179,10 @@ neueste; über Nacht entsteht eine Lücke von rund 19 Stunden.
 10 min, Protokoll in `import_runs`, `/api/health`).
 
 - **GitHub Actions** (`.github/workflows/workers.yml`): November–April stündlich um :50 von 05:50
-  bis 17:50 UTC, Mai–Oktober täglich 06:50 UTC. Manuell: «Run workflow» → Job `lifts` (mit `force`).
+  bis 17:50 UTC, Mai–Oktober täglich 06:50 UTC. Weil GitHub geplante Läufe oft auslässt oder
+  stundenlang verzögert (am ersten Tag startete kein einziger Lift-Termin), läuft der Job zusätzlich
+  als Schritt «Liftstatus» nach jedem anderen Worker-Job (`ski`, `weather`, `maintenance`, `trend`)
+  mit – ohne `force`, die Saisonlogik entscheidet. Manuell: «Run workflow» → Job `lifts` (mit `force`).
 - **Saisonlogik im Job** (`freshness.ts`, `shouldSync`): in der Saison frühestens 40 min nach dem
   letzten erfolgreichen Abgleich, sonst höchstens alle 20 h; `--force` übergeht beides.
   Anpassbar über `LIFTS_SEASON_MONTHS` (Standard `11,12,1,2,3,4`), `LIFTS_SEASON_MIN_INTERVAL_MIN`,
