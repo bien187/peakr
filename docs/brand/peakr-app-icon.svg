@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120" role="img" aria-label="Peakr">
+  <title>Peakr</title>
+  <!-- Master für die App-Icons (PNG) – Kachel Waldgrün, Ecken 22.5 %. -->
+  <rect width="120" height="120" rx="27" fill="#173F35"/><g transform="translate(22.8 22.8) scale(1.55)"><path fill="#F5F1E8" d="M11.88 38.54A19.9 19.9 0 1 1 36.12 38.54L33.59 34.16A14.9 14.9 0 1 0 14.41 34.16Z"/><path fill="#C66A4E" d="M24 22.75L36.99 45.25L11.01 45.25Z"/></g>
+</svg>

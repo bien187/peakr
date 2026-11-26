@@ -36,11 +36,19 @@ export function chromeColors(dir: Direction, mode: Mode): { bar: string; page: s
   return { bar: oklchToHex(PAPER[mode][0], PAPER[mode][1], H), page: oklchToHex(BG[mode][0], BG[mode][1], H) };
 }
 
+/**
+ * Markenfarben der Bildmarke (Wegpunkt-Ring mit Gipfel, siehe docs/brand). Fest und
+ * unabhängig von der Farbwelt (Ski/Wandern); im dunklen Modus wird der Ring hell.
+ */
+export const BRAND = { green: '#173F35', terracotta: '#C66A4E', paper: '#F5F1E8' } as const;
+
 export function themeVars(dir: Direction, mode: Mode): Record<string, string> {
   const { hue: H, ac } = DIRECTIONS[dir] ?? DIRECTIONS.paper;
 
   if (mode === 'dark') {
     return {
+      '--brand': BRAND.paper,
+      '--brand-accent': BRAND.terracotta,
       '--bg': `oklch(${BG.dark[0]} ${BG.dark[1]} ${H})`,
       '--paper': `oklch(${PAPER.dark[0]} ${PAPER.dark[1]} ${H})`,
       '--surface': `oklch(0.262 0.016 ${H})`,
@@ -66,6 +74,8 @@ export function themeVars(dir: Direction, mode: Mode): Record<string, string> {
   }
 
   return {
+    '--brand': BRAND.green,
+    '--brand-accent': BRAND.terracotta,
     '--bg': `oklch(${BG.light[0]} ${BG.light[1]} ${H})`,
     '--paper': `oklch(${PAPER.light[0]} ${PAPER.light[1]} ${H})`,
     '--surface': `oklch(0.997 0.004 ${H})`,
